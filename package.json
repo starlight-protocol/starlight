@@ -1,0 +1,22 @@
+{
+  "name": "cba",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "start": "run_cba.bat",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "nanoid": "^5.1.6",
+    "playwright": "^1.57.0",
+    "ws": "^8.18.3"
+  }
+}

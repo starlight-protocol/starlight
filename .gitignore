@@ -1,0 +1,20 @@
+node_modules/
+screenshots/
+report.html
+.env
+*.log
+.DS_Store
+
+# Exclude all markdown files
+*.md
+
+# Allow only public documentation
+!README.md
+!user_guide.md
+
+# Private Idea Files (Local Only)
+idea
+layer_protocol_idea
+BLOG.md
+POM_IS_DEAD.md
+blog_dhiraj_idea_summarization.md
