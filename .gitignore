@@ -1,18 +1,17 @@
 node_modules/
 screenshots/
-report.html
 .env
 *.log
 .DS_Store
 
-# Exclude all markdown files
-*.md
-
-# Allow only public documentation
+# Allow certain artifacts
 !README.md
 !user_guide.md
 !roadmap.md
 !technical_guide.md
+!STARLIGHT_STANDARD.md
+!report.html
+!mission_trace.json
 
 # Private Idea Files (Local Only)
 idea

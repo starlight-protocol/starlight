@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # Central Message Bus & Browser Context
+  hub:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mission_trace.json:/app/mission_trace.json
+      - ./report.html:/app/report.html
+      - ./screenshots:/app/screenshots
+    environment:
+      - PWDEBUG=0
+    restart: always
+
+  # Environmental Stability Monitor
+  pulse:
+    build: .
+    command: [ "python3", "sentinels/pulse_sentinel.py" ]
+    depends_on:
+      - hub
+    environment:
+      - HUB_URI=ws://hub:8080
+
+  # Proactive Obstacle Clearance
+  janitor:
+    build: .
+    command: [ "python3", "sentinels/janitor.py" ]
+    depends_on:
+      - hub
+    environment:
+      - HUB_URI=ws://hub:8080
+
+  # Passive Intelligence Extraction
+  data:
+    build: .
+    command: [ "python3", "sentinels/data_sentinel.py" ]
+    depends_on:
+      - hub
+    environment:
+      - HUB_URI=ws://hub:8080
+
+# Note: Vision Sentinel requires Ollama (external or separate container)
+# and is manually excluded for lite orchestration.

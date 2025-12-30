@@ -1,5 +1,5 @@
 # 🛰️ Constellation-Based Automation (CBA)
-## Starlight Protocol v2.5 — The Sovereign Agentic Era
+## Starlight Protocol v2.6 (GALAXY) — The Predictive Intelligence Era
 
 **"Don't look at the ground; look at the Starlight."**
 
@@ -43,11 +43,40 @@ class MySentinel(SentinelBase):
         await self.send_clear()
 ```
 
-## 📊 Visual Proof: Hero Story Reports
-CBA generates a comprehensive `report.html` for every mission:
-- **ROI Dashboard**: Automatically calculates minutes saved per automated intervention.
-- **Sentinel Interventions**: Proof of work with "Before" and "After" screenshots of every healed obstacle.
 - **Context Awareness**: Logs shared metadata discovered by the constellation.
+
+## 🎞️ Phase 6: The "Omega" Standard
+CBA has transitioned from a framework to a **Standard for Resilient Infrastructure**.
+
+### ⏪ Time-Travel Triage
+Every mission is now recorded with high-fidelity telemetry. Use the `triage.html` tool to:
+- **Rewind** failed runs to the exact DOM state.
+- **Inspect** every JSON-RPC handshake between the Hub and Sentinels.
+- **Diagnose** environmental entropy through integrated visual context.
+
+### 🌐 Cloud Orchestration
+CBA is now Docker-native. Spin up a full constellation in seconds:
+```bash
+docker-compose up --build
+```
+This deploys a managed Hub and a mesh of Sentinels (Pulse, Janitor, Data) for ephemeral execution.
+
+### 🛰️ The Starlight Standard (Compliance)
+Formal protocol specifications are available in [STARLIGHT_STANDARD.md](file:///c:/cba/STARLIGHT_STANDARD.md).
+
+## 🌌 Phase 7: The "Galaxy" Mesh
+CBA is now evolving into a **Self-Learning Ecosystem**.
+
+### 🧠 Predictive Memory (Self-Healing)
+The Hub now learns from every mission. By indexing `mission_trace.json`, it builds a mapping of high-level goals to successful selectors.
+- **Auto-Recovery**: If a selector fails, the Hub cross-references its memory to find a historical substitute.
+- **Semantic Evolution**: The more missions you run, the smarter the Hub becomes.
+
+### 📈 ROI Dashboard 2.0
+The `report.html` now quantifies the business value of autonomy:
+- **Triage Savings**: Automatically calculates minutes saved per obstacle cleared.
+- **Healing Credits**: Tracks mission-saving "Self-Healing" events in real-time.
+- **Visual Proof**: State-aware screenshots provide undeniable evidence of mission success.
 
 ## 🚀 Getting Started
 
@@ -65,14 +94,12 @@ npx playwright install chromium
 ```
 
 ### The "Full Constellation" Demo
-Run the world-class **Cosmic Challenge** (Dynamic IDs, Jitter, Modals):
-1. **Start Hub**: `node src/hub.js`
-2. **Start Constellation**:
-   - `python sentinels/pulse_sentinel.py`
-   - `python sentinels/janitor.py`
-   - `python sentinels/vision_sentinel.py`
-   - `python sentinels/data_sentinel.py`
-3. **Run Intent**: `node src/intent.js`
+Run the world-class **Cosmic Challenge** or the **Self-Healing Demo**:
+- **Easiest**: Run `run_cba.bat` and select your mission.
+- **Manual**:
+    1. **Start Hub**: `node src/hub.js`
+    2. **Start Constellation**: Pulse, Janitor, Vision, Data sentinels.
+    3. **Run Intent**: `node src/intent.js` or `node test/intent_self_heal.js`.
 
 ---
 *Built with ❤️ by [Dhiraj Das](https://www.dhirajdas.dev)*

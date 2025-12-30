@@ -2,6 +2,12 @@
 setlocal
 echo 🌠 Starlight Protocol: CBA Orchestration Launcher
 echo --------------------------------------------------
+echo [Options]
+echo 1. Standard Mission (intent.js)
+echo 2. Self-Healing Demo (intent_self_heal.js) - Phase 7.1
+echo --------------------------------------------------
+set /p choice="Select Mission [1-2]: "
+
 :: NOTE: Ensure Ollama is running 'moondream' for the Vision Sentinel.
 
 :: 1. Force kill any previous Hub process on port 8080
@@ -37,7 +43,11 @@ timeout /t 2 /nobreak >nul
 
 :: 5. Launch the Intent Layer (The Mission)
 echo [Launcher] Executing Mission Intent...
-node src/intent.js
+if "%choice%"=="2" (
+    node test/intent_self_heal.js
+) else (
+    node src/intent.js
+)
 
 echo --------------------------------------------------
 echo [Launcher] Mission Complete. Check Hub window for Hero Story generation.

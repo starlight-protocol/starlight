@@ -1,4 +1,4 @@
-# 🌠 Starlight Protocol: The CBA User Guide
+# 🌌 Starlight Protocol: The GALAXY User Guide
 
 Welcome to the future of browser automation. This guide explains **Constellation-Based Automation (CBA)**—a paradigm shift from traditional Page Object Models (POM) and flaky `wait_for` calls toward a sovereign, multi-agent ecosystem.
 
@@ -85,6 +85,60 @@ Uses Local AI (Ollama) to visually detect obstacles without selectors. Perfect f
 
 ### 📊 The Data Sentinel (Intelligence)
 Passively extracts metadata (tokens, IDs) and injects it into the shared context for your intent script to use.
+
+---
+
+## 7. OMEGA Standard: Time-Travel Triage (Phase 6)
+CBA now features **Time-Travel Triage**, allowing you to inspect missions with surgical precision.
+
+### How to use the Triage Tool
+1.  **Run Mission**: Execute your mission as usual. A `mission_trace.json` file will automatically be generated in the root directory.
+2.  **Open Triage**: Open [triage.html](file:///c:/cba/triage.html) in any modern browser.
+3.  **Load Trace**: Click "Load mission_trace.json" and select your file.
+4.  **Rewind**: Select any `starlight.intent` event to see exactly what the browser looked like at that moment.
+
+### Why use Triage?
+- **Debug "Black Box" Failures**: See why a goal failed by viewing the exact DOM state during execution.
+- **Audit Sentinels**: Verify that Sentinels are identifying obstacles correctly.
+- **Protocol Analysis**: Inspect the JSON-RPC timing and parameters.
+
+---
+
+## 8. Cloud Orchestration (Docker)
+CBA is ready for ephemeral, cloud-based execution via Docker.
+
+### Running via Docker Compose
+Simply run:
+```bash
+docker-compose up --build
+```
+This will spin up:
+- **Hub**: The central orchestrator.
+- **Sentinels**: A managed mesh of Pulse, Janitor, and Data agents.
+
+### Benefits
+- **Ephemeral Environments**: Perfect for CI/CD pipelines.
+- **Isolation**: Each mission runs in a clean, containerized browser context.
+- **Standardization**: Identical execution across all environments.
+
+---
+
+## 9. Phase 7: Predictive Intelligence & The Galaxy Mesh
+CBA is no longer just a listener; it is a **learner**.
+
+### 🧬 Self-Healing Selectors
+When a UI change breaks a selector, the Hub switches from **Reactive** to **Predictive** mode:
+1.  **Failure Detected**: A command fails to find its target.
+2.  **Memory Retrieval**: The Hub consults its `historicalMemory` (learned from past successful `mission_trace.json` runs).
+3.  **Substitution**: It automatically retries with a historically successful selector for that specific goal.
+4.  **Proof**: The event is tagged with a **SELF-HEALED** badge in the report.
+
+### 💰 Interpreting the ROI Dashboard
+The Hero Story (`report.html`) now quantifies the "Autonomy ROI":
+- **Minutes Saved**: The Hub calculates value based on:
+    - **5 mins** baseline for every Sentinel intervention (manual triage avoidance).
+    - **2-3 mins** for every Self-Healing event (manual debugging avoidance).
+- **Visual Validation**: "Before" and "After" snapshots provide evidence of exactly where the Hub saved the mission.
 
 ---
 

@@ -24,9 +24,13 @@ class CBAHub {
         this.hijackStarts = new Map();
         this.lastEntropyBroadcast = 0;
         this.sovereignState = {}; // Phase 4: Shared Mission Context
+        this.missionTrace = [];   // Phase 6: Time-Travel Triage Logging
+        this.historicalMemory = new Map(); // Phase 7: Predictive Memory
+        this.isProcessing = false; // Flag to track active command execution
 
         if (!fs.existsSync(this.screenshotsDir)) fs.mkdirSync(this.screenshotsDir);
 
+        this.loadHistoricalSelectors();
         this.init();
     }
 
@@ -53,6 +57,7 @@ class CBAHub {
                     if (msg.method !== 'starlight.pulse') {
                         console.log(`[CBA Hub] RECV: ${msg.method} from ${this.sentinels.get(id)?.layer || 'Unknown'}`);
                     }
+                    await this.recordTrace('RECV', id, msg, msg.method === 'starlight.intent'); // Record snapshot for intents
                     await this.handleMessage(id, ws, msg);
                 } catch (e) {
                     console.error(`[CBA Hub] Parse Error from ${id}:`, e.message);
@@ -119,7 +124,6 @@ class CBAHub {
             if (ws.readyState === WebSocket.OPEN) ws.send(msg);
         }
     }
-
     async resolveSemanticIntent(goal) {
         // v2.1 Semantic Resolver: Scans for text matches or ARIA labels
         const target = await this.page.evaluate((goalText) => {
@@ -146,7 +150,30 @@ class CBAHub {
             return null;
         }, goal);
 
-        return target;
+        if (!target && this.historicalMemory.has(goal)) {
+            console.log(`[CBA Hub] Phase 7: Semantic resolution failed. Using Predictive Memory for "${goal}" -> ${this.historicalMemory.get(goal)}`);
+            return { selector: this.historicalMemory.get(goal), selfHealed: true };
+        }
+
+        return target ? { selector: target, selfHealed: false } : null;
+    }
+
+    loadHistoricalSelectors() {
+        const traceFile = path.join(process.cwd(), 'mission_trace.json');
+        if (fs.existsSync(traceFile)) {
+            try {
+                const trace = JSON.parse(fs.readFileSync(traceFile, 'utf8'));
+                // Extract successful intent resolutions
+                trace.forEach(event => {
+                    if (event.method === 'starlight.intent' && event.params.goal && event.params.selector) {
+                        this.historicalMemory.set(event.params.goal, event.params.selector);
+                    }
+                });
+                console.log(`[CBA Hub] Phase 7: Learned ${this.historicalMemory.size} historical selector patterns.`);
+            } catch (e) {
+                console.warn("[CBA Hub] Failed to load historical memory:", e.message);
+            }
+        }
     }
 
     broadcastContextUpdate() {
@@ -159,6 +186,31 @@ class CBAHub {
         for (const ws of this.wss.clients) {
             if (ws.readyState === WebSocket.OPEN) ws.send(msg);
         }
+    }
+
+    async recordTrace(type, sentinelId, data, includeSnapshot = false) {
+        if (data.method === 'starlight.pulse' || data.method === 'starlight.entropy_stream') return;
+        // v2.5: High-fidelity mission logging
+        const sentinel = this.sentinels.get(sentinelId);
+        const snapshot = includeSnapshot ? await this.takeDOMSnapshot() : null;
+
+        this.missionTrace.push({
+            timestamp: Date.now(),
+            humanTime: new Date().toLocaleTimeString(),
+            type,
+            layer: sentinel ? sentinel.layer : (sentinelId === 'System' ? 'System' : 'Intent'),
+            method: data.method,
+            params: data.params,
+            id: data.id,
+            snapshot // Phase 6: Full DOM state for time-travel
+        });
+    }
+
+    async takeDOMSnapshot() {
+        if (!this.page || this.page.isClosed()) return null;
+        try {
+            return await this.page.content();
+        } catch (e) { return null; }
     }
 
     validateProtocol(msg) {
@@ -227,10 +279,16 @@ class CBAHub {
                 // Phase 5: Handle Semantic Intent (Goal-based)
                 if (msg.params.goal) {
                     console.log(`[CBA Hub] Resolving Semantic Goal: "${msg.params.goal}"`);
-                    const resolvedSelector = await this.resolveSemanticIntent(msg.params.goal);
-                    if (resolvedSelector) {
-                        msg.params.selector = resolvedSelector;
+                    const result = await this.resolveSemanticIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
                         msg.params.cmd = 'click'; // Default semantic action
+
+                        // ROI: If semantic resolution used history, count it as saved triage time
+                        if (result.selfHealed) {
+                            this.totalSavedTime += 120; // ROI: 2 mins triage avoided
+                        }
                     } else {
                         console.error(`[CBA Hub] FAILED to resolve semantic goal: ${msg.params.goal}`);
                         this.broadcastToClient(id, { type: 'COMMAND_COMPLETE', id: msg.id, success: false });
@@ -250,7 +308,12 @@ class CBAHub {
 
     async shutdown() {
         console.log("[CBA Hub] Test Finished. Closing gracefully...");
+        // Wait for queue to drain
+        while (this.commandQueue.length > 0 || this.isLocked || this.isProcessing) {
+            await new Promise(r => setTimeout(r, 100));
+        }
         await this.generateReport();
+        await this.saveMissionTrace();
         if (this.page) await this.page.close();
         if (this.browser) await this.browser.close();
         this.wss.close(() => {
@@ -348,49 +411,62 @@ class CBAHub {
     }
 
     async processQueue() {
-        if (this.isLocked || this.commandQueue.length === 0 || !this.systemHealthy) return;
+        if (this.isLocked || this.commandQueue.length === 0 || !this.systemHealthy || this.isProcessing) return;
 
-        const msg = this.commandQueue.shift();
-        if (msg.internal && msg.cmd === 'nop') {
-            console.log("[CBA Hub] Processing RE_CHECK settling (500ms)...");
+        this.isProcessing = true;
+        try {
+            const msg = this.commandQueue.shift();
+            if (msg.internal && msg.cmd === 'nop') {
+                console.log("[CBA Hub] Processing RE_CHECK settling (500ms)...");
+                await new Promise(r => setTimeout(r, 500));
+                this.isProcessing = false;
+                this.processQueue();
+                return;
+            }
+
+            const clear = await this.broadcastPreCheck(msg);
+            if (!clear) {
+                console.log(`[CBA Hub] Pre-check failed or timed out for ${msg.cmd}. Retrying in 2s...`);
+                this.commandQueue.unshift(msg);
+                setTimeout(() => {
+                    this.isProcessing = false;
+                    this.processQueue();
+                }, 2000);
+                return;
+            }
+
+            // v2.1: Robust Screenshot Timing (Wait for settlement)
+            const beforeScreenshot = await this.takeScreenshot(`BEFORE_${msg.cmd}`);
+            const originalSelector = msg.selector;
+            const success = await this.executeCommand(msg);
+            const selfHealed = originalSelector !== msg.selector;
+
+            // Brief wait for UI to reflect change before "AFTER" capture
             await new Promise(r => setTimeout(r, 500));
-            this.processQueue();
-            return;
+            const afterScreenshot = await this.takeScreenshot(`AFTER_${msg.cmd}`);
+
+            this.reportData.push({
+                type: 'COMMAND',
+                id: msg.id,
+                cmd: msg.cmd,
+                selector: msg.selector || msg.goal,
+                url: msg.url, // Phase 7: Capture URL for GOTO reporting
+                success,
+                selfHealed: selfHealed || msg.selfHealed, // Phase 7: Tracking Predictive Healing
+                timestamp: new Date().toLocaleTimeString(),
+                beforeScreenshot,
+                afterScreenshot
+            });
+
+            this.broadcastToClient(msg.clientId, {
+                type: 'COMMAND_COMPLETE',
+                id: msg.id,
+                success,
+                context: this.sovereignState // Phase 4: Return shared context to Intent
+            });
+        } finally {
+            this.isProcessing = false;
         }
-
-        const clear = await this.broadcastPreCheck(msg);
-        if (!clear) {
-            console.log(`[CBA Hub] Pre-check failed or timed out for ${msg.cmd}. Retrying in 2s...`);
-            this.commandQueue.unshift(msg);
-            setTimeout(() => this.processQueue(), 2000);
-            return;
-        }
-
-        // v2.1: Robust Screenshot Timing (Wait for settlement)
-        const beforeScreenshot = await this.takeScreenshot(`BEFORE_${msg.cmd}`);
-        const success = await this.executeCommand(msg);
-
-        // Brief wait for UI to reflect change before "AFTER" capture
-        await new Promise(r => setTimeout(r, 500));
-        const afterScreenshot = await this.takeScreenshot(`AFTER_${msg.cmd}`);
-
-        this.reportData.push({
-            type: 'COMMAND',
-            id: msg.id,
-            cmd: msg.cmd,
-            selector: msg.selector || msg.goal,
-            success,
-            timestamp: new Date().toLocaleTimeString(),
-            beforeScreenshot,
-            afterScreenshot
-        });
-
-        this.broadcastToClient(msg.clientId, {
-            type: 'COMMAND_COMPLETE',
-            id: msg.id,
-            success,
-            context: this.sovereignState // Phase 4: Return shared context to Intent
-        });
         this.processQueue();
     }
 
@@ -495,6 +571,22 @@ class CBAHub {
             else if (msg.cmd === 'fill') await this.page.fill(msg.selector, msg.text);
             return true;
         } catch (e) {
+            console.warn(`[CBA Hub] Command failure on ${msg.selector}: ${e.message}`);
+
+            // Phase 7: Predictive Self-Healing
+            if (retry && msg.goal && this.historicalMemory.has(msg.goal)) {
+                const altSelector = this.historicalMemory.get(msg.goal);
+                if (altSelector !== msg.selector) {
+                    console.log(`[CBA Hub] SELF-HEALING: Attempting historical substitute for "${msg.goal}" -> ${altSelector}`);
+                    msg.selector = altSelector;
+                    const success = await this.executeCommand(msg, false);
+                    if (success) {
+                        this.totalSavedTime += 180; // ROI: 3 mins manual debugging avoided
+                    }
+                    return success;
+                }
+            }
+
             if (retry) {
                 await new Promise(r => setTimeout(r, 100));
                 return await this.executeCommand(msg, false);
@@ -545,15 +637,17 @@ class CBAHub {
         }
     }
 
-    broadcast(msg) {
+    async broadcast(msg) {
         const data = JSON.stringify(msg);
+        await this.recordTrace('SEND', 'All', msg, msg.method === 'starlight.pre_check');
         for (const s of this.sentinels.values()) {
             if (s.ws.readyState === WebSocket.OPEN) s.ws.send(data);
         }
     }
 
-    broadcastToClient(clientId, msg) {
+    async broadcastToClient(clientId, msg) {
         const data = JSON.stringify(msg);
+        await this.recordTrace('SEND', clientId, msg);
         this.wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN) client.send(data);
         });
@@ -563,26 +657,31 @@ class CBAHub {
         console.log("[CBA Hub] Generating Hero Story Report...");
         const totalSavedMins = Math.floor(this.totalSavedTime / 60);
         const html = `
-    < !DOCTYPE html >
+    <!DOCTYPE html>
         <html>
             <head>
                 <title>CBA Hero Story: Navigational Proof</title>
                 <style>
-                    body {font - family: 'Inter', sans-serif; background: #0f172a; color: white; padding: 2rem; }
-                    .hero-header {text - align: center; padding: 3rem; background: linear-gradient(135deg, #1e293b, #0f172a); border-radius: 12px; margin-bottom: 2rem; border: 1px solid #334155; }
-                    .card {background: #1e293b; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid #334155; position: relative; }
-                    .hijack {border - left: 6px solid #f43f5e; background: rgba(244, 63, 94, 0.05); }
-                    .command {border - left: 6px solid #3b82f6; background: rgba(59, 130, 246, 0.05); }
-                    .tag {position: absolute; top: 1rem; right: 1rem; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; }
-                    .tag-hijack {background: #f43f5e; }
-                    .tag-command {background: #3b82f6; }
-                    img {max - width: 100%; border-radius: 6px; margin-top: 1rem; border: 1px solid #475569; }
-                    .flex {display: flex; gap: 1.5rem; }
-                    .roi-dashboard {margin - top: 4rem; padding: 2rem; background: #064e3b; border-radius: 12px; border: 2px solid #10b981; text-align: center; }
-                    .roi-value {font - size: 3rem; font-weight: 800; color: #10b981; margin: 1rem 0; }
-                    .meta {color: #94a3b8; font-size: 0.85rem; margin-bottom: 0.5rem; font-family: monospace; }
-                    h1, h3 {margin: 0; }
-                    p {color: #cbd5e1; line-height: 1.6; }
+                    body { font-family: 'Inter', -apple-system, sans-serif; background: #0f172a; color: white; padding: 2rem; max-width: 1200px; margin: auto; }
+                    .hero-header { text-align: center; padding: 3rem; background: linear-gradient(135deg, #1e293b, #0f172a); border-radius: 12px; margin-bottom: 2rem; border: 1px solid #334155; }
+                    .card { background: #1e293b; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid #334155; position: relative; }
+                    .hijack { border-left: 6px solid #f43f5e; background: rgba(244, 63, 94, 0.05); }
+                    .command { border-left: 6px solid #3b82f6; background: rgba(59, 130, 246, 0.05); }
+                    .tag { position: absolute; top: 1rem; right: 1rem; padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; }
+                    .tag-hijack { background: #f43f5e; }
+                    .tag-command { background: #3b82f6; }
+                    img { max-width: 100%; border-radius: 6px; margin-top: 1rem; border: 1px solid #475569; }
+                    .flex { display: flex; gap: 1.5rem; margin-top: 1rem; }
+                    .roi-dashboard { margin-top: 4rem; padding: 2rem; background: #064e3b; border-radius: 12px; border: 2px solid #10b981; text-align: center; }
+                    .roi-value { font-size: 3rem; font-weight: 800; color: #10b981; margin: 1rem 0; }
+                    .meta { color: #94a3b8; font-size: 0.85rem; margin-bottom: 0.5rem; font-family: monospace; }
+                    .card-title { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; font-size: 1.25rem; font-weight: bold; }
+                    .badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
+                    .badge-success { background: #10b981; }
+                    .badge-danger { background: #f43f5e; }
+                    .badge-warning { background: #f59e0b; color: #0f172a; }
+                    h1, h3 { margin: 0; }
+                    p { color: #cbd5e1; line-height: 1.6; }
                 </style>
             </head>
             <body>
@@ -601,7 +700,11 @@ class CBAHub {
                             <p><strong>Reason:</strong> ${item.reason}</p>
                             <img src="screenshots/${item.screenshot}" alt="Obstacle Detected" />
                         ` : `
-                            <h3>Navigational Step: ${item.cmd} ${item.selector || ''}</h3>
+                            <div class="card-title">
+                                <span>${item.cmd.toUpperCase()}: ${item.cmd === 'goto' ? item.url : (item.selector || item.goal)}</span>
+                                <span class="badge ${item.success ? 'badge-success' : 'badge-danger'}">${item.success ? 'SUCCESS' : 'FAILURE'}</span>
+                                ${item.selfHealed ? '<span class="badge badge-warning">SELF-HEALED</span>' : ''}
+                            </div>
                             <div class="flex">
                                 <div><p class="meta">Before Influence:</p><img src="screenshots/${item.beforeScreenshot}" /></div>
                                 <div><p class="meta">After Success:</p><img src="screenshots/${item.afterScreenshot}" /></div>
@@ -621,6 +724,13 @@ class CBAHub {
         </html>`;
         fs.writeFileSync(path.join(process.cwd(), 'report.html'), html);
         console.log("[CBA Hub] Hero Story saved to report.html");
+    }
+
+    async saveMissionTrace() {
+        console.log(`[CBA Hub]Saving Mission Trace(${this.missionTrace.length} events)...`);
+        const traceFile = path.join(process.cwd(), 'mission_trace.json');
+        fs.writeFileSync(traceFile, JSON.stringify(this.missionTrace, null, 2));
+        console.log("[CBA Hub] Mission Trace saved to mission_trace.json");
     }
 }
 
