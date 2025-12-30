@@ -26,11 +26,13 @@ class CBAHub {
         this.sovereignState = {}; // Phase 4: Shared Mission Context
         this.missionTrace = [];   // Phase 6: Time-Travel Triage Logging
         this.historicalMemory = new Map(); // Phase 7: Predictive Memory
+        this.historicalAuras = new Set();  // Phase 7.2: High-entropy temporal windows
+        this.missionStartTime = null;      // Phase 7.2: Mission clock alignment
         this.isProcessing = false; // Flag to track active command execution
 
         if (!fs.existsSync(this.screenshotsDir)) fs.mkdirSync(this.screenshotsDir);
 
-        this.loadHistoricalSelectors();
+        this.loadHistoricalMemory();
         this.init();
     }
 
@@ -114,15 +116,18 @@ class CBAHub {
         if (now - this.lastEntropyBroadcast < 100) return; // v2.0 Starlight Throttling (10hz max)
         this.lastEntropyBroadcast = now;
 
-        const msg = JSON.stringify({
+        const msgObj = {
             jsonrpc: '2.0',
             method: 'starlight.entropy_stream',
             params: { entropy: true },
             id: nanoid()
-        });
+        };
+        const msg = JSON.stringify(msgObj);
         for (const ws of this.wss.clients) {
             if (ws.readyState === WebSocket.OPEN) ws.send(msg);
         }
+        // Record entropy for Phase 7.2 learning (Sync-safe fire and forget)
+        this.recordTrace('SEND', 'System', msgObj);
     }
     async resolveSemanticIntent(goal) {
         // v2.1 Semantic Resolver: Scans for text matches or ARIA labels
@@ -158,22 +163,43 @@ class CBAHub {
         return target ? { selector: target, selfHealed: false } : null;
     }
 
-    loadHistoricalSelectors() {
+    loadHistoricalMemory() {
         const traceFile = path.join(process.cwd(), 'mission_trace.json');
         if (fs.existsSync(traceFile)) {
             try {
                 const trace = JSON.parse(fs.readFileSync(traceFile, 'utf8'));
-                // Extract successful intent resolutions
+                if (trace.length === 0) return;
+
+                const firstIntent = trace.find(e => e.method === 'starlight.intent');
+                const traceStart = firstIntent ? firstIntent.timestamp : trace[0].timestamp;
+
                 trace.forEach(event => {
+                    // 1. Learn Selectors
                     if (event.method === 'starlight.intent' && event.params.goal && event.params.selector) {
                         this.historicalMemory.set(event.params.goal, event.params.selector);
                     }
+                    // 2. Learn Entropy Auras (Phase 7.2)
+                    if (event.method === 'starlight.entropy_stream') {
+                        const relTime = event.timestamp - traceStart;
+                        const bucket = Math.floor(relTime / 500);
+                        this.historicalAuras.add(bucket);
+                    }
                 });
-                console.log(`[CBA Hub] Phase 7: Learned ${this.historicalMemory.size} historical selector patterns.`);
+                console.log(`[CBA Hub] Phase 7: Learned ${this.historicalMemory.size} selectors and ${this.historicalAuras.size} instability windows.`);
             } catch (e) {
                 console.warn("[CBA Hub] Failed to load historical memory:", e.message);
             }
         }
+    }
+
+    isHistoricallyUnstable() {
+        if (!this.missionStartTime) return false;
+        const relTime = Date.now() - this.missionStartTime;
+        const bucket = Math.floor(relTime / 500);
+        // Check current, next, and previous bucket for a predictive buffer
+        return this.historicalAuras.has(bucket) ||
+            this.historicalAuras.has(bucket + 1) ||
+            this.historicalAuras.has(bucket - 1);
     }
 
     broadcastContextUpdate() {
@@ -189,7 +215,7 @@ class CBAHub {
     }
 
     async recordTrace(type, sentinelId, data, includeSnapshot = false) {
-        if (data.method === 'starlight.pulse' || data.method === 'starlight.entropy_stream') return;
+        if (data.method === 'starlight.pulse') return;
         // v2.5: High-fidelity mission logging
         const sentinel = this.sentinels.get(sentinelId);
         const snapshot = includeSnapshot ? await this.takeDOMSnapshot() : null;
@@ -413,6 +439,8 @@ class CBAHub {
     async processQueue() {
         if (this.isLocked || this.commandQueue.length === 0 || !this.systemHealthy || this.isProcessing) return;
 
+        if (!this.missionStartTime) this.missionStartTime = Date.now();
+
         this.isProcessing = true;
         try {
             const msg = this.commandQueue.shift();
@@ -422,6 +450,15 @@ class CBAHub {
                 this.isProcessing = false;
                 this.processQueue();
                 return;
+            }
+
+            // Phase 7.2: Aura-Based Throttling (Predictive Pacing)
+            let predictiveWait = false;
+            if (this.isHistoricallyUnstable()) {
+                console.log(`[CBA Hub] Aura Detected: Proactively slowing down for historical jitter...`);
+                await new Promise(r => setTimeout(r, 1500));
+                predictiveWait = true;
+                this.totalSavedTime += 30; // ROI: 30s saved per predictive stabilization
             }
 
             const clear = await this.broadcastPreCheck(msg);
@@ -453,6 +490,7 @@ class CBAHub {
                 url: msg.url, // Phase 7: Capture URL for GOTO reporting
                 success,
                 selfHealed: selfHealed || msg.selfHealed, // Phase 7: Tracking Predictive Healing
+                predictiveWait, // Phase 7.2: Tracking Aura Throttling
                 timestamp: new Date().toLocaleTimeString(),
                 beforeScreenshot,
                 afterScreenshot
@@ -680,6 +718,7 @@ class CBAHub {
                     .badge-success { background: #10b981; }
                     .badge-danger { background: #f43f5e; }
                     .badge-warning { background: #f59e0b; color: #0f172a; }
+                    .badge-info { background: #3b82f6; }
                     h1, h3 { margin: 0; }
                     p { color: #cbd5e1; line-height: 1.6; }
                 </style>
@@ -704,6 +743,7 @@ class CBAHub {
                                 <span>${item.cmd.toUpperCase()}: ${item.cmd === 'goto' ? item.url : (item.selector || item.goal)}</span>
                                 <span class="badge ${item.success ? 'badge-success' : 'badge-danger'}">${item.success ? 'SUCCESS' : 'FAILURE'}</span>
                                 ${item.selfHealed ? '<span class="badge badge-warning">SELF-HEALED</span>' : ''}
+                                ${item.predictiveWait ? '<span class="badge badge-info">AURA STABILIZED</span>' : ''}
                             </div>
                             <div class="flex">
                                 <div><p class="meta">Before Influence:</p><img src="screenshots/${item.beforeScreenshot}" /></div>

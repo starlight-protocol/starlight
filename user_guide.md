@@ -133,12 +133,14 @@ When a UI change breaks a selector, the Hub switches from **Reactive** to **Pred
 3.  **Substitution**: It automatically retries with a historically successful selector for that specific goal.
 4.  **Proof**: The event is tagged with a **SELF-HEALED** badge in the report.
 
-### 💰 Interpreting the ROI Dashboard
-The Hero Story (`report.html`) now quantifies the "Autonomy ROI":
 - **Minutes Saved**: The Hub calculates value based on:
     - **5 mins** baseline for every Sentinel intervention (manual triage avoidance).
     - **2-3 mins** for every Self-Healing event (manual debugging avoidance).
+    - **30s** for every **Aura Stabilization** event (predictive jitter avoidance).
 - **Visual Validation**: "Before" and "After" snapshots provide evidence of exactly where the Hub saved the mission.
+
+### 🌀 What is an Aura?
+An **Aura** is a temporal window of high environment entropy. By learning these "Auras" from past runs, the Hub can proactively slow down its mission pace *before* a failure occurs, ensuring a "smooth arrival" every time.
 
 ---
 

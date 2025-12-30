@@ -108,7 +108,16 @@ When `executeCommand` encounters a `Playwright` exception, it triggers the heali
 ROI is no longer subjective. The Hub uses a **Remediation value model**:
 - **Sentinel Remediation**: $V = 5min + T_{duration}$ (Baseline triage time saved).
 - **Predictive Healing**: $V = 2-3min$ (Avoided manual debugging and selector correction).
+- **Aura Stabilization**: $V = 30s$ (Avoided flake-induced retries).
 All metrics are summed into `totalSavedTime` and serialized to the HERO report.
+
+### Temporal Aura Mapping (Phase 7.2)
+Entropy events are quantized into 500ms buckets relative to the mission start (first intent).
+```javascript
+const bucket = Math.floor((event.timestamp - traceStart) / 500);
+historicalAuras.add(bucket);
+```
+During live execution, the Hub checks the current mission clock against these buckets to decide if it should proactively throttle its pace.
 
 ---
 

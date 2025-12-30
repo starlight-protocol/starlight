@@ -70,12 +70,14 @@ CBA is now evolving into a **Self-Learning Ecosystem**.
 ### 🧠 Predictive Memory (Self-Healing)
 The Hub now learns from every mission. By indexing `mission_trace.json`, it builds a mapping of high-level goals to successful selectors.
 - **Auto-Recovery**: If a selector fails, the Hub cross-references its memory to find a historical substitute.
+- **Aura-Based Throttling**: The Hub learns "Environmental Auras" (temporal jitter clusters) and proactive slows down mission pacing to maintain stability.
 - **Semantic Evolution**: The more missions you run, the smarter the Hub becomes.
 
 ### 📈 ROI Dashboard 2.0
 The `report.html` now quantifies the business value of autonomy:
 - **Triage Savings**: Automatically calculates minutes saved per obstacle cleared.
 - **Healing Credits**: Tracks mission-saving "Self-Healing" events in real-time.
+- **Predictive ROI**: Quantifies value of proactive "Aura Stabilization" events.
 - **Visual Proof**: State-aware screenshots provide undeniable evidence of mission success.
 
 ## 🚀 Getting Started
