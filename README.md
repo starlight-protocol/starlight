@@ -136,6 +136,29 @@ The `report.html` quantifies business value:
 
 ---
 
+## 🎮 GUI Launcher (Mission Control)
+
+A visual control panel for starting Hub, Sentinels, and running missions:
+
+```bash
+# Start the launcher
+node launcher/server.js
+
+# Open in browser
+http://localhost:3000
+```
+
+**Features:**
+- 🟢 Status indicators for Hub, PulseSentinel, JanitorSentinel
+- ▶️ Start All / Stop All buttons
+- 🚀 Mission dropdown with Launch button
+- 📋 Live logs console with real-time output
+- 📊 Quick link to view report
+
+![Starlight Mission Control](launcher_screenshot.png)
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites

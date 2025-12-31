@@ -1,0 +1,266 @@
+/* Starlight Mission Control - Dark Theme */
+
+:root {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-card: #1e293b;
+    --border: #334155;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent-blue: #3b82f6;
+    --accent-green: #10b981;
+    --accent-red: #f43f5e;
+    --accent-yellow: #f59e0b;
+    --accent-purple: #8b5cf6;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Header */
+.hero-header {
+    text-align: center;
+    padding: 2rem;
+    background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary));
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    margin-bottom: 2rem;
+}
+
+.hero-header h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.hero-header p {
+    color: var(--text-secondary);
+}
+
+/* Status Grid */
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.status-card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    transition: all 0.3s ease;
+}
+
+.status-card:hover {
+    border-color: var(--accent-blue);
+    transform: translateY(-2px);
+}
+
+.status-card.running {
+    border-color: var(--accent-green);
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+}
+
+.status-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.status-icon {
+    font-size: 1.25rem;
+}
+
+.status-header h3 {
+    font-size: 1.1rem;
+}
+
+.status-desc {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 1rem;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-start {
+    background: var(--accent-green);
+    color: white;
+    width: 100%;
+}
+
+.btn-start:hover {
+    background: #0d9668;
+}
+
+.btn-stop {
+    background: var(--accent-red);
+    color: white;
+    width: 100%;
+}
+
+.btn-stop:hover {
+    background: #dc2626;
+}
+
+.btn-launch {
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    color: white;
+    padding: 0.8rem 2rem;
+    font-size: 1rem;
+}
+
+.btn-launch:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+}
+
+.btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--border);
+}
+
+/* Mission Control */
+.mission-control {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    margin-bottom: 2rem;
+}
+
+.mission-control h2 {
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
+}
+
+.mission-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.mission-row select {
+    flex: 1;
+    padding: 0.8rem 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.quick-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+/* Log Console */
+.log-console {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    margin-bottom: 2rem;
+}
+
+.log-console h2 {
+    margin-bottom: 1rem;
+    font-size: 1.25rem;
+}
+
+.log-output {
+    background: #0a0f1a;
+    border-radius: 8px;
+    padding: 1rem;
+    height: 300px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.85rem;
+}
+
+.log-entry {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+}
+
+.log-hub { color: var(--accent-blue); }
+.log-pulse { color: var(--accent-green); }
+.log-janitor { color: var(--accent-yellow); }
+.log-intent { color: var(--accent-purple); }
+.log-info { color: var(--text-secondary); }
+.log-error { color: var(--accent-red); }
+.log-success { color: var(--accent-green); }
+
+/* Footer */
+.footer {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.footer a {
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+.footer a:hover {
+    text-decoration: underline;
+}
+
+/* Scrollbar */
+.log-output::-webkit-scrollbar {
+    width: 8px;
+}
+
+.log-output::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+    border-radius: 4px;
+}
+
+.log-output::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+.log-output::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+}

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛰️ Starlight Mission Control</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="hero-header">
+            <h1>🛰️ Starlight Mission Control</h1>
+            <p>CBA v2.8 — Constellation-Based Automation</p>
+        </header>
+
+        <section class="status-grid">
+            <div class="status-card" id="hub-card">
+                <div class="status-header">
+                    <span class="status-icon" id="hub-status">⚫</span>
+                    <h3>CBA Hub</h3>
+                </div>
+                <p class="status-desc">Orchestrator & Browser Control</p>
+                <button class="btn btn-start" id="hub-btn" onclick="toggleProcess('hub')">Start</button>
+            </div>
+
+            <div class="status-card" id="pulse-card">
+                <div class="status-header">
+                    <span class="status-icon" id="pulse-status">⚫</span>
+                    <h3>PulseSentinel</h3>
+                </div>
+                <p class="status-desc">Temporal Stability Monitor</p>
+                <button class="btn btn-start" id="pulse-btn" onclick="toggleProcess('pulse')">Start</button>
+            </div>
+
+            <div class="status-card" id="janitor-card">
+                <div class="status-header">
+                    <span class="status-icon" id="janitor-status">⚫</span>
+                    <h3>JanitorSentinel</h3>
+                </div>
+                <p class="status-desc">Obstacle Clearing Agent</p>
+                <button class="btn btn-start" id="janitor-btn" onclick="toggleProcess('janitor')">Start</button>
+            </div>
+        </section>
+
+        <section class="mission-control">
+            <h2>🎯 Mission Control</h2>
+            <div class="mission-row">
+                <select id="mission-select">
+                    <option value="intent_portfolio.js">Portfolio Demo (dhirajdas.dev)</option>
+                    <option value="intent_shadow.js">Shadow DOM Test</option>
+                    <option value="intent_learning.js">Learning Demo</option>
+                    <option value="intent.js">Default Intent</option>
+                </select>
+                <button class="btn btn-launch" id="launch-btn" onclick="launchMission()">🚀 Launch Mission</button>
+            </div>
+
+            <div class="quick-actions">
+                <button class="btn btn-secondary" onclick="startAll()">▶️ Start All</button>
+                <button class="btn btn-secondary" onclick="stopAll()">⏹️ Stop All</button>
+                <button class="btn btn-secondary" onclick="openReport()">📊 View Report</button>
+                <button class="btn btn-secondary" onclick="clearLogs()">🗑️ Clear Logs</button>
+            </div>
+        </section>
+
+        <section class="log-console">
+            <h2>📋 Live Logs</h2>
+            <div class="log-output" id="log-output">
+                <div class="log-entry log-info">[System] Starlight Mission Control ready.</div>
+                <div class="log-entry log-info">[System] Connect to launcher server to enable process control.</div>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>Starlight Protocol v2.8 — Built by <a href="https://www.dhirajdas.dev" target="_blank">Dhiraj Das</a></p>
+        </footer>
+    </div>
+
+    <script src="client.js"></script>
+</body>
+
+</html>
