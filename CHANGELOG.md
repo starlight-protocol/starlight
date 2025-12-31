@@ -7,7 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.7.0] - 2024-12-30
+## [2.8.0] - 2024-12-31
+
+### 🛡️ Phase 9: Sovereign Security & Compliance (Shadow DOM)
+
+#### Added
+- **Shadow DOM Penetration**: Deep-piercing selectors for encapsulated web components
+  - Hub `resolveSemanticIntent` now recursively traverses shadow roots
+  - Hub `broadcastPreCheck` detects obstacles inside shadow boundaries
+  - `executeSentinelAction` clears obstacles across shadow DOM
+- **`config.json` → `shadowDom`**: New configuration section
+  - `enabled`: Toggle shadow DOM traversal (default: true)
+  - `maxDepth`: Maximum shadow root traversal depth (default: 5)
+- **`test/shadow_test.html`**: Test page with custom web component
+- **`test/intent_shadow.js`**: Intent script for shadow DOM missions
+
+#### Changed
+- **JanitorSentinel**: Added shadow-piercing patterns (`>>> .modal`, `>>> .popup`)
+- **Sovereign Remediation**: Now traverses shadow roots when clearing obstacles
+
+---
 
 ### 🛠️ Phase 8: Codebase Hardening & Quality Fixes
 

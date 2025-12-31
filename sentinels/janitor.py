@@ -17,7 +17,12 @@ from sdk.starlight_sdk import SentinelBase
 class JanitorSentinel(SentinelBase):
     def __init__(self):
         super().__init__(layer_name="JanitorSentinel", priority=5)
-        self.blocking_patterns = [".modal", ".popup", "#overlay", ".obstacle", "#stabilize-btn"]
+        # Phase 9: Added shadow-piercing patterns (>>> combinator)
+        self.blocking_patterns = [
+            ".modal", ".popup", "#overlay", ".obstacle", "#stabilize-btn",
+            ">>> .modal", ">>> .popup", ">>> #overlay",  # Shadow DOM patterns
+            ".shadow-overlay", ".shadow-close-btn"  # Common shadow element names
+        ]
         self.selectors = self.blocking_patterns 
         self.is_hijacking = False
         self.tried_selectors = []  # Track ALL selectors tried during exploration

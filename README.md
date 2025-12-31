@@ -1,7 +1,7 @@
 # 🛰️ Constellation-Based Automation (CBA)
-## Starlight Protocol v2.7 — The Predictive Intelligence Era
+## Starlight Protocol v2.8 — The Sovereign Security Era
 
-[![Version](https://img.shields.io/badge/version-2.7.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.8.0-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue.svg)](https://python.org)
@@ -26,21 +26,27 @@ CBA uses a **Decentralized Sidecar Architecture** communicating over a JSON-RPC 
 | **Janitor Sentinel** | Heuristic background process that clears modals and overlays. |
 | **Pulse Sentinel** | Monitors network/DOM jitter for **Wait-Less** temporal stability. |
 | **Data Sentinel** | Passively extracts metadata and injects it into the shared context. |
+| **PII Sentinel** | Detects and alerts on sensitive data exposure. |
 
 ---
 
-## ✨ What's New in v2.7
+## ✨ What's New in v2.8
 
-### 🛠️ Phase 8: Codebase Hardening
+### 🛡️ Phase 9: Sovereign Security & Compliance
 
 | Feature | Description |
 |---------|-------------|
-| **Centralized Config** | All settings in `config.json` |
-| **Screenshot Cleanup** | Auto-removes files older than 24h |
-| **Trace Rotation** | Limits mission trace to 500 events |
-| **Graceful Shutdown** | Ctrl+C saves sentinel memory |
-| **SDK Improvements** | Atomic writes, proper exceptions |
-| **PulseSentinel Migration** | Now uses SentinelBase SDK |
+| **Shadow DOM Penetration** | Deep-piercing `>>>` selectors for web components |
+| **PII Sentinel** | Privacy-first sensitive data detection |
+| **Traffic Sovereign** | Network blocking & chaos engineering |
+| **Shadow-Aware Janitor** | Clears obstacles inside shadow roots |
+
+### 🔮 Shadow DOM Support
+
+```javascript
+// CBA automatically pierces shadow boundaries
+{ goal: 'ESCAPE SHADOW' }  // Finds button inside <shadow-modal>
+```
 
 See [CHANGELOG.md](CHANGELOG.md) for full history.
 
@@ -147,7 +153,11 @@ All settings are in `config.json`:
     "hub": {
         "port": 8080,
         "syncBudget": 30000,
-        "missionTimeout": 180000
+        "missionTimeout": 180000,
+        "shadowDom": {
+            "enabled": true,
+            "maxDepth": 5
+        }
     },
     "sentinel": {
         "settlementWindow": 1.0,
@@ -169,7 +179,7 @@ See [technical_guide.md](technical_guide.md) for full reference.
 | Document | Description |
 |----------|-------------|
 | [user_guide.md](user_guide.md) | Getting started, sentinel overview |
-| [technical_guide.md](technical_guide.md) | Protocol spec, SDK reference |
+| [technical_guide.md](technical_guide.md) | Protocol spec, SDK reference, Shadow DOM |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [STARLIGHT_STANDARD.md](STARLIGHT_STANDARD.md) | Formal protocol specification |
 | [roadmap.md](roadmap.md) | Future development plans |
@@ -193,7 +203,8 @@ Deploys a managed Hub and sentinel mesh for ephemeral CI/CD execution.
 | Phase 1-6 | ✅ Complete |
 | Phase 7 (Galaxy Mesh) | ✅ Complete |
 | Phase 8 (Quality) | ✅ Complete |
-| Phase 9 (Security) | 🔜 Coming Soon |
+| Phase 9 (Security) | ✅ Complete |
+| Phase 10 (Observability) | 🔜 Coming Soon |
 
 ---
 

@@ -209,61 +209,12 @@ class CBAHub {
     }
     async resolveSemanticIntent(goal) {
         // v2.1 Semantic Resolver: Scans for text matches or ARIA labels
-        // Phase 9: Added Shadow DOM traversal support
-        const shadowEnabled = this.config.hub?.shadowDom?.enabled !== false;
-        const maxDepth = this.config.hub?.shadowDom?.maxDepth || 5;
-
-        const target = await this.page.evaluate(({ goalText, shadowEnabled, maxDepth }) => {
+        const target = await this.page.evaluate((goalText) => {
+            const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"]'));
             const normalizedGoal = goalText.toLowerCase();
 
-            // Helper: Recursively collect elements from shadow roots
-            function collectElements(root, selector, depth = 0) {
-                if (depth > maxDepth) return [];
-                let elements = Array.from(root.querySelectorAll(selector));
-
-                if (shadowEnabled) {
-                    // Find all elements that might have shadow roots
-                    const allElements = root.querySelectorAll('*');
-                    for (const el of allElements) {
-                        if (el.shadowRoot) {
-                            elements = elements.concat(collectElements(el.shadowRoot, selector, depth + 1));
-                        }
-                    }
-                }
-                return elements;
-            }
-
-            // Helper: Generate a selector that pierces shadow DOM
-            function generateShadowSelector(element) {
-                const path = [];
-                let current = element;
-
-                while (current && current !== document.body) {
-                    if (current.id) {
-                        path.unshift(`#${current.id}`);
-                        break;
-                    } else if (current.className && typeof current.className === 'string') {
-                        path.unshift(`.${current.className.split(' ').filter(c => c).join('.')}`);
-                    } else {
-                        path.unshift(current.tagName?.toLowerCase() || '*');
-                    }
-
-                    // Check if we're crossing a shadow boundary
-                    if (current.getRootNode() instanceof ShadowRoot) {
-                        const shadowHost = current.getRootNode().host;
-                        path.unshift('>>>'); // Playwright shadow-piercing combinator
-                        current = shadowHost;
-                    } else {
-                        current = current.parentElement;
-                    }
-                }
-                return path.join(' ');
-            }
-
-            const buttons = collectElements(document, 'button, a, input[type="button"]');
-
-            // 1. Exact text match
-            let match = buttons.find(b => (b.innerText || b.textContent || '').toLowerCase().includes(normalizedGoal));
+            // 1. Exact Match
+            let match = buttons.find(b => b.innerText.toLowerCase().includes(normalizedGoal));
 
             // 2. Fuzzy ARIA match
             if (!match) {
@@ -274,37 +225,20 @@ class CBAHub {
             }
 
             if (match) {
-                // Check if element is inside shadow DOM
-                const isInShadow = match.getRootNode() instanceof ShadowRoot;
-
-                if (isInShadow && shadowEnabled) {
-                    console.log('[CBA Debug] Element found in Shadow DOM, generating pierce selector');
-                    return { selector: generateShadowSelector(match), inShadow: true };
-                }
-
-                // Generate standard CSS selector
-                if (match.id) return { selector: `#${match.id}`, inShadow: false };
-                if (match.className && typeof match.className === 'string') {
-                    return { selector: `.${match.className.split(' ').filter(c => c).join('.')}`, inShadow: false };
-                }
-                return { selector: match.tagName.toLowerCase(), inShadow: false };
+                // Generate a unique CSS selector for the Hub to use
+                if (match.id) return `#${match.id}`;
+                if (match.className) return `.${match.className.split(' ').join('.')}`;
+                return match.tagName.toLowerCase();
             }
             return null;
-        }, { goalText: goal, shadowEnabled, maxDepth });
+        }, goal);
 
-        if (target) {
-            if (target.inShadow) {
-                console.log(`[CBA Hub] Phase 9: Shadow DOM element resolved for "${goal}" -> ${target.selector}`);
-            }
-            return { selector: target.selector, selfHealed: false, shadowPierced: target.inShadow };
-        }
-
-        if (this.historicalMemory.has(goal)) {
+        if (!target && this.historicalMemory.has(goal)) {
             console.log(`[CBA Hub] Phase 7: Semantic resolution failed. Using Predictive Memory for "${goal}" -> ${this.historicalMemory.get(goal)}`);
             return { selector: this.historicalMemory.get(goal), selfHealed: true };
         }
 
-        return null;
+        return target ? { selector: target, selfHealed: false } : null;
     }
 
     loadHistoricalMemory() {
@@ -682,62 +616,10 @@ class CBAHub {
             }
         }
 
-        // Phase 9: Enhanced obstacle detection with Shadow DOM support
-        const shadowEnabled = this.config.hub?.shadowDom?.enabled !== false;
-        const maxDepth = this.config.hub?.shadowDom?.maxDepth || 5;
-
-        const blockingElements = await this.page.evaluate(({ selectors, shadowEnabled, maxDepth }) => {
+        const blockingElements = await this.page.evaluate((selectors) => {
             const results = [];
-
-            // Helper: Recursively search elements including shadow roots
-            function findElements(root, selector, depth = 0) {
-                if (depth > maxDepth) return [];
-                let elements = [];
-                try {
-                    elements = Array.from(root.querySelectorAll(selector));
-                } catch (e) { /* invalid selector for this context */ }
-
-                if (shadowEnabled) {
-                    const allElements = root.querySelectorAll('*');
-                    for (const el of allElements) {
-                        if (el.shadowRoot) {
-                            elements = elements.concat(findElements(el.shadowRoot, selector, depth + 1));
-                        }
-                    }
-                }
-                return elements;
-            }
-
-            // Helper: Generate shadow-piercing selector
-            function getShadowSelector(element) {
-                const isInShadow = element.getRootNode() instanceof ShadowRoot;
-                if (!isInShadow) return null;
-
-                const path = [];
-                let current = element;
-                while (current && current !== document.body) {
-                    if (current.id) {
-                        path.unshift(`#${current.id}`);
-                        break;
-                    } else if (current.className && typeof current.className === 'string') {
-                        path.unshift(`.${current.className.split(' ').filter(c => c).join('.')}`);
-                    } else {
-                        path.unshift(current.tagName?.toLowerCase() || '*');
-                    }
-
-                    if (current.getRootNode() instanceof ShadowRoot) {
-                        const host = current.getRootNode().host;
-                        path.unshift('>>>');
-                        current = host;
-                    } else {
-                        current = current.parentElement;
-                    }
-                }
-                return path.join(' ');
-            }
-
             selectors.forEach(s => {
-                const elements = findElements(document, s);
+                const elements = document.querySelectorAll(s);
                 elements.forEach(el => {
                     const style = window.getComputedStyle(el);
                     const rect = el.getBoundingClientRect();
@@ -747,20 +629,18 @@ class CBAHub {
                         rect.width > 0 && rect.height > 0;
 
                     if (isVisible) {
-                        const shadowSelector = getShadowSelector(el);
                         results.push({
-                            selector: shadowSelector || s,
+                            selector: s,
                             id: el.id,
-                            className: typeof el.className === 'string' ? el.className : '',
+                            className: el.className,
                             display: style.display,
-                            rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
-                            inShadow: !!shadowSelector
+                            rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`
                         });
                     }
                 });
             });
             return results;
-        }, { selectors: allSelectors, shadowEnabled, maxDepth });
+        }, allSelectors);
 
         // Phase 9: Extract page text for PII detection
         let pageText = '';
@@ -870,28 +750,14 @@ class CBAHub {
         }
 
         // ABSOLUTE SOVEREIGN REMEDIATION: Definitively clear the obstacle via JS
-        // Phase 9: Enhanced to traverse Shadow DOM
-        if (msg.selector.includes('modal') || msg.selector.includes('overlay') || msg.selector.includes('close') || msg.selector.includes('shadow')) {
+        if (msg.selector.includes('modal') || msg.selector.includes('overlay') || msg.selector.includes('close')) {
             console.log(`[CBA Hub] SOVEREIGN REMEDIATION: Definitively hiding elements matching ${msg.selector}...`);
-            await this.page.evaluate(() => {
-                // Helper: recursively find and hide elements in shadow roots
-                function hideObstacles(root) {
-                    const selectors = '.modal, .overlay, .popup, .shadow-overlay';
-                    const elements = root.querySelectorAll(selectors);
-                    elements.forEach(el => {
-                        const style = window.getComputedStyle(el);
-                        if (style.display !== 'none') el.style.display = 'none';
-                    });
-
-                    // Traverse shadow roots
-                    const allElements = root.querySelectorAll('*');
-                    for (const el of allElements) {
-                        if (el.shadowRoot) {
-                            hideObstacles(el.shadowRoot);
-                        }
-                    }
-                }
-                hideObstacles(document);
+            await this.page.evaluate((sel) => {
+                const elements = document.querySelectorAll('.modal, .overlay, .popup');
+                elements.forEach(el => {
+                    const style = window.getComputedStyle(el);
+                    if (style.display !== 'none') el.style.display = 'none';
+                });
             });
         }
     }

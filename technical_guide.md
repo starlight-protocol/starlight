@@ -103,7 +103,7 @@ graph TD
 
 ## 4. Configuration Reference
 
-CBA v2.7 uses `config.json` for all settings:
+CBA v2.8 uses `config.json` for all settings:
 
 ```json
 {
@@ -115,7 +115,11 @@ CBA v2.7 uses `config.json` for all settings:
         "lockTTL": 5000,
         "entropyThrottle": 100,
         "screenshotMaxAge": 86400000,
-        "traceMaxEvents": 500
+        "traceMaxEvents": 500,
+        "shadowDom": {
+            "enabled": true,
+            "maxDepth": 5
+        }
     },
     "aura": {
         "predictiveWaitMs": 1500,
@@ -146,6 +150,58 @@ CBA v2.7 uses `config.json` for all settings:
 | `entropyThrottle` | int | 100 | Min interval between entropy broadcasts (ms) |
 | `screenshotMaxAge` | int | 86400000 | Auto-delete screenshots older than (ms) |
 | `traceMaxEvents` | int | 500 | Max events in mission trace |
+| `shadowDom.enabled` | bool | true | Enable shadow DOM traversal |
+| `shadowDom.maxDepth` | int | 5 | Max shadow root nesting depth |
+
+---
+
+## 4.5 Phase 9: Shadow DOM Penetration
+
+CBA v2.8 can pierce Shadow DOM boundaries to detect and interact with encapsulated web components.
+
+### Shadow-Piercing Selectors
+
+Use the `>>>` combinator (Playwright's shadow-piercing syntax):
+
+```javascript
+// Standard selector (won't reach shadow DOM)
+await page.click('.modal');
+
+// Shadow-piercing selector (reaches into shadow roots)
+await page.click('shadow-modal >>> .shadow-close-btn');
+```
+
+### Hub Behavior
+
+The Hub's `resolveSemanticIntent` and `broadcastPreCheck` automatically:
+1. Traverse up to `shadowDom.maxDepth` levels of shadow roots
+2. Generate `>>>` selectors for elements inside shadow boundaries
+3. Report `inShadow: true` in blocking element metadata
+
+### JanitorSentinel Patterns
+
+The Janitor registers shadow-aware patterns:
+```python
+self.blocking_patterns = [
+    ".modal", ".popup", "#overlay",
+    ">>> .modal", ">>> .popup",  # Shadow-piercing
+]
+```
+
+### Sovereign Remediation
+
+When clearing obstacles matching `shadow`, the Hub recursively hides elements across all shadow roots:
+```javascript
+function hideObstacles(root) {
+    root.querySelectorAll('.modal, .shadow-overlay').forEach(el => {
+        el.style.display = 'none';
+    });
+    root.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot) hideObstacles(el.shadowRoot);
+    });
+}
+hideObstacles(document);
+```
 
 ---
 

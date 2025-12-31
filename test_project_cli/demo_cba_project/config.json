@@ -7,11 +7,7 @@
         "lockTTL": 5000,
         "entropyThrottle": 100,
         "screenshotMaxAge": 86400000,
-        "traceMaxEvents": 500,
-        "shadowDom": {
-            "enabled": true,
-            "maxDepth": 5
-        }
+        "traceMaxEvents": 500
     },
     "aura": {
         "predictiveWaitMs": 1500,
