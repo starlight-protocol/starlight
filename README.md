@@ -98,13 +98,32 @@ if __name__ == "__main__":
 
 ## 🌌 Phase 7: The Galaxy Mesh
 
-CBA is a **Self-Learning Ecosystem**:
+CBA is a **Self-Learning Ecosystem** that gets smarter with every mission:
 
-### 🧠 Predictive Memory
-The Hub learns from every mission:
-- **Self-Healing**: Failed selectors auto-substitute from historical memory
-- **Aura Throttling**: Proactive pacing during historically unstable windows
-- **Sentinel Learning**: Agents remember successful remediation strategies
+### 🧠 Self-Healing Selectors
+When a selector fails, CBA automatically tries alternatives from memory:
+
+```
+Mission 1: Goal "Login" → #login-btn → SUCCESS ✓
+           (Learned and saved to memory)
+           
+Mission 2: Goal "Login" → #login-btn (changed to .new-login!)
+           FAIL → Hub checks historical memory
+           Tries #login-btn from memory → SUCCESS ✓
+           Report shows "SELF-HEALED" badge
+```
+
+### ⏱️ Animation Tolerance (v2.8)
+For animated sites, CBA force-proceeds after 3 stability checks:
+- **PulseSentinel** detects DOM mutations from animations
+- After 3 vetoes, Hub uses "Animation Tolerance" to continue
+- No more infinite blocking from CSS animations!
+
+### 🔮 Aura Throttling
+CBA learns when your site is historically unstable:
+- Tracks 500ms "entropy buckets" from past runs
+- Proactively slows down during known jitter windows
+- Prevents flakiness before it happens
 
 ### 📈 ROI Dashboard
 The `report.html` quantifies business value:
@@ -112,6 +131,8 @@ The `report.html` quantifies business value:
 - **Self-Healing Credits**: Automated selector fixes
 - **Aura Stabilization**: Predictive jitter avoidance
 - **Visual Proof**: Before/after screenshots
+
+![Starlight Report](report_screenshot.png)
 
 ---
 

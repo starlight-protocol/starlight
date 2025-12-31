@@ -18,9 +18,10 @@
         "bucketSizeMs": 500
     },
     "sentinel": {
-        "settlementWindow": 1.0,
+        "settlementWindow": 0.5,
         "reconnectDelay": 3,
-        "heartbeatInterval": 2
+        "heartbeatInterval": 2,
+        "maxVetoCount": 3
     },
     "vision": {
         "model": "moondream",

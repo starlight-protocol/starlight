@@ -282,10 +282,21 @@ class CBAHub {
                     return { selector: generateShadowSelector(match), inShadow: true };
                 }
 
-                // Generate standard CSS selector
+                // Generate a unique selector - prefer text-based for links/buttons
+                const textContent = (match.innerText || match.textContent || '').trim();
+                const tagName = match.tagName.toLowerCase();
+
+                // For links and buttons with text, use text-based selector for precision
+                if ((tagName === 'a' || tagName === 'button') && textContent && textContent.length < 50) {
+                    return { selector: `${tagName}:has-text("${textContent}")`, inShadow: false, textMatch: true };
+                }
+
+                // Standard CSS selector fallback
                 if (match.id) return { selector: `#${match.id}`, inShadow: false };
                 if (match.className && typeof match.className === 'string') {
-                    return { selector: `.${match.className.split(' ').filter(c => c).join('.')}`, inShadow: false };
+                    // Generate a more specific selector with nth-child if possible
+                    const classList = match.className.split(' ').filter(c => c);
+                    return { selector: `.${classList.join('.')}`, inShadow: false };
                 }
                 return { selector: match.tagName.toLowerCase(), inShadow: false };
             }
@@ -614,13 +625,22 @@ class CBAHub {
 
             const clear = await this.broadcastPreCheck(msg);
             if (!clear) {
-                console.log(`[CBA Hub] Pre-check failed or timed out for ${msg.cmd}. Retrying in 2s...`);
-                this.commandQueue.unshift(msg);
-                setTimeout(() => {
-                    this.isProcessing = false;
-                    this.processQueue();
-                }, 2000);
-                return;
+                // Track pre-check retries for animation tolerance
+                msg._preCheckRetries = (msg._preCheckRetries || 0) + 1;
+                const maxRetries = this.config.hub?.maxPreCheckRetries || 3;
+
+                if (msg._preCheckRetries >= maxRetries) {
+                    console.log(`[CBA Hub] ANIMATION TOLERANCE: Max pre-check retries (${maxRetries}) reached. Force proceeding with ${msg.cmd}...`);
+                    // Continue execution despite veto (animation tolerance)
+                } else {
+                    console.log(`[CBA Hub] Pre-check failed (${msg._preCheckRetries}/${maxRetries}) for ${msg.cmd}. Retrying in 1s...`);
+                    this.commandQueue.unshift(msg);
+                    setTimeout(() => {
+                        this.isProcessing = false;
+                        this.processQueue();
+                    }, 1000);
+                    return;
+                }
             }
 
             // v2.1: Robust Screenshot Timing (Wait for settlement)
@@ -637,7 +657,8 @@ class CBAHub {
                 type: 'COMMAND',
                 id: msg.id,
                 cmd: msg.cmd,
-                selector: msg.selector || msg.goal,
+                goal: msg.goal, // Phase 9: Store semantic goal for descriptive reports
+                selector: msg.selector,
                 url: msg.url, // Phase 7: Capture URL for GOTO reporting
                 success,
                 selfHealed: selfHealed || msg.selfHealed, // Phase 7: Tracking Predictive Healing
@@ -972,7 +993,7 @@ class CBAHub {
                             <img src="screenshots/${item.screenshot}" alt="Obstacle Detected" />
                         ` : `
                             <div class="card-title">
-                                <span>${item.cmd.toUpperCase()}: ${item.cmd === 'goto' ? item.url : (item.selector || item.goal)}</span>
+                                <span>${item.cmd.toUpperCase()}: ${item.goal ? `"${item.goal}" → ` : ''}${item.cmd === 'goto' ? item.url : (item.selector || 'unknown')}</span>
                                 <span class="badge ${item.success ? 'badge-success' : 'badge-danger'}">${item.success ? 'SUCCESS' : 'FAILURE'}</span>
                                 ${item.selfHealed ? '<span class="badge badge-warning">SELF-HEALED</span>' : ''}
                                 ${item.predictiveWait ? '<span class="badge badge-info">AURA STABILIZED</span>' : ''}
