@@ -8,6 +8,7 @@ const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const TelemetryEngine = require('../src/telemetry');
 
 const PORT = 3000;
 const WS_PORT = 3001;
@@ -27,6 +28,8 @@ const processStatus = {
     mission: 'stopped'
 };
 
+const telemetry = new TelemetryEngine(path.join(__dirname, '../telemetry.json'));
+
 // WebSocket server for real-time logs
 const wss = new WebSocket.Server({ port: WS_PORT });
 const clients = new Set();
@@ -35,8 +38,9 @@ wss.on('connection', (ws) => {
     clients.add(ws);
     console.log('[Launcher] Client connected');
 
-    // Send current status
+    // Send current status and telemetry
     ws.send(JSON.stringify({ type: 'status', status: processStatus }));
+    ws.send(JSON.stringify({ type: 'telemetry', data: telemetry.getStats() }));
 
     ws.on('message', (data) => {
         try {
@@ -153,6 +157,12 @@ function startProcess(name) {
         processes[name] = null;
         processStatus[name] = 'stopped';
         broadcast({ type: 'status', status: processStatus });
+
+        // Phase 10: Refresh and broadcast telemetry if the Hub just finished
+        if (name === 'hub') {
+            telemetry.refresh();
+            broadcast({ type: 'telemetry', data: telemetry.getStats() });
+        }
     });
 }
 

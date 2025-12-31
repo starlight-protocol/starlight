@@ -3,6 +3,7 @@ const { WebSocketServer, WebSocket } = require('ws');
 const { nanoid } = require('nanoid');
 const fs = require('fs');
 const path = require('path');
+const TelemetryEngine = require('./telemetry');
 
 class CBAHub {
     constructor(port = 8080) {
@@ -38,6 +39,8 @@ class CBAHub {
 
         this.cleanupScreenshots();
         this.loadHistoricalMemory();
+        this.telemetry = new TelemetryEngine(path.join(process.cwd(), 'telemetry.json'));
+        this.recoveryTimes = []; // Track recovery times for MTTR
         this.init();
     }
 
@@ -509,6 +512,16 @@ class CBAHub {
         }
         await this.generateReport();
         await this.saveMissionTrace();
+
+        // Phase 10: Record Mission Telemetry
+        const missionSuccess = this.reportData.every(item => item.type !== 'COMMAND' || item.success);
+        this.telemetry.recordMission(
+            missionSuccess,
+            this.totalSavedTime,
+            this.reportData.filter(i => i.type === 'HIJACK').length,
+            this.recoveryTimes
+        );
+
         if (this.page) await this.page.close();
         if (this.browser) await this.browser.close();
         this.wss.close(() => {
@@ -584,6 +597,7 @@ class CBAHub {
             const start = this.hijackStarts.get(id);
             if (start) {
                 const durationMs = Date.now() - start;
+                this.recoveryTimes.push(durationMs); // Track for MTTR
                 const savedSeconds = 300 + Math.floor(durationMs / 1000); // 5 mins baseline + duration
                 this.totalSavedTime += savedSeconds;
                 console.log(`[CBA Hub] ROI Update: Sentinel cleared obstacle in ${durationMs}ms. Estimated ${savedSeconds}s manual effort saved.`);

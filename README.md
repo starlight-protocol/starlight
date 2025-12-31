@@ -132,7 +132,7 @@ The `report.html` quantifies business value:
 - **Aura Stabilization**: Predictive jitter avoidance
 - **Visual Proof**: Before/after screenshots
 
-![Starlight Report](assets/report_screenshot.png)
+![Starlight Report](assets/report_screencap.png)
 
 ---
 

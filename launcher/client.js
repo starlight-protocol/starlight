@@ -84,7 +84,18 @@ function handleMessage(msg) {
         case 'status':
             updateStatus(msg.status);
             break;
+        case 'telemetry':
+            updateVitals(msg.data);
+            break;
     }
+}
+
+function updateVitals(data) {
+    if (!data) return;
+    document.getElementById('success-rate').textContent = `${data.successRate}%`;
+    document.getElementById('saved-effort').innerHTML = `${data.totalSavedMins}<span class="unit">min</span>`;
+    document.getElementById('sovereign-mttr').innerHTML = `${Math.round(data.avgRecoveryTimeMs)}<span class="unit">ms</span>`;
+    document.getElementById('interventions-count').textContent = data.totalInterventions;
 }
 
 function updateStatus(status) {

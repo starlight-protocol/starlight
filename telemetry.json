@@ -1,0 +1,40 @@
+{
+  "totalMissions": 6,
+  "successfulMissions": 6,
+  "totalSavedSeconds": 1080,
+  "totalInterventions": 1,
+  "avgRecoveryTimeMs": 914,
+  "lastMissionTimestamp": "2025-12-31T15:04:58.438Z",
+  "missionHistory": [
+    {
+      "timestamp": "2025-12-31T14:34:22.136Z",
+      "success": true,
+      "savedSeconds": 30
+    },
+    {
+      "timestamp": "2025-12-31T14:39:53.900Z",
+      "success": true,
+      "savedSeconds": 240
+    },
+    {
+      "timestamp": "2025-12-31T14:42:39.733Z",
+      "success": true,
+      "savedSeconds": 210
+    },
+    {
+      "timestamp": "2025-12-31T14:52:07.225Z",
+      "success": true,
+      "savedSeconds": 120
+    },
+    {
+      "timestamp": "2025-12-31T15:01:08.577Z",
+      "success": true,
+      "savedSeconds": 150
+    },
+    {
+      "timestamp": "2025-12-31T15:04:58.438Z",
+      "success": true,
+      "savedSeconds": 330
+    }
+  ]
+}
