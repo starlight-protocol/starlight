@@ -37,6 +37,15 @@ class ActionRecorder {
         // Expose recording functions
         try {
             await page.exposeFunction('__cba_recordClick', (data) => {
+                if (data.action === 'checkpoint') {
+                    this.recordedSteps.push({
+                        action: 'checkpoint',
+                        goal: data.goal,
+                        timestamp: Date.now()
+                    });
+                    console.log(`[Recorder] Checkpoint: "${data.goal}"`);
+                    return;
+                }
                 this.recordedSteps.push({
                     action: 'click',
                     goal: data.goal,
@@ -68,56 +77,163 @@ class ActionRecorder {
             console.log('[Recorder] Fill function already exposed');
         }
 
+        try {
+            await page.exposeFunction('__cba_stopRecording', () => {
+                console.log('[Recorder] Stop requested via HUD');
+                this.stopRecording();
+            });
+        } catch (e) {
+            console.log('[Recorder] Stop function already exposed');
+        }
+
         // Inject recording script into current page and on every navigation
         const injectRecordingScript = async () => {
             if (!this.isRecording) return;
             try {
                 await page.evaluate(() => {
-                    if (window.__cba_recording_injected) return;
-                    window.__cba_recording_injected = true;
+                    const initRecorder = () => {
+                        if (window.__cba_recording_injected || !document.body) return;
+                        window.__cba_recording_injected = true;
 
-                    // Phase 16: Mutation Fingerprinting (Stability Sensing)
-                    let lastInteractionTime = 0;
-                    let lastMutationTime = 0;
-                    let mutationCount = 0;
-
-                    const observer = new MutationObserver(() => {
-                        lastMutationTime = Date.now();
-                        mutationCount++;
-                    });
-                    observer.observe(document, { childList: true, subtree: true, attributes: true });
-
-                    async function getStabilityHint() {
-                        const start = Date.now();
-                        const checkInterval = 100;
-                        const settleWindow = 500; // 500ms of silence = settled
-                        const maxWait = 2000;      // Max 2s of tracking
-
-                        return new Promise(resolve => {
-                            const check = setInterval(() => {
-                                const now = Date.now();
-                                const timeSinceLastMutation = now - lastMutationTime;
-                                const totalTime = now - start;
-
-                                if (timeSinceLastMutation >= settleWindow || totalTime >= maxWait) {
-                                    clearInterval(check);
-                                    const settleTime = lastInteractionTime > 0 ? (lastMutationTime - lastInteractionTime) : 0;
-                                    resolve({
-                                        settleTime: Math.max(0, settleTime),
-                                        mutationCount: mutationCount
-                                    });
+                        // Phase 16.5: No-Code Marker HUD
+                        let isTaggingMode = false;
+                        const hud = document.createElement('div');
+                        hud.id = 'starlight-hud';
+                        const shadow = hud.attachShadow({ mode: 'open' });
+                        shadow.innerHTML = `
+                            <style>
+                                :host {
+                                    position: fixed;
+                                    bottom: 20px;
+                                    right: 20px;
+                                    z-index: 1000000;
+                                    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                                    pointer-events: auto;
                                 }
-                            }, checkInterval);
+                                .badge {
+                                    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                                    color: white;
+                                    padding: 8px 16px;
+                                    border-radius: 20px;
+                                    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+                                    cursor: pointer;
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 8px;
+                                    font-weight: 600;
+                                    font-size: 14px;
+                                    transition: transform 0.2s;
+                                }
+                                .badge:hover { transform: scale(1.05); }
+                                .panel {
+                                    display: none;
+                                    background: #1e293b;
+                                    color: white;
+                                    padding: 12px;
+                                    border-radius: 12px;
+                                    margin-bottom: 10px;
+                                    width: 220px;
+                                    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+                                }
+                                .panel.visible { display: block; }
+                                .btn {
+                                    display: block;
+                                    width: 100%;
+                                    padding: 8px;
+                                    margin: 4px 0;
+                                    background: #334155;
+                                    border: none;
+                                    color: white;
+                                    border-radius: 6px;
+                                    cursor: pointer;
+                                    text-align: left;
+                                    font-size: 13px;
+                                }
+                                .btn:hover { background: #475569; }
+                                .btn-tag.active { background: #ef4444; }
+                            </style>
+                            <div class="panel" id="panel">
+                                <div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px;">STARLIGHT RECORDER</div>
+                                <button class="btn btn-tag" id="tag-btn">🏷️ Tag Next Click</button>
+                                <button class="btn" id="checkpoint-btn">🚩 Add Checkpoint</button>
+                                <button class="btn" id="stop-btn" style="color: #f87171;">⏹️ Stop Recording</button>
+                            </div>
+                            <div class="badge" id="badge">
+                                🛰️ Starlight
+                            </div>
+                        `;
+                        document.body.appendChild(hud);
+
+                        const badge = shadow.getElementById('badge');
+                        const panel = shadow.getElementById('panel');
+                        const tagBtn = shadow.getElementById('tag-btn');
+                        const checkpointBtn = shadow.getElementById('checkpoint-btn');
+                        const stopBtn = shadow.getElementById('stop-btn');
+
+                        badge.onclick = (e) => {
+                            e.stopPropagation();
+                            panel.classList.toggle('visible');
+                        };
+
+                        tagBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            isTaggingMode = !isTaggingMode;
+                            tagBtn.classList.toggle('active', isTaggingMode);
+                            tagBtn.innerText = isTaggingMode ? '🎯 Click an element...' : '🏷️ Tag Next Click';
+                        };
+
+                        checkpointBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            const name = prompt('Checkpoint Name:');
+                            if (name) {
+                                window.__cba_recordClick({ goal: `CHECKPOINT: ${name}`, selector: 'N/A', action: 'checkpoint' });
+                            }
+                        };
+
+                        stopBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            if (confirm('Stop recording?')) {
+                                if (typeof window.__cba_stopRecording === 'function') {
+                                    window.__cba_stopRecording();
+                                }
+                            }
+                        };
+
+                        // Phase 16: Mutation Fingerprinting (Stability Sensing)
+                        let lastInteractionTime = 0;
+                        let lastMutationTime = 0;
+                        let mutationCount = 0;
+
+                        const observer = new MutationObserver(() => {
+                            lastMutationTime = Date.now();
+                            mutationCount++;
                         });
-                    }
+                        observer.observe(document, { childList: true, subtree: true, attributes: true });
 
-                    // Click handler with improved goal extraction
-                    document.addEventListener('click', async (e) => {
-                        const el = e.target;
-                        lastInteractionTime = Date.now();
-                        mutationCount = 0; // Reset for this action
+                        async function getStabilityHint() {
+                            const start = Date.now();
+                            const checkInterval = 100;
+                            const settleWindow = 500;
+                            const maxWait = 2000;
 
-                        // ... extractGoal logic ...
+                            return new Promise(resolve => {
+                                const check = setInterval(() => {
+                                    const now = Date.now();
+                                    const timeSinceLastMutation = now - lastMutationTime;
+                                    const totalTime = now - start;
+
+                                    if (timeSinceLastMutation >= settleWindow || totalTime >= maxWait) {
+                                        clearInterval(check);
+                                        const settleTime = lastInteractionTime > 0 ? (lastMutationTime - lastInteractionTime) : 0;
+                                        resolve({
+                                            settleTime: Math.max(0, settleTime),
+                                            mutationCount: mutationCount
+                                        });
+                                    }
+                                }, checkInterval);
+                            });
+                        }
+
                         function extractGoal(element) {
                             const ariaLabel = element.getAttribute('aria-label');
                             if (ariaLabel) return ariaLabel;
@@ -137,52 +253,67 @@ class ActionRecorder {
                             return text.substring(0, 40);
                         }
 
-                        const goal = extractGoal(el);
-                        const selector = el.id ? `#${el.id}` :
-                            el.className && typeof el.className === 'string'
-                                ? `.${el.className.split(' ').filter(c => c).join('.')}`
-                                : el.tagName.toLowerCase();
+                        document.addEventListener('click', async (e) => {
+                            if (e.target.closest('#starlight-hud')) return;
 
-                        // Wait for stability hint
-                        const stability = await getStabilityHint();
-
-                        if (typeof window.__cba_recordClick === 'function') {
-                            window.__cba_recordClick({
-                                goal: goal,
-                                selector: selector,
-                                tagName: el.tagName.toLowerCase(),
-                                stability: stability
-                            });
-                        }
-                    }, true);
-
-                    // Input handler
-                    document.addEventListener('change', async (e) => {
-                        const el = e.target;
-                        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                            const el = e.target;
                             lastInteractionTime = Date.now();
                             mutationCount = 0;
 
-                            const goal = el.placeholder || el.getAttribute('aria-label') || el.name || el.id || el.type;
+                            let goal = extractGoal(el);
+                            if (isTaggingMode) {
+                                const customGoal = prompt('Enter semantic goal name:', goal);
+                                if (customGoal) goal = customGoal;
+                                isTaggingMode = false;
+                                tagBtn.classList.remove('active');
+                                tagBtn.innerText = '🏷️ Tag Next Click';
+                            }
+
                             const selector = el.id ? `#${el.id}` :
-                                el.name ? `[name="${el.name}"]` :
-                                    el.placeholder ? `[placeholder="${el.placeholder}"]` :
-                                        el.tagName.toLowerCase();
+                                el.className && typeof el.className === 'string'
+                                    ? `.${el.className.split(' ').filter(c => c).join('.')}`
+                                    : el.tagName.toLowerCase();
 
                             const stability = await getStabilityHint();
 
-                            if (typeof window.__cba_recordFill === 'function') {
-                                window.__cba_recordFill({
+                            if (typeof window.__cba_recordClick === 'function') {
+                                window.__cba_recordClick({
                                     goal: goal,
                                     selector: selector,
-                                    value: el.value,
                                     stability: stability
                                 });
                             }
-                        }
-                    }, true);
+                        }, true);
 
-                    console.log('[CBA Recorder] Event listeners injected with Stability Sensing');
+                        document.addEventListener('input', async (e) => {
+                            const el = e.target;
+                            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) {
+                                lastInteractionTime = Date.now();
+                                mutationCount = 0;
+
+                                const goal = extractGoal(el);
+                                const selector = el.id ? `#${el.id}` : el.tagName.toLowerCase();
+                                const stability = await getStabilityHint();
+
+                                if (typeof window.__cba_recordFill === 'function') {
+                                    window.__cba_recordFill({
+                                        goal: goal,
+                                        selector: selector,
+                                        value: el.value,
+                                        stability: stability
+                                    });
+                                }
+                            }
+                        }, true);
+
+                        console.log('[CBA Recorder] Injected with HUD and Stability Sensing');
+                    };
+
+                    if (document.body) {
+                        initRecorder();
+                    } else {
+                        document.addEventListener('DOMContentLoaded', initRecorder);
+                    }
                 });
             } catch (e) {
                 console.log('[Recorder] Could not inject script:', e.message);
@@ -319,9 +450,12 @@ class ActionRecorder {
                 .replace(/'/g, "\\'");     // Escape single quotes
         };
 
-        const stepsCode = steps.map(step => {
+        const stepsCode = steps.map((step, i) => {
             if (step.action === 'goto') {
-                return `    await runner.goto('${step.url}');`;
+                return `    console.log('[Mission] Step ${i + 1}: Navigating to ${step.url}...');\n    await runner.goto('${step.url}');\n`;
+            } else if (step.action === 'checkpoint') {
+                const goal = sanitizeGoal(step.goal);
+                return `    console.log('[Mission] Step ${i + 1}: Checkpoint - ${goal}');\n    // await runner.checkpoint('${goal}');\n`;
             } else if (step.action === 'click') {
                 const goal = sanitizeGoal(step.goal);
                 const hint = step.stabilityHint ? `, { stabilityHint: ${step.stabilityHint} }` : '';
