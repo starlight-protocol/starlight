@@ -93,10 +93,14 @@ class VisionSentinel(SentinelBase):
                     return None
         except httpx.TimeoutException:
             print(f"[{self.layer}] AI Analysis timed out after {self.timeout}s")
+            await self.update_context({"vision_status": "TIMEOUT", "reason": f"Analysis exceeded {self.timeout}s"})
         except httpx.ConnectError:
-            print(f"[{self.layer}] Cannot connect to Ollama at {self.ollama_url}")
+            print(f"[{self.layer}] ERROR: Cannot connect to Ollama at {self.ollama_url}")
+            print(f"[{self.layer}] HINT: Run 'ollama serve' to start the AI backend")
+            await self.update_context({"vision_status": "OFFLINE", "reason": "Ollama unavailable"})
         except Exception as e:
             print(f"[{self.layer}] AI Analysis failed: {type(e).__name__}: {e}")
+            await self.update_context({"vision_status": "ERROR", "reason": str(e)})
         
         return None
 

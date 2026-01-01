@@ -5,6 +5,17 @@ const fs = require('fs');
 const path = require('path');
 const TelemetryEngine = require('./telemetry');
 
+// Security: HTML escaping to prevent XSS
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 class CBAHub {
     constructor(port = 8080) {
         // Load configuration
@@ -398,8 +409,15 @@ class CBAHub {
 
     async takeDOMSnapshot() {
         if (!this.page || this.page.isClosed()) return null;
+        // Stability: Opt-in snapshots with size limit to prevent OOM
+        if (!this.config.hub?.enableSnapshots) return null;
         try {
-            return await this.page.content();
+            const html = await this.page.content();
+            const maxSize = this.config.hub?.snapshotMaxBytes || 100000; // 100KB default
+            if (html.length > maxSize) {
+                return html.substring(0, maxSize) + '\n<!-- [TRUNCATED] -->';
+            }
+            return html;
         } catch (e) { return null; }
     }
 
@@ -662,9 +680,11 @@ class CBAHub {
                 } else {
                     console.log(`[CBA Hub] Pre-check failed (${msg._preCheckRetries}/${maxRetries}) for ${msg.cmd}. Retrying in 1s...`);
                     this.commandQueue.unshift(msg);
+                    // Stability: Reset isProcessing before scheduling retry
+                    // (early exit before try/finally completes)
+                    this.isProcessing = false;
                     setTimeout(() => {
-                        if (this.isShuttingDown) return; // Don't process if shutting down
-                        this.isProcessing = false;
+                        if (this.isShuttingDown) return;
                         this.processQueue();
                     }, 1000);
                     return;
@@ -1118,10 +1138,10 @@ class CBAHub {
                 return `
                                 <div class="card hijack">
                                     <span class="tag tag-hijack">Sentinel Intervention</span>
-                                    <div class="meta">${item.timestamp}</div>
-                                    <h3>Sovereign Correction: ${item.sentinel}</h3>
-                                    <p><strong>Reason:</strong> ${item.reason}</p>
-                                    <img src="screenshots/${item.screenshot}" alt="Obstacle Detected" />
+                                    <div class="meta">${escapeHtml(item.timestamp)}</div>
+                                    <h3>Sovereign Correction: ${escapeHtml(item.sentinel)}</h3>
+                                    <p><strong>Reason:</strong> ${escapeHtml(item.reason)}</p>
+                                    <img src="screenshots/${escapeHtml(item.screenshot)}" alt="Obstacle Detected" />
                                 </div>
                             `;
             } else {
@@ -1131,12 +1151,12 @@ class CBAHub {
                 return `
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">${item.timestamp} | ID: ${item.id}</div>
+                                    <div class="meta">${escapeHtml(item.timestamp)} | ID: ${escapeHtml(item.id)}</div>
                                     <div class="card-title">
-                                        <span>${item.cmd.toUpperCase()}: ${item.cmd === 'goto' ? item.url : (item.goal || item.selector)}</span>
+                                        <span>${escapeHtml(item.cmd).toUpperCase()}: ${item.cmd === 'goto' ? escapeHtml(item.url) : escapeHtml(item.goal || item.selector)}</span>
                                         <span class="badge ${badgeClass}">${status}</span>
                                     </div>
-                                    <p>Resolved Selector: <code>${item.selector || 'N/A'}</code></p>
+                                    <p>Resolved Selector: <code>${escapeHtml(item.selector) || 'N/A'}</code></p>
                                     ${item.selfHealed ? '<p>🛡️ <i>Self-Healed: Predictive anchor used due to DOM drift.</i></p>' : ''}
                                     ${item.predictiveWait ? '<p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>' : ''}
                                     ${item.forcedProceed ? '<p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>' : ''}

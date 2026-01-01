@@ -29,10 +29,15 @@ class TelemetryEngine {
     }
 
     save() {
+        // Quality: Atomic write pattern - prevents corruption on crash
+        const tempPath = this.filePath + '.tmp';
         try {
-            fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2));
+            fs.writeFileSync(tempPath, JSON.stringify(this.data, null, 2));
+            fs.renameSync(tempPath, this.filePath);
         } catch (e) {
             console.error('[Telemetry] Failed to save data:', e.message);
+            // Clean up temp file if it exists
+            try { fs.unlinkSync(tempPath); } catch (_) { }
         }
     }
 

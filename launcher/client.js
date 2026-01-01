@@ -3,7 +3,9 @@
  * Connects to launcher server and handles UI interactions
  */
 
-const WS_URL = 'ws://localhost:3001';
+// Logic Fix: Make WebSocket URL configurable via query parameter
+const params = new URLSearchParams(window.location.search);
+const WS_URL = params.get('ws') || 'ws://localhost:3001';
 let ws = null;
 let reconnectTimer = null;
 

@@ -10,6 +10,7 @@ import websockets
 import json
 import time
 import os
+import sys
 import signal
 import tempfile
 import shutil
@@ -26,7 +27,9 @@ class SentinelBase(ABC):
         self._running = False
         self.memory = {}
         self.last_action = None
-        self.memory_file = f"{self.layer}_memory.json"
+        # Stability: Use absolute path in project root, not relative CWD
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.memory_file = os.path.join(project_root, f"{self.layer}_memory.json")
         
         # Load config
         self.config = self._load_config()
@@ -82,7 +85,9 @@ class SentinelBase(ABC):
             self._running = False
         
         signal.signal(signal.SIGINT, handle_shutdown)
-        signal.signal(signal.SIGTERM, handle_shutdown)
+        # Stability: SIGTERM doesn't exist on Windows
+        if sys.platform != 'win32':
+            signal.signal(signal.SIGTERM, handle_shutdown)
         
         reconnect_delay = self.config.get("sentinel", {}).get("reconnectDelay", 3)
         

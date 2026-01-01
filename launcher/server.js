@@ -246,6 +246,15 @@ const server = http.createServer((req, res) => {
 
     const ext = path.extname(filePath);
 
+    // Security: Prevent path traversal attacks
+    const normalizedPath = path.normalize(filePath);
+    if (!normalizedPath.startsWith(projectRoot) && !normalizedPath.startsWith(__dirname)) {
+        console.warn(`[Launcher] SECURITY: Blocked path traversal attempt: ${req.url}`);
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+    }
+
     const mimeTypes = {
         '.html': 'text/html',
         '.css': 'text/css',

@@ -22,8 +22,8 @@ def kill_process_on_port(port: int):
     if sys.platform == "win32":
         try:
             result = subprocess.run(
-                f'netstat -aon | findstr :{port}',
-                shell=True, capture_output=True, text=True
+                ['netstat', '-aon'],
+                capture_output=True, text=True
             )
             for line in result.stdout.strip().split('\n'):
                 if f':{port}' in line:
@@ -31,7 +31,8 @@ def kill_process_on_port(port: int):
                     if len(parts) >= 5:
                         pid = parts[-1]
                         if pid.isdigit():
-                            subprocess.run(f'taskkill /f /pid {pid}', shell=True, capture_output=True)
+                            # Security: Use argument list, not shell string
+                            subprocess.run(['taskkill', '/f', '/pid', pid], capture_output=True)
                             print(f"  [*] Killed process {pid} on port {port}")
         except Exception as e:
             print(f"  [!] Could not kill process on port {port}: {e}")
