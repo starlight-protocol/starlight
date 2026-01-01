@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "starlight-sdk"
+version = "3.0.0"
+description = "Sovereign SDK for the Starlight Protocol"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    { name = "Dhiraj Das", email = "dhirajdas.666@gmail.com" }
+]
+dependencies = [
+    "websockets>=10.0",
+    "httpx>=0.24.0",
+]
+
+[project.urls]
+Homepage = "https://www.dhirajdas.dev"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sdk*"]
