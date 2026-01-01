@@ -157,12 +157,12 @@ function handleCommand(msg, ws) {
                 startProcess('hub');
                 // Wait for Hub to be ready before forwarding
                 setTimeout(() => {
-                    forwardToHub({ method: 'starlight.startRecording', params: {} });
-                    log('System', '🔴 Recording started - Browser will open!', 'success');
+                    forwardToHub({ method: 'starlight.startRecording', params: { url: msg.url } });
+                    log('System', `🔴 Recording started on ${msg.url} - Browser will open!`, 'success');
                 }, 2000);
             } else {
-                forwardToHub({ method: 'starlight.startRecording', params: {} });
-                log('System', '🔴 Recording started', 'success');
+                forwardToHub({ method: 'starlight.startRecording', params: { url: msg.url } });
+                log('System', `🔴 Recording started on ${msg.url}`, 'success');
             }
             break;
         case 'stopRecording':

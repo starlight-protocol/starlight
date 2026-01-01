@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.1] - 2026-01-01
+
+### 🔧 No-Code Marker HUD Fixes
+
+#### Fixed
+- **Checkpoint Button**: Now uses in-HUD text input instead of browser `prompt()` which was intercepted by Playwright
+- **Stop Recording Button**: Now works directly without `confirm()` dialog for seamless recording termination
+- **Function Exposure Order**: Recording functions are now exposed BEFORE page navigation to ensure they're available in the page context
+- **Browser Isolation**: Recording now launches a completely fresh browser instance to avoid dialog handler conflicts
+
+#### Changed
+- **HUD Design**: Added dedicated checkpoint name input field directly in the HUD panel
+- **Recording Flow**: Restructured into three steps: (1) Expose functions, (2) Navigate, (3) Inject HUD
+- **Mission Control Integration**: Recording sessions now correctly capture checkpoints and stop signals
+
+---
+
 ## [3.0.0] - 2026-01-01
 
 ### 🌌 Phase 16: The Autonomous Era (World-Class Recorder)

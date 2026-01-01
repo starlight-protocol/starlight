@@ -241,12 +241,14 @@ function toggleRecording() {
         addLog('System', '⏹️ Recording stopped. Generating test file...', 'success');
     } else {
         // Start recording
-        send({ cmd: 'startRecording' });
+        const urlInput = document.getElementById('record-url');
+        const url = urlInput.value.trim() || 'https://google.com';
+        send({ cmd: 'startRecording', url: url });
         isRecording = true;
         document.getElementById('record-btn').textContent = '⏹️ Stop';
         document.getElementById('record-btn').classList.add('recording');
         document.getElementById('recording-indicator').style.display = 'block';
-        addLog('System', '🔴 Recording started. Navigate and interact on the browser.', 'success');
+        addLog('System', `🔴 Recording started on ${url}. Navigate and interact on the browser.`, 'success');
     }
 }
 

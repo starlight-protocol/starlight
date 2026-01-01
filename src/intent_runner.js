@@ -99,6 +99,15 @@ class IntentRunner {
     }
 
     /**
+     * Record a logical checkpoint in the mission trace.
+     * @param {string} name - Checkpoint name
+     * @returns {Promise<object>} Command result
+     */
+    async checkpoint(name) {
+        return this._sendCommand({ cmd: 'checkpoint', name });
+    }
+
+    /**
      * Send a command and wait for completion.
      * @private
      */

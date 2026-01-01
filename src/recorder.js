@@ -14,77 +14,91 @@ class ActionRecorder {
         this.startTime = null;
         this.page = null;
         this.listeners = [];
+        this.onStopRequest = null;
+        this.onStep = null;
     }
 
     /**
-     * Start recording user actions on the given page.
+     * Expose recording functions to the page context.
+     * MUST be called BEFORE navigation for functions to be available.
      * @param {Page} page - Playwright page object
      */
-    async startRecording(page) {
-        if (this.isRecording) {
-            console.log('[Recorder] Already recording');
-            return;
-        }
-
+    async exposeFunctions(page) {
         this.page = page;
         this.isRecording = true;
         this.recordedSteps = [];
         this.startTime = new Date();
-        this.startUrl = page.url();
 
-        console.log('[Recorder] 🔴 Recording started');
-
-        // Expose recording functions
+        // Expose recording functions BEFORE navigation
         try {
             await page.exposeFunction('__cba_recordClick', (data) => {
                 if (data.action === 'checkpoint') {
-                    this.recordedSteps.push({
+                    const step = {
                         action: 'checkpoint',
                         goal: data.goal,
                         timestamp: Date.now()
-                    });
+                    };
+                    this.recordedSteps.push(step);
+                    if (this.onStep) this.onStep(step);
                     console.log(`[Recorder] Checkpoint: "${data.goal}"`);
                     return;
                 }
-                this.recordedSteps.push({
+                const step = {
                     action: 'click',
                     goal: data.goal,
                     selector: data.selector,
                     tagName: data.tagName,
                     stabilityHint: data.stability?.settleTime || 0,
                     timestamp: Date.now()
-                });
+                };
+                this.recordedSteps.push(step);
+                if (this.onStep) this.onStep(step);
                 console.log(`[Recorder] Click: "${data.goal}" [Stability: ${data.stability?.settleTime || 0}ms]`);
             });
         } catch (e) {
-            // Function might already be exposed
-            console.log('[Recorder] Click function already exposed');
+            console.log('[Recorder] Click function already exposed:', e.message);
         }
 
         try {
             await page.exposeFunction('__cba_recordFill', (data) => {
-                this.recordedSteps.push({
+                const step = {
                     action: 'fill',
                     goal: data.goal,
                     selector: data.selector,
                     value: data.value,
                     stabilityHint: data.stability?.settleTime || 0,
                     timestamp: Date.now()
-                });
+                };
+                this.recordedSteps.push(step);
+                if (this.onStep) this.onStep(step);
                 console.log(`[Recorder] Fill: "${data.goal}" [Stability: ${data.stability?.settleTime || 0}ms]`);
             });
         } catch (e) {
-            console.log('[Recorder] Fill function already exposed');
+            console.log('[Recorder] Fill function already exposed:', e.message);
         }
 
         try {
             await page.exposeFunction('__cba_stopRecording', () => {
                 console.log('[Recorder] Stop requested via HUD');
                 this.stopRecording();
+                if (typeof this.onStopRequest === 'function') {
+                    this.onStopRequest();
+                }
             });
         } catch (e) {
-            console.log('[Recorder] Stop function already exposed');
+            console.log('[Recorder] Stop function already exposed:', e.message);
         }
+
+        console.log('[Recorder] Functions exposed to page context');
+    }
+
+    /**
+     * Inject the HUD and event listeners into the page.
+     * MUST be called AFTER navigation when document.body exists.
+     * @param {Page} page - Playwright page object
+     */
+    async injectHUD(page) {
+        console.log('[Recorder] Injecting HUD...');
 
         // Inject recording script into current page and on every navigation
         const injectRecordingScript = async () => {
@@ -151,11 +165,24 @@ class ActionRecorder {
                                 }
                                 .btn:hover { background: #475569; }
                                 .btn-tag.active { background: #ef4444; }
+                                .checkpoint-input {
+                                    width: 100%;
+                                    padding: 6px 10px;
+                                    border: 1px solid #475569;
+                                    border-radius: 6px;
+                                    background: #1e293b;
+                                    color: white;
+                                    font-size: 12px;
+                                    margin-bottom: 8px;
+                                    box-sizing: border-box;
+                                }
+                                .checkpoint-input::placeholder { color: #64748b; }
                             </style>
                             <div class="panel" id="panel">
                                 <div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px;">STARLIGHT RECORDER</div>
                                 <button class="btn btn-tag" id="tag-btn">🏷️ Tag Next Click</button>
-                                <button class="btn" id="checkpoint-btn">🚩 Add Checkpoint</button>
+                                <input type="text" class="checkpoint-input" id="checkpoint-input" placeholder="Checkpoint name...">
+                                <button class="btn" id="checkpoint-btn">🚩 Save Checkpoint</button>
                                 <button class="btn" id="stop-btn" style="color: #f87171;">⏹️ Stop Recording</button>
                             </div>
                             <div class="badge" id="badge">
@@ -168,6 +195,7 @@ class ActionRecorder {
                         const panel = shadow.getElementById('panel');
                         const tagBtn = shadow.getElementById('tag-btn');
                         const checkpointBtn = shadow.getElementById('checkpoint-btn');
+                        const checkpointInput = shadow.getElementById('checkpoint-input');
                         const stopBtn = shadow.getElementById('stop-btn');
 
                         badge.onclick = (e) => {
@@ -184,18 +212,23 @@ class ActionRecorder {
 
                         checkpointBtn.onclick = (e) => {
                             e.stopPropagation();
-                            const name = prompt('Checkpoint Name:');
-                            if (name) {
-                                window.__cba_recordClick({ goal: `CHECKPOINT: ${name}`, selector: 'N/A', action: 'checkpoint' });
+                            const name = checkpointInput.value.trim() || 'Checkpoint ' + Date.now();
+                            console.log('[HUD] Creating checkpoint:', name);
+                            if (typeof window.__cba_recordClick === 'function') {
+                                window.__cba_recordClick({ goal: 'CHECKPOINT: ' + name, selector: 'N/A', action: 'checkpoint' });
+                                checkpointInput.value = '';
+                            } else {
+                                console.error('[HUD] __cba_recordClick not found');
                             }
                         };
 
                         stopBtn.onclick = (e) => {
                             e.stopPropagation();
-                            if (confirm('Stop recording?')) {
-                                if (typeof window.__cba_stopRecording === 'function') {
-                                    window.__cba_stopRecording();
-                                }
+                            console.log('[HUD] Stop button clicked');
+                            if (typeof window.__cba_stopRecording === 'function') {
+                                window.__cba_stopRecording();
+                            } else {
+                                console.error('[HUD] __cba_stopRecording not found');
                             }
                         };
 
@@ -254,7 +287,9 @@ class ActionRecorder {
                         }
 
                         document.addEventListener('click', async (e) => {
-                            if (e.target.closest('#starlight-hud')) return;
+                            // Robust check for HUD clicks using composedPath
+                            const isHudClick = e.composedPath().some(el => el.id === 'starlight-hud');
+                            if (isHudClick) return;
 
                             const el = e.target;
                             lastInteractionTime = Date.now();
@@ -286,6 +321,9 @@ class ActionRecorder {
                         }, true);
 
                         document.addEventListener('input', async (e) => {
+                            const isHudInput = e.composedPath().some(el => el.id === 'starlight-hud');
+                            if (isHudInput) return;
+
                             const el = e.target;
                             if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) {
                                 lastInteractionTime = Date.now();
@@ -325,11 +363,13 @@ class ActionRecorder {
             if (frame === page.mainFrame()) {
                 const url = frame.url();
                 if (url && url !== 'about:blank') {
-                    this.recordedSteps.push({
+                    const step = {
                         action: 'goto',
                         url: url,
                         timestamp: Date.now()
-                    });
+                    };
+                    this.recordedSteps.push(step);
+                    if (this.onStep) this.onStep(step);
                     console.log(`[Recorder] Navigation: ${url}`);
                 }
                 // Re-inject script on new page
@@ -455,7 +495,7 @@ class ActionRecorder {
                 return `    console.log('[Mission] Step ${i + 1}: Navigating to ${step.url}...');\n    await runner.goto('${step.url}');\n`;
             } else if (step.action === 'checkpoint') {
                 const goal = sanitizeGoal(step.goal);
-                return `    console.log('[Mission] Step ${i + 1}: Checkpoint - ${goal}');\n    // await runner.checkpoint('${goal}');\n`;
+                return `    console.log('[Mission] Step ${i + 1}: Checkpoint - ${goal}');\n    await runner.checkpoint('${goal}');\n`;
             } else if (step.action === 'click') {
                 const goal = sanitizeGoal(step.goal);
                 const hint = step.stabilityHint ? `, { stabilityHint: ${step.stabilityHint} }` : '';

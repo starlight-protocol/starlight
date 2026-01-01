@@ -181,6 +181,17 @@ class CBAHub {
 
         setInterval(() => this.checkSystemHealth(), 1000);
 
+        // Setup the initial page with all handlers
+        await this.setupPage();
+    }
+
+    /**
+     * Setup page with all required handlers, observers, and exposed functions.
+     * This is called both in init() and when creating a new page for recording.
+     */
+    async setupPage() {
+        if (!this.page) return;
+
         this.page.on('dialog', async dialog => {
             console.log(`[CBA Hub] Auto-dismissing dialog: ${dialog.message()}`);
             await dialog.dismiss();
@@ -215,11 +226,16 @@ class CBAHub {
                 });
             });
         });
-        await this.page.exposeFunction('onMutation', (mutation) => {
-            // v2.0 Phase 3: Broadcast entropy on mutation
-            this.broadcastEntropy();
-            this.broadcastMutation(mutation);
-        });
+
+        try {
+            await this.page.exposeFunction('onMutation', (mutation) => {
+                // v2.0 Phase 3: Broadcast entropy on mutation
+                this.broadcastEntropy();
+                this.broadcastMutation(mutation);
+            });
+        } catch (e) {
+            // Function might already be exposed in this context
+        }
     }
 
     broadcastEntropy() {
@@ -363,18 +379,31 @@ class CBAHub {
                 const traceStart = firstIntent ? firstIntent.timestamp : trace[0].timestamp;
 
                 trace.forEach(event => {
-                    // 1. Learn Selectors
-                    if (event.method === 'starlight.intent' && event.params.goal && event.params.selector) {
+                    // 1. Learn Selectors (From Intents OR Recordings)
+                    const isLearnable = event.method === 'starlight.intent' ||
+                        event.method === 'starlight.click' ||
+                        event.method === 'starlight.fill' ||
+                        event.method?.startsWith('starlight.action');
+
+                    if (isLearnable && event.params?.goal && event.params?.selector) {
                         this.historicalMemory.set(event.params.goal, event.params.selector);
                     }
-                    // 2. Learn Entropy Auras (Phase 7.2)
-                    if (event.method === 'starlight.entropy_stream') {
+
+                    // 2. Learn Checkpoints for ROI and MTTR
+                    if (event.method === 'starlight.checkpoint') {
+                        console.log(`  [✓] Verified Milestone: ${event.params.name || event.params.goal}`);
+                    }
+
+                    // 3. Learn Entropy Auras (Phase 7.2)
+                    if (event.method === 'starlight.entropy_stream' || event.method === 'starlight.stability') {
                         const relTime = event.timestamp - traceStart;
                         const bucket = Math.floor(relTime / 500);
                         this.historicalAuras.add(bucket);
                     }
                 });
-                console.log(`[CBA Hub] Phase 7: Learned ${this.historicalMemory.size} selectors and ${this.historicalAuras.size} instability windows.`);
+                console.log(`[CBA Hub] Phase 7 Intelligence Audit:`);
+                console.log(`  - Learned Selectors: ${this.historicalMemory.size}`);
+                console.log(`  - Temporal Auras: ${this.historicalAuras.size}`);
             } catch (e) {
                 console.warn("[CBA Hub] Failed to load historical memory:", e.message);
             }
@@ -411,13 +440,15 @@ class CBAHub {
         this.missionTrace.push({
             timestamp: Date.now(),
             humanTime: new Date().toLocaleTimeString(),
-            type,
-            layer: sentinel ? sentinel.layer : (sentinelId === 'System' ? 'System' : 'Intent'),
-            method: data.method,
-            params: data.params,
-            id: data.id,
+            method: data.method || type,
+            params: data.params || data,
             snapshot
         });
+
+        // Immediate learning from recordings:
+        if (type === 'RECORDER' && data.params?.goal && data.params?.selector) {
+            this.historicalMemory.set(data.params.goal, data.params.selector);
+        }
 
         // Trace rotation: keep only the last N events
         const maxEvents = this.config.hub?.traceMaxEvents || 500;
@@ -537,7 +568,7 @@ class CBAHub {
                 break;
             // Phase 13.5: Recording Protocol
             case 'starlight.startRecording':
-                await this.handleStartRecording(id);
+                await this.handleStartRecording(id, params?.url);
                 break;
             case 'starlight.stopRecording':
                 await this.handleStopRecording(id, params);
@@ -549,23 +580,70 @@ class CBAHub {
     }
 
     // Phase 13.5: Recording Handlers
-    async handleStartRecording(clientId) {
+    async handleStartRecording(clientId, url = null) {
         try {
-            // Auto-create browser if not exists
-            if (!this.page) {
-                console.log('[CBA Hub] Recording: Creating browser for recording session...');
-                this.browser = await chromium.launch({ headless: false });
-                const context = await this.browser.newContext();
-                this.page = await context.newPage();
-                await this.page.goto('about:blank');
-                console.log('[CBA Hub] Recording: Browser ready. Navigate to any site to start recording.');
+            console.log(`[CBA Hub] handleStartRecording called with URL: ${url}`);
+
+            // Hard Reset: Ensure clean state for new recording
+            if (this.page) {
+                await this.page.close().catch(() => { });
+                this.page = null;
             }
 
-            await this.recorder.startRecording(this.page);
+            // Close existing browser and create fresh one for recording (visible)
+            if (this.browser) {
+                await this.browser.close().catch(() => { });
+                this.browser = null;
+            }
+
+            console.log('[CBA Hub] Launching NEW browser for recording session...');
+            this.browser = await chromium.launch({ headless: false });
+            const context = await this.browser.newContext();
+            this.page = await context.newPage();
+
+            const targetUrl = url || 'https://example.com';
+
+            // Setup recorder callbacks
+            this.recorder.onStopRequest = () => {
+                console.log('[CBA Hub] HUD Stop Signal received');
+                this.handleStopRecording(clientId, { name: `recorded_${nanoid(6)}` });
+            };
+
+            this.recorder.onStep = (step) => {
+                console.log(`[CBA Hub] Learning [Live]: ${step.action} -> ${step.goal || step.url}`);
+                this.recordTrace('RECORDER', 'Recorder', {
+                    method: `starlight.${step.action}`,
+                    params: step
+                });
+                this.saveMissionTrace();
+            };
+
+            // STEP 1: Expose functions BEFORE navigation (required by Playwright)
+            await this.recorder.exposeFunctions(this.page);
+            console.log('[CBA Hub] Recording functions exposed');
+
+            // STEP 1.5: Add dialog handler that ACCEPTS dialogs (doesn't dismiss them)
+            // This is critical for checkpoint prompts and stop confirms to work
+            this.page.on('dialog', async dialog => {
+                console.log(`[CBA Hub] Dialog detected: ${dialog.type()} - "${dialog.message()}"`);
+                // Accept all dialogs with default value (prompts get empty string, confirms get true)
+                await dialog.accept();
+            });
+
+            // STEP 2: Navigate to URL
+            console.log(`[CBA Hub] Recording: Navigating to ${targetUrl}...`);
+            await this.page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            console.log(`[CBA Hub] Navigation complete: ${this.page.url()}`);
+
+            // STEP 3: Inject HUD script (now page has document.body)
+            await this.recorder.injectHUD(this.page);
+            console.log('[CBA Hub] HUD injected');
+
             this.broadcastToClient(clientId, { type: 'RECORDING_STARTED' });
-            console.log('[CBA Hub] Recording started on page:', this.page.url());
+            console.log('[CBA Hub] Recording Session Active:', this.page.url());
         } catch (e) {
-            console.error('[CBA Hub] Recording error:', e.message);
+            console.error('[CBA Hub] Recording Launch Failed:', e.message);
+            console.error(e.stack);
             this.broadcastToClient(clientId, { type: 'RECORDING_ERROR', error: e.message });
         }
     }
@@ -573,6 +651,7 @@ class CBAHub {
     async handleStopRecording(clientId, params) {
         try {
             this.recorder.stopRecording();
+            await this.saveMissionTrace();
             const testDir = path.join(process.cwd(), 'test');
             const fileName = this.recorder.generateTestFile(testDir, params?.name);
             this.broadcastToClient(clientId, {
@@ -989,9 +1068,24 @@ class CBAHub {
 
     async executeCommand(msg, retry = true) {
         try {
+            // Lazy launch browser if needed
+            if (!this.page) {
+                console.log('[CBA Hub] Launching browser for mission mission execution...');
+                this.browser = await chromium.launch({ headless: this.headless });
+                const context = await this.browser.newContext();
+                this.page = await context.newPage();
+            }
+
             if (msg.cmd === 'goto') await this.page.goto(msg.url);
             else if (msg.cmd === 'click') await this.page.click(msg.selector);
             else if (msg.cmd === 'fill') await this.page.fill(msg.selector, msg.text);
+            else if (msg.cmd === 'checkpoint') {
+                console.log(`[CBA Hub] 🚩 Checkpoint reached: ${msg.name}`);
+                this.recordTrace('CHECKPOINT', 'System', {
+                    method: 'starlight.checkpoint',
+                    params: { name: msg.name }
+                });
+            }
             return true;
         } catch (e) {
             console.warn(`[CBA Hub] Command failure on ${msg.selector}: ${e.message}`);

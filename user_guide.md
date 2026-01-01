@@ -177,6 +177,30 @@ Sentinels possess a **Persistent Memory Layer**:
 | **Failure-Safe Reports** | Immediate report generation on mission failure |
 | **Health Check** | `/health` endpoint for Hub system verification |
 
+### 🎬 No-Code Marker HUD (v3.0.1)
+
+The Mission Control UI includes a **Test Recorder** that captures user interactions without writing code:
+
+1. **Start Recording**: Enter a URL in Mission Control and click `🔴 Record`
+2. **HUD Appears**: A floating badge appears in the bottom-right corner of the browser
+3. **Click the Badge**: Expands to show the control panel
+
+**HUD Controls:**
+| Button | Action |
+|--------|--------|
+| 🏷️ Tag Next Click | Assign a custom goal name to the next click |
+| Checkpoint Input | Text field to enter checkpoint name |
+| 🚩 Save Checkpoint | Record a logical milestone in your test |
+| ⏹️ Stop Recording | End the session and generate the intent file |
+
+**Example Workflow:**
+1. Click "🏷️ Tag Next Click" → Click on Login button → Name it "Login"
+2. Type "LoginComplete" in the checkpoint input → Click "🚩 Save Checkpoint"
+3. Continue interacting with the site...
+4. Click "⏹️ Stop Recording" when done
+
+The generated intent file will appear in the `test/` directory and be available in Mission Control.
+
 ---
 
 ## 9. Time-Travel Triage (Phase 6)

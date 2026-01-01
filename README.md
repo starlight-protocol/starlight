@@ -1,8 +1,9 @@
 # 🛰️ Constellation-Based Automation (CBA)
-## Starlight Protocol v3.0 — The Autonomous Era
+## Starlight Protocol v3.0.1 — The Autonomous Era
 
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Starlight CBA Mission](https://github.com/godhiraj-code/cba/actions/workflows/starlight_ci.yml/badge.svg)](https://github.com/godhiraj-code/cba/actions/workflows/starlight_ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue.svg)](https://python.org)
 
@@ -176,6 +177,14 @@ http://localhost:3000
 - 🚀 Mission dropdown with Launch button
 - 📋 Live logs console with real-time output
 - 📊 Quick link to view report
+- 🔴 **No-Code Recorder**: Record test scripts by clicking through your site
+
+### 🎬 No-Code Recorder (NEW in v3.0.1)
+1. Enter a URL and click `🔴 Record`
+2. A floating **Starlight HUD** appears in the browser
+3. Interact with the site - all clicks and inputs are captured
+4. Use `🏷️ Tag` to name important clicks, `🚩 Checkpoint` to mark milestones
+5. Click `⏹️ Stop` to generate an intent file automatically
 
 ![Starlight Mission Control](assets/launcher_control_panel.png)
 
@@ -266,6 +275,15 @@ docker-compose up --build
 ```
 
 Deploys a managed Hub and sentinel mesh for ephemeral CI/CD execution.
+
+---
+
+## 📚 The Sovereign Automation Series
+
+Follow the journey of the Starlight Protocol:
+- **[Part 1: The Inner Workings](latest_blog.md)**: Deep dive into Sentinels and the Hub.
+- **[Part 2: Watching the Constellation](latest_blog_part2.md)**: Exploring Mission Control and ROI reporting.
+- **[Part 3: The Autonomous Era](latest_blog_part3.md)**: v3.0 release, Mutation Fingerprinting, and CLI Orchestration.
 
 ---
 

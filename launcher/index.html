@@ -22,7 +22,7 @@
                     <h3>CBA Hub</h3>
                 </div>
                 <p class="status-desc">Orchestrator & Browser Control</p>
-                <button class="btn btn-start" id="hub-btn" onclick="toggleProcess('hub')">Start</button>
+                <button class="btn btn-start" id="hub-btn" onclick="toggleProcess('hub')">Launch Hub</button>
             </div>
 
             <div class="status-card" id="pulse-card">
@@ -83,6 +83,8 @@
             <div class="quick-actions">
                 <button class="btn btn-secondary" onclick="startAll()">▶️ Start All</button>
                 <button class="btn btn-secondary" onclick="stopAll()">⏹️ Stop All</button>
+                <input type="text" id="record-url" placeholder="https://example.com"
+                    style="padding: 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white;">
                 <button class="btn btn-record" id="record-btn" onclick="toggleRecording()">🔴 Record</button>
                 <button class="btn btn-secondary" onclick="openReport()">📊 View Report</button>
                 <button class="btn btn-secondary" onclick="clearLogs()">🗑️ Clear Logs</button>
