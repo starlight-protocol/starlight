@@ -107,9 +107,7 @@ The roadmap is ambitious:
 - **OpenTelemetry Integration**: Export traces to Datadog, Grafana, or your APM of choice
 - **Cross-Browser Support**: Safari, Firefox, and mobile testing
 
-But for now, we rest.
 
-We've come a long way from Part 1—from explaining why waits break to building a self-healing, community-extensible automation platform.
 
 The stars are aligned. The constellation is ready.
 
