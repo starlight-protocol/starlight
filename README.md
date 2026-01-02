@@ -166,7 +166,7 @@ CBA learns when your site is historically unstable:
 - Prevents flakiness before it happens
 
 ### 📈 ROI Dashboard
-The `report.html` quantifies business value:
+The `tools/report.html` quantifies business value:
 - **Triage Savings**: Minutes saved per obstacle cleared
 - **Self-Healing Credits**: Automated selector fixes
 - **Aura Stabilization**: Predictive jitter avoidance
@@ -284,7 +284,7 @@ All settings are in `config.json`:
 }
 ```
 
-See [technical_guide.md](technical_guide.md) for full reference.
+See [docs/technical_guide.md](docs/technical_guide.md) for full reference.
 
 ---
 
@@ -292,11 +292,12 @@ See [technical_guide.md](technical_guide.md) for full reference.
 
 | Document | Description |
 |----------|-------------|
-| [user_guide.md](user_guide.md) | Getting started, sentinel overview |
-| [technical_guide.md](technical_guide.md) | Protocol spec, SDK reference, Shadow DOM |
-| [CHANGELOG.md](CHANGELOG.md) | Version history |
-| [STARLIGHT_STANDARD.md](STARLIGHT_STANDARD.md) | Formal protocol specification |
-| [roadmap.md](roadmap.md) | Future development plans |
+| [User Guide](docs/user_guide.md) | Getting started, sentinel overview |
+| [Technical Guide](docs/technical_guide.md) | Protocol spec, SDK reference, Shadow DOM |
+| [CHANGELOG](CHANGELOG.md) | Version history |
+| [Protocol Spec](spec/STARLIGHT_PROTOCOL_SPEC_v1.0.0.md) | Formal protocol specification |
+| [Roadmap](docs/roadmap.md) | Future development plans |
+| [Book](docs/book/THE_STARLIGHT_PROTOCOL_BOOK.md) | Comprehensive Starlight guide |
 
 ---
 

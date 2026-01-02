@@ -1,7 +1,7 @@
 # Starlight Protocol
 
 <p align="center">
-  <img src="assets/starlight-logo.png" alt="Starlight Protocol" width="200">
+  <img src="../assets/starlight-logo.png" alt="Starlight Protocol" width="200">
 </p>
 
 <p align="center">
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="spec/STARLIGHT_PROTOCOL_SPEC_v1.0.0.md">📄 Specification</a> •
-  <a href="spec/COMPLIANCE_TESTS.md">✅ Compliance Tests</a> •
+  <a href="STARLIGHT_PROTOCOL_SPEC_v1.0.0.md">📄 Specification</a> •
+  <a href="COMPLIANCE_TESTS.md">✅ Compliance Tests</a> •
   <a href="#implementations">🔧 Implementations</a> •
   <a href="#community">🌍 Community</a>
 </p>
@@ -80,7 +80,7 @@ Before every action, the Hub consults ALL Sentinels:
 
 The formal specification is available at:
 
-📄 **[STARLIGHT_PROTOCOL_SPEC_v1.0.0.md](spec/STARLIGHT_PROTOCOL_SPEC_v1.0.0.md)**
+📄 **[STARLIGHT_PROTOCOL_SPEC_v1.0.0.md](STARLIGHT_PROTOCOL_SPEC_v1.0.0.md)**
 
 It defines:
 - Message format (JSON-RPC 2.0)
@@ -115,7 +115,7 @@ Implementations can achieve compliance levels:
 | **Level 2 (Extended)** | + Context, Entropy, Health |
 | **Level 3 (Full)** | + Semantic Goals, Self-Healing |
 
-See [COMPLIANCE_TESTS.md](spec/COMPLIANCE_TESTS.md) for details.
+See [COMPLIANCE_TESTS.md](COMPLIANCE_TESTS.md) for details.
 
 ---
 
@@ -154,7 +154,7 @@ We welcome contributions:
 
 ## License
 
-MIT License - See [LICENSE](LICENSE)
+MIT License - See [LICENSE](../LICENSE)
 
 ---
 
