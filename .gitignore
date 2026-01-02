@@ -20,3 +20,6 @@ BLOG.md
 POM_IS_DEAD.md
 blog_dhiraj_idea_summarization.md
 *_memory.json
+
+# Blog posts (keep local, publish to website separately)
+latest_blog*.md
