@@ -15,33 +15,26 @@
             <p>CBA v2.8 — Constellation-Based Automation</p>
         </header>
 
-        <section class="status-grid">
+        <section class="status-grid" id="fleet-grid">
+            <!-- Hub (always shown) -->
             <div class="status-card" id="hub-card">
                 <div class="status-header">
                     <span class="status-icon" id="hub-status">⚫</span>
-                    <h3>CBA Hub</h3>
+                    <h3>🔵 CBA Hub</h3>
                 </div>
                 <p class="status-desc">Orchestrator & Browser Control</p>
                 <button class="btn btn-start" id="hub-btn" onclick="toggleProcess('hub')">Launch Hub</button>
             </div>
 
-            <div class="status-card" id="pulse-card">
-                <div class="status-header">
-                    <span class="status-icon" id="pulse-status">⚫</span>
-                    <h3>PulseSentinel</h3>
-                </div>
-                <p class="status-desc">Temporal Stability Monitor</p>
-                <button class="btn btn-start" id="pulse-btn" onclick="toggleProcess('pulse')">Start</button>
-            </div>
+            <!-- Dynamic Sentinels loaded here -->
 
-            <div class="status-card" id="janitor-card">
-                <div class="status-header">
-                    <span class="status-icon" id="janitor-status">⚫</span>
-                    <h3>JanitorSentinel</h3>
-                </div>
-                <p class="status-desc">Obstacle Clearing Agent</p>
-                <button class="btn btn-start" id="janitor-btn" onclick="toggleProcess('janitor')">Start</button>
-            </div>
+            <!-- Create New Sentinel Card -->
+            <a href="/sentinel-editor" class="status-card"
+                style="text-decoration: none; display: flex; flex-direction: column; justify-content: center; align-items: center; border-style: dashed; opacity: 0.7;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">➕</div>
+                <h3 style="color: var(--text-secondary);">Create Sentinel</h3>
+                <p class="status-desc">Build with Visual Editor</p>
+            </a>
         </section>
 
         <section class="vitals-grid">

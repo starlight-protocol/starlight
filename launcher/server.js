@@ -13,20 +13,69 @@ const TelemetryEngine = require('../src/telemetry');
 const PORT = 3000;
 const WS_PORT = 3001;
 
-// Process registry
+// Process registry (dynamic for sentinels)
 const processes = {
     hub: null,
-    pulse: null,
-    janitor: null,
     mission: null
 };
 
 const processStatus = {
     hub: 'stopped',
-    pulse: 'stopped',
-    janitor: 'stopped',
     mission: 'stopped'
 };
+
+// Sentinel Fleet Manager: Auto-discover all sentinels
+function discoverSentinels() {
+    const sentinelsDir = path.join(__dirname, '../sentinels');
+    const results = [];
+
+    try {
+        const files = fs.readdirSync(sentinelsDir);
+        files.forEach(file => {
+            if (file.endsWith('.py') && !file.startsWith('__') && !file.startsWith('test_')) {
+                const id = file.replace('.py', '');
+                const name = formatSentinelName(file);
+                results.push({
+                    id,
+                    name,
+                    file,
+                    path: `sentinels/${file}`,
+                    status: processStatus[id] || 'stopped',
+                    icon: getSentinelIcon(id)
+                });
+            }
+        });
+    } catch (e) {
+        console.error('[Launcher] Error discovering sentinels:', e.message);
+    }
+
+    return results;
+}
+
+function formatSentinelName(filename) {
+    // pulse_sentinel.py -> Pulse Sentinel
+    return filename
+        .replace('.py', '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function getSentinelIcon(id) {
+    const icons = {
+        'pulse_sentinel': '💚',
+        'janitor': '🧹',
+        'vision_sentinel': '👁️',
+        'data_sentinel': '📊',
+        'pii_sentinel': '🔒',
+        'cookie': '🍪',
+        'modal': '🪟',
+        'popup': '💬'
+    };
+    for (const [key, icon] of Object.entries(icons)) {
+        if (id.includes(key)) return icon;
+    }
+    return '🛡️'; // Default sentinel icon
+}
 
 // Phase 13.5: Hub WebSocket connection for recording
 let hubWs = null;
@@ -83,9 +132,10 @@ wss.on('connection', (ws) => {
     clients.add(ws);
     console.log('[Launcher] Client connected');
 
-    // Send current status, telemetry and discovery
+    // Send current status, telemetry, sentinels, and missions
     ws.send(JSON.stringify({ type: 'status', status: processStatus }));
     ws.send(JSON.stringify({ type: 'telemetry', data: telemetry.getStats() }));
+    ws.send(JSON.stringify({ type: 'sentinels', sentinels: discoverSentinels() }));
     ws.send(JSON.stringify({ type: 'missionList', missions: discoverMissions() }));
 
     ws.on('message', (data) => {
@@ -134,13 +184,17 @@ function handleCommand(msg, ws) {
             break;
         case 'startAll':
             startProcess('hub');
-            setTimeout(() => startProcess('pulse'), 1000);
-            setTimeout(() => startProcess('janitor'), 1500);
+            // Start ALL discovered sentinels
+            const sentinels = discoverSentinels();
+            sentinels.forEach((s, i) => {
+                setTimeout(() => startProcess(s.id), 1000 + (i * 500));
+            });
+            log('System', `Starting constellation with ${sentinels.length} sentinels...`, 'info');
             break;
         case 'stopAll':
             stopProcess('mission');
-            stopProcess('janitor');
-            stopProcess('pulse');
+            // Stop ALL discovered sentinels
+            discoverSentinels().forEach(s => stopProcess(s.id));
             setTimeout(() => stopProcess('hub'), 500);
             break;
         case 'launch':
@@ -181,22 +235,22 @@ function startProcess(name) {
     let cmd, args;
     const cwd = path.join(__dirname, '..');
 
-    switch (name) {
-        case 'hub':
-            cmd = 'node';
-            args = ['src/hub.js'];
-            break;
-        case 'pulse':
+    // Hub is special
+    if (name === 'hub') {
+        cmd = 'node';
+        args = ['src/hub.js'];
+    } else {
+        // Dynamic sentinel - find the file
+        const sentinels = discoverSentinels();
+        const sentinel = sentinels.find(s => s.id === name);
+
+        if (sentinel) {
             cmd = 'python';
-            args = ['sentinels/pulse_sentinel.py'];
-            break;
-        case 'janitor':
-            cmd = 'python';
-            args = ['sentinels/janitor.py'];
-            break;
-        default:
+            args = [sentinel.path];
+        } else {
             log('System', `Unknown process: ${name}`, 'error');
             return;
+        }
     }
 
     log('System', `Starting ${name}...`, 'info');
@@ -341,6 +395,14 @@ const server = http.createServer((req, res) => {
                 res.end(JSON.stringify({ success: false, error: e.message }));
             }
         });
+        return;
+    }
+
+    // API: List available sentinels
+    if (req.method === 'GET' && req.url === '/api/sentinels') {
+        const sentinels = discoverSentinels();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(sentinels));
         return;
     }
 

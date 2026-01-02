@@ -92,6 +92,9 @@ function handleMessage(msg) {
         case 'missionList':
             updateMissionDropdown(msg.missions);
             break;
+        case 'sentinels':
+            renderSentinelCards(msg.sentinels);
+            break;
         default:
             // Phase 13.5: Handle recording events
             if (msg.type?.startsWith('RECORDING_')) {
@@ -268,6 +271,59 @@ function handleRecordingEvent(msg) {
         document.getElementById('record-btn').textContent = '🔴 Record';
         document.getElementById('recording-indicator').style.display = 'none';
     }
+}
+
+// Sentinel Fleet Manager: Render dynamic sentinel cards
+function renderSentinelCards(sentinels) {
+    const grid = document.getElementById('fleet-grid');
+    if (!grid) return;
+
+    // Find the "Create Sentinel" card (we'll insert before it)
+    const createCard = grid.querySelector('a[href="/sentinel-editor"]');
+
+    // Remove any existing dynamic sentinel cards
+    grid.querySelectorAll('.sentinel-card').forEach(card => card.remove());
+
+    // Insert cards for each sentinel
+    sentinels.forEach(sentinel => {
+        const isRunning = processStatus[sentinel.id] === 'running';
+        const card = document.createElement('div');
+        card.className = 'status-card sentinel-card';
+        card.id = `${sentinel.id}-card`;
+        if (isRunning) card.classList.add('running');
+
+        card.innerHTML = `
+            <div class="status-header">
+                <span class="status-icon" id="${sentinel.id}-status">${isRunning ? '🟢' : '⚫'}</span>
+                <h3>${sentinel.icon} ${sentinel.name}</h3>
+            </div>
+            <p class="status-desc">${getDescription(sentinel.id)}</p>
+            <button class="btn ${isRunning ? 'btn-stop' : 'btn-start'}" 
+                    id="${sentinel.id}-btn" 
+                    onclick="toggleProcess('${sentinel.id}')">
+                ${isRunning ? 'Stop' : 'Start'}
+            </button>
+        `;
+
+        // Insert before the create card
+        if (createCard) {
+            grid.insertBefore(card, createCard);
+        } else {
+            grid.appendChild(card);
+        }
+    });
+}
+
+// Get description based on sentinel name
+function getDescription(id) {
+    const descriptions = {
+        'pulse_sentinel': 'Temporal Stability Monitor',
+        'janitor': 'Obstacle Clearing Agent',
+        'vision_sentinel': 'AI-Powered Visual Detection',
+        'data_sentinel': 'Context Injection Engine',
+        'pii_sentinel': 'Privacy Data Detection'
+    };
+    return descriptions[id] || 'Custom Sentinel';
 }
 
 // Initialize

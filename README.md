@@ -1,7 +1,7 @@
 # 🛰️ Constellation-Based Automation (CBA)
-## Starlight Protocol v3.0.2 — The Autonomous Era
+## Starlight Protocol v3.0.3 — The Autonomous Era
 
-[![Version](https://img.shields.io/badge/version-3.0.2-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.0.3-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Starlight CBA Mission](https://github.com/godhiraj-code/cba/actions/workflows/starlight_ci.yml/badge.svg)](https://github.com/godhiraj-code/cba/actions/workflows/starlight_ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
@@ -57,6 +57,20 @@ CBA uses a **Decentralized Sidecar Architecture** communicating over a JSON-RPC 
     "notifyOn": ["failure", "success"]
 }
 ```
+
+### 🛠️ Phase 15: Visual Sentinel Editor & Fleet Manager (NEW in v3.0.3)
+
+| Feature | Description |
+|---------|-------------|
+| **Visual Editor** | No-code UI to create custom Sentinels at `/sentinel-editor` |
+| **Template Library** | Cookie Banner, Modal Popup, Login Wall, Rate Limiter |
+| **Fleet Manager** | Dynamic discovery & management of all sentinels |
+| **Start All** | Launches entire constellation with one click |
+
+**Create a Sentinel in 3 clicks:**
+1. Open Mission Control → Click "🛠️ Create Sentinel"
+2. Choose a template or configure from scratch
+3. Click "🚀 Export Sentinel" → Done!
 
 ### �🛡️ Phase 9: Sovereign Security & Compliance
 

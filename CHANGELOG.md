@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.3] - 2026-01-02
+
+### 🛠️ Phase 15: Visual Sentinel Editor & Fleet Manager
+
+#### Added
+- **Visual Sentinel Editor**: No-code UI for creating custom Sentinels
+  - Template library (Cookie Banner, Modal Popup, Login Wall, Rate Limiter)
+  - Live Python code preview
+  - One-click export to `sentinels/` directory
+  - Access at `/sentinel-editor` or via Mission Control
+- **Sentinel Fleet Manager**: Dynamic sentinel discovery and management
+  - Auto-discovers all `*.py` files in `sentinels/`
+  - Dynamic cards with start/stop controls for each sentinel
+  - "Start All" now launches ALL discovered sentinels
+  - Emoji icons per sentinel type
+
+#### Changed
+- Mission Control now shows all available sentinels dynamically
+- "Start All" starts the full constellation (Hub + all sentinels)
+- "Stop All" stops all running processes
+
+---
+
 ## [3.0.2] - 2026-01-02
 
 ### 🔔 Phase 10: Webhook Alerting
