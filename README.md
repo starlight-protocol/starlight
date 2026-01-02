@@ -1,7 +1,7 @@
 # 🛰️ Constellation-Based Automation (CBA)
-## Starlight Protocol v3.0.1 — The Autonomous Era
+## Starlight Protocol v3.0.2 — The Autonomous Era
 
-[![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.0.2-blue.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Starlight CBA Mission](https://github.com/godhiraj-code/cba/actions/workflows/starlight_ci.yml/badge.svg)](https://github.com/godhiraj-code/cba/actions/workflows/starlight_ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
@@ -40,7 +40,25 @@ CBA uses a **Decentralized Sidecar Architecture** communicating over a JSON-RPC 
 | **Context-Aware Pulse** | Dynamic settle-time adjustment based on stability hints |
 | **Failure-Safe Reports** | Immediate "Hero Story" generation on mission error |
 
-### 🛡️ Phase 9: Sovereign Security & Compliance
+### � Phase 10: Enterprise Observability (NEW in v3.0.2)
+
+| Feature | Description |
+|---------|-------------|
+| **Webhook Alerts** | Slack/Teams/Discord notifications on mission completion |
+| **Real-Time Dashboard** | Live telemetry in Mission Control |
+| **MTTR Tracking** | Mean Time To Recovery metrics |
+
+**Quick Webhook Setup:**
+```json
+// config.json
+"webhooks": {
+    "enabled": true,
+    "urls": ["https://hooks.slack.com/services/XXX"],
+    "notifyOn": ["failure", "success"]
+}
+```
+
+### �🛡️ Phase 9: Sovereign Security & Compliance
 
 | Feature | Description |
 |---------|-------------|

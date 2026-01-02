@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.2] - 2026-01-02
+
+### 🔔 Phase 10: Webhook Alerting
+
+#### Added
+- **WebhookNotifier Module**: `src/webhook.js` for sending Slack/Teams/Discord notifications
+- **Config Integration**: New `webhooks` section in `config.json` with `enabled`, `urls`, and `notifyOn` options
+- **Mission Notifications**: Hub sends webhook on mission completion with success/failure status
+- **Test Infrastructure**: `test/webhook_test_server.js` for local webhook testing
+
+#### How to Use
+1. Set `webhooks.enabled: true` in config.json
+2. Add your webhook URL(s) to `webhooks.urls` array
+3. Run a mission — notifications will be sent automatically
+
+---
+
 ## [3.0.1] - 2026-01-01
 
 ### 🔧 No-Code Marker HUD Fixes

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const TelemetryEngine = require('./telemetry');
 const ActionRecorder = require('./recorder');
+const WebhookNotifier = require('./webhook');
 const http = require('http');
 
 // Security: HTML escaping to prevent XSS
@@ -65,6 +66,7 @@ class CBAHub {
         this.cleanupScreenshots();
         this.loadHistoricalMemory();
         this.telemetry = new TelemetryEngine(path.join(process.cwd(), 'telemetry.json'));
+        this.webhooks = new WebhookNotifier(this.config.webhooks);
         this.recoveryTimes = []; // Track recovery times for MTTR
         this.init();
     }
@@ -709,6 +711,15 @@ class CBAHub {
             this.reportData.filter(i => i.type === 'HIJACK').length,
             this.recoveryTimes
         );
+
+        // Phase 10: Send Webhook Notification
+        await this.webhooks.notify(missionSuccess ? 'success' : 'failure', {
+            mission: this.currentMissionName || 'Unknown',
+            durationMs: Date.now() - (this.missionStartTime || Date.now()),
+            interventions: this.reportData.filter(i => i.type === 'HIJACK').length,
+            mttr: this.telemetry.getStats().avgRecoveryTimeMs,
+            error: missionSuccess ? null : 'Mission had failures'
+        });
 
         if (this.page) await this.page.close();
         if (this.browser) await this.browser.close();

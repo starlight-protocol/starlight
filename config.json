@@ -38,5 +38,13 @@
             "latencyMs": 0,
             "blockPatterns": []
         }
+    },
+    "webhooks": {
+        "enabled": false,
+        "urls": [],
+        "notifyOn": [
+            "failure",
+            "success"
+        ]
     }
 }
