@@ -52,7 +52,9 @@ class IntentRunner {
                 if (msg.success) {
                     pending.resolve(msg);
                 } else {
-                    pending.reject(new Error(`Command ${msg.id} failed`));
+                    const desc = pending.cmdDesc || msg.id;
+                    const reason = msg.error || 'Unknown error';
+                    pending.reject(new Error(`Failed: ${desc} - ${reason}`));
                 }
             }
         } else if (msg.method === 'starlight.sovereign_update' && this.onContextUpdate) {
@@ -115,9 +117,12 @@ class IntentRunner {
         return new Promise((resolve, reject) => {
             const id = `cmd-${++this.commandIdCounter}`;
 
+            // Build human-readable description for error messages
+            const cmdDesc = this._describeCommand(params);
+
             const timeoutId = setTimeout(() => {
                 this.pendingCommands.delete(id);
-                reject(new Error(`Command ${id} timed out after ${timeout}ms`));
+                reject(new Error(`Timeout: ${cmdDesc} did not complete within ${timeout / 1000}s`));
             }, timeout);
 
             this.pendingCommands.set(id, {
@@ -128,7 +133,8 @@ class IntentRunner {
                 reject: (err) => {
                     clearTimeout(timeoutId);
                     reject(err);
-                }
+                },
+                cmdDesc  // Store for better error messages
             });
 
             this.ws.send(JSON.stringify({
@@ -138,6 +144,27 @@ class IntentRunner {
                 id
             }));
         });
+    }
+
+    /**
+     * Create human-readable command description for error messages.
+     * @private
+     */
+    _describeCommand(params) {
+        if (params.cmd === 'goto') {
+            return `Navigate to "${params.url}"`;
+        } else if (params.goal) {
+            return `Click goal "${params.goal}"`;
+        } else if (params.selector) {
+            return `Click "${params.selector}"`;
+        } else if (params.cmd === 'fill') {
+            return `Fill "${params.selector}"`;
+        } else if (params.cmd === 'screenshot') {
+            return `Take screenshot "${params.name || 'unnamed'}"`;
+        } else if (params.cmd === 'checkpoint') {
+            return `Checkpoint "${params.name}"`;
+        }
+        return `Command "${params.cmd || 'unknown'}"`;
     }
 
     /**

@@ -354,7 +354,14 @@ class CBAHub {
             // 1. Exact text match
             let match = buttons.find(b => (b.innerText || b.textContent || '').toLowerCase().includes(normalizedGoal));
 
-            // 2. Fuzzy ARIA match
+            // 2. data-goal attribute match (for semantic goals)
+            if (!match) {
+                match = buttons.find(b =>
+                    (b.getAttribute('data-goal') || '').toLowerCase() === normalizedGoal
+                );
+            }
+
+            // 3. Fuzzy ARIA match
             if (!match) {
                 match = buttons.find(b =>
                     (b.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal) ||
@@ -600,7 +607,29 @@ class CBAHub {
                         }
                     } else {
                         console.error(`[CBA Hub] FAILED to resolve semantic goal: ${msg.params.goal}`);
-                        this.broadcastToClient(id, { type: 'COMMAND_COMPLETE', id: msg.id, success: false });
+                        // CRITICAL FIX: Record failed semantic goals in report
+                        this.reportData.push({
+                            type: 'COMMAND',
+                            id: msg.id,
+                            cmd: 'click',
+                            goal: msg.params.goal,
+                            selector: null,
+                            url: null,
+                            success: false,
+                            forcedProceed: false,
+                            selfHealed: false,
+                            predictiveWait: false,
+                            timestamp: new Date().toLocaleTimeString(),
+                            beforeScreenshot: null,
+                            afterScreenshot: null,
+                            error: `Failed to resolve semantic goal: ${msg.params.goal}`
+                        });
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE',
+                            id: msg.id,
+                            success: false,
+                            error: `Could not find element matching goal "${msg.params.goal}"`
+                        });
                         return;
                     }
                 }
@@ -1074,6 +1103,21 @@ class CBAHub {
             }
         }
 
+        // Get target element rect if we have a selector (for overlap checking)
+        let targetRect = null;
+        if (msg.selector) {
+            try {
+                targetRect = await this.page.evaluate((selector) => {
+                    const el = document.querySelector(selector);
+                    if (!el) return null;
+                    const rect = el.getBoundingClientRect();
+                    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                }, msg.selector);
+            } catch (e) {
+                // Selector might not be valid yet, that's ok
+            }
+        }
+
         // Standardize broadcast
         this.broadcast({
             jsonrpc: '2.0',
@@ -1081,6 +1125,7 @@ class CBAHub {
             params: {
                 command: msg,
                 blocking: blockingElements,
+                targetRect: targetRect,  // For obstacle overlap checking
                 screenshot: screenshotB64,
                 page_text: pageText
             },

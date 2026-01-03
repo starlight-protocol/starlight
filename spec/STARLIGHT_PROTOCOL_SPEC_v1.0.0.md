@@ -112,6 +112,51 @@ Implementations MUST use WebSocket as the transport layer. The Hub MUST listen o
 
 Sentinels MUST declare a priority (1-10) during registration. Lower numbers indicate higher priority. The Hub SHOULD process responses in priority order when resolving conflicts.
 
+### 3.4 Connection Lifecycle
+
+The following state machine defines the connection lifecycle for all clients (Sentinels and Intents):
+
+```mermaid
+stateDiagram-v2
+    [*] --> CONNECTING: WebSocket Open
+    CONNECTING --> AUTHENTICATING: Connection Established
+    AUTHENTICATING --> AUTHENTICATED: Auth Token Valid
+    AUTHENTICATING --> REJECTED: Auth Token Invalid (4001)
+    AUTHENTICATED --> REGISTERING: Send Registration
+    REGISTERING --> READY: Registration Accepted
+    REGISTERING --> REJECTED: Invalid Registration (4002)
+    READY --> OPERATING: Normal Operation
+    OPERATING --> HIJACKING: Sentinel Hijack
+    HIJACKING --> OPERATING: Resume
+    OPERATING --> DISCONNECTING: Finish/Close
+    DISCONNECTING --> [*]: Connection Closed
+    
+    note right of REJECTED
+        Hub sends WebSocket close
+        with appropriate error code
+    end note
+```
+
+#### State Definitions
+
+| State | Description | Timeout | Exit Condition |
+|-------|-------------|---------|----------------|
+| `CONNECTING` | WebSocket handshake in progress | 5s | Connection established or failed |
+| `AUTHENTICATING` | Validating auth token (if security enabled) | 5s | Token validated or rejected |
+| `REGISTERING` | Processing registration message | 5s | Registration accepted or rejected |
+| `READY` | Client registered, awaiting commands | None | Command received or disconnect |
+| `OPERATING` | Actively processing commands/pre_checks | Per command | Command complete or hijack |
+| `HIJACKING` | Sentinel has exclusive browser control | lockTTL (5s) | Resume or TTL expired |
+| `DISCONNECTING` | Graceful shutdown in progress | 10s | Cleanup complete |
+
+#### Error Codes
+
+| Code | Reason | Description |
+|------|--------|-------------|
+| 4001 | Unauthorized | Auth token validation failed |
+| 4002 | Invalid Registration | Registration message malformed or rejected |
+| 4003 | Protocol Error | Message format invalid |
+
 ---
 
 ## 4. Message Format

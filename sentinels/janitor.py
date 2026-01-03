@@ -45,22 +45,56 @@ class JanitorSentinel(SentinelBase):
 
     async def on_pre_check(self, params, msg_id):
         blocking = params.get("blocking", [])
+        target_rect = params.get("targetRect")  # Target element's bounding rect
+        command = params.get("command", {})
         
-        if blocking:
-            for b in blocking:
-                matched_pattern = None
-                for pattern in self.blocking_patterns:
-                    if pattern.replace('.', '') in b.get("className", "") or pattern.replace('#', '') == b.get("id", ""):
-                        matched_pattern = pattern
-                        break
+        # Skip if no blocking elements or already hijacking
+        if not blocking or self.is_hijacking:
+            if not self.is_hijacking:
+                await self.send_clear()
+            return
+        
+        for b in blocking:
+            matched_pattern = None
+            for pattern in self.blocking_patterns:
+                if pattern.replace('.', '') in b.get("className", "") or pattern.replace('#', '') == b.get("id", ""):
+                    matched_pattern = pattern
+                    break
+            
+            if matched_pattern:
+                obstacle_id = b.get('selector', matched_pattern)
                 
-                if matched_pattern:
-                    obstacle_id = b.get('selector', matched_pattern)
-                    await self.perform_remediation(obstacle_id)
-                    return 
+                # SMART OVERLAP CHECK: Only clear if obstacle actually overlaps target or covers viewport
+                if target_rect and b.get("rect"):
+                    # Parse obstacle rect
+                    try:
+                        obs_dims = b["rect"].split("x")
+                        obs_width, obs_height = int(obs_dims[0]), int(obs_dims[1])
+                        
+                        # If obstacle is small and doesn't cover significant viewport, skip
+                        # Large overlays (modal backdrops) typically cover full viewport
+                        if obs_width < 500 and obs_height < 500:
+                            print(f"[{self.layer}] Skipping {obstacle_id} - small element, unlikely to block target")
+                            continue
+                    except:
+                        pass  # If parsing fails, proceed with clearing
+                
+                # DEDUPLICATION: Skip if we just cleared this same obstacle
+                if hasattr(self, '_last_cleared') and self._last_cleared == obstacle_id:
+                    if hasattr(self, '_clear_count') and self._clear_count > 2:
+                        print(f"[{self.layer}] Giving up on {obstacle_id} after 3 attempts - proceeding anyway")
+                        await self.send_clear()
+                        return
+                    self._clear_count = getattr(self, '_clear_count', 0) + 1
+                else:
+                    self._last_cleared = obstacle_id
+                    self._clear_count = 1
+                
+                await self.perform_remediation(obstacle_id)
+                return
         
-        if not self.is_hijacking:
-            await self.send_clear()
+        # No blocking elements matched or all were skipped
+        await self.send_clear()
 
     async def perform_remediation(self, obstacle_id):
         if self.is_hijacking: 
@@ -80,14 +114,29 @@ class JanitorSentinel(SentinelBase):
             
             # Heuristic exploration - try multiple selectors
             fallback_selectors = [
+                # ID-based (most specific)
+                "#newsletter-close",
+                "#cookie-accept", 
+                "#cookie-decline",
+                "#close-btn",
+                "#custom-close",
+                # Class-based
                 f"{obstacle_id} .close", 
-                f"{obstacle_id} #close-btn",
+                f"{obstacle_id} .btn-close",
                 f"{obstacle_id} button",
                 ".modal-close", 
                 ".close-btn",
+                ".btn-close",
+                ".btn-accept",
+                ".btn-decline",
+                # Text-based (Playwright format)
+                "button:has-text('No Thanks')",
                 "button:has-text('Close')",
                 "button:has-text('OK')",
-                "#custom-close"
+                "button:has-text('Accept')",
+                "button:has-text('Decline')",
+                "button:has-text('Got it')",
+                "button:has-text('Dismiss')",
             ]
             
             for selector in fallback_selectors:
