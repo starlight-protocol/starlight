@@ -1,5 +1,5 @@
 {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$schema": "http://json-schema.org/draft-07/schema#",
     "$id": "https://starlight-protocol.github.io/schemas/starlight.a11y.context.schema.json",
     "title": "starlight.context (accessibility)",
     "description": "Accessibility audit results from A11y Sentinel - WCAG 2.1 compliance check",

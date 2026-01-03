@@ -38,7 +38,12 @@ class A11ySentinel(SentinelBase):
             layer_name="A11ySentinel",
             priority=10  # Low priority - runs after other Sentinels
         )
+        # CRITICAL: Set capabilities AFTER super().__init__() but they are set
+        # on self which is checked by SDK's _register() method
         self.capabilities = ["accessibility", "audit", "wcag"]
+        
+        # Passive Sentinel - no selectors to monitor (doesn't block on specific elements)
+        self.selectors = []
         
         # Audit state
         self.violations = []
@@ -61,19 +66,19 @@ class A11ySentinel(SentinelBase):
     async def on_pre_check(self, params, msg_id):
         """
         On each pre_check:
-        1. Request DOM snapshot from Hub
+        1. Extract DOM data from pre_check params (Hub sends with each pre_check)
         2. Run accessibility audit
-        3. Send violations via starlight.context
+        3. Send violations via starlight.context_update
         4. Always send starlight.clear (non-blocking)
         """
         command = params.get("command", {})
         self.current_url = params.get("url", "unknown")
         
+        # Hub provides DOM data in pre_check params (if A11y enabled)
+        dom_data = params.get("a11y_snapshot", {"elements": [], "computed": []})
+        
         try:
-            # Request DOM snapshot for audit
-            dom_data = await self._request_dom_snapshot()
-            
-            if dom_data:
+            if dom_data and (dom_data.get("elements") or dom_data.get("computed")):
                 # Run all WCAG rules
                 violations = []
                 passes = 0
@@ -90,12 +95,14 @@ class A11ySentinel(SentinelBase):
                 self.passes = passes
                 self.audit_count += 1
                 
-                # Report findings via context update
+                # Report findings via context_update (protocol compliant)
                 if violations:
                     await self._report_violations(violations)
                     print(f"[{self.layer}] Found {len(violations)} accessibility issues")
                 else:
                     print(f"[{self.layer}] No accessibility issues found")
+            else:
+                print(f"[{self.layer}] No A11y snapshot data in pre_check - Hub may not have A11y enabled")
                     
         except Exception as e:
             print(f"[{self.layer}] Audit error: {e}")
@@ -115,21 +122,23 @@ class A11ySentinel(SentinelBase):
             return None
             
     async def _report_violations(self, violations):
-        """Send violations to Hub via starlight.context."""
+        """Send violations to Hub via starlight.context_update (protocol compliant)."""
         score = self._calculate_score(violations)
         
+        # Use starlight.context_update format per protocol spec
         context_update = {
             "jsonrpc": "2.0",
-            "method": "starlight.context",
+            "method": "starlight.context_update",
             "params": {
-                "key": "accessibility",
-                "value": {
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "url": self.current_url,
-                    "violations": violations,
-                    "passes": self.passes,
-                    "score": score,
-                    "level": self._get_level(score)
+                "context": {
+                    "accessibility": {
+                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "url": self.current_url,
+                        "violations": violations,
+                        "passes": self.passes,
+                        "score": score,
+                        "level": self._get_level(score)
+                    }
                 }
             },
             "id": f"a11y-ctx-{self.audit_count}"

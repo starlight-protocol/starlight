@@ -562,9 +562,17 @@ class CBAHub {
                 break;
             case 'starlight.context_update':
                 // Phase 4: Context Injection from Sentinels
+                // Phase 12: Also handles A11y Sentinel accessibility reports
                 if (params.context) {
-                    console.log(`[CBA Hub] Context Injection from ${sentinel?.layer || 'Unknown'}:`, params.context);
+                    console.log(`[CBA Hub] Context Injection from ${sentinel?.layer || 'Unknown'}:`, Object.keys(params.context));
                     this.sovereignState = { ...this.sovereignState, ...params.context };
+
+                    // Phase 12: Store accessibility data for report generation
+                    if (params.context.accessibility) {
+                        console.log(`[CBA Hub] A11y Report: Score ${params.context.accessibility.score}, Violations: ${params.context.accessibility.violations?.length || 0}`);
+                        this.a11yReport = params.context.accessibility;
+                    }
+
                     this.broadcastContextUpdate();
                 }
                 break;
@@ -773,6 +781,11 @@ class CBAHub {
             await new Promise(r => setTimeout(r, 100));
             waitCount++;
         }
+
+        // Phase 12: Wait for pending context updates (A11y reports) to arrive
+        await new Promise(r => setTimeout(r, 500));
+
+        console.log("[CBA Hub] Generating Hero Story Report...");
         await this.generateReport();
         await this.saveMissionTrace();
 
@@ -1103,6 +1116,17 @@ class CBAHub {
             }
         }
 
+        // Phase 12: Collect A11y snapshot for accessibility-capable Sentinels
+        let a11ySnapshot = null;
+        if (relevantSentinels.some(([id, s]) => s.capabilities?.includes('accessibility'))) {
+            try {
+                a11ySnapshot = await this.getA11ySnapshot();
+                console.log(`[CBA Hub] A11y snapshot collected (${a11ySnapshot.elements?.length || 0} elements)`);
+            } catch (e) {
+                console.warn('[CBA Hub] A11y snapshot failed:', e.message);
+            }
+        }
+
         // Get target element rect if we have a selector (for overlap checking)
         let targetRect = null;
         if (msg.selector) {
@@ -1127,7 +1151,8 @@ class CBAHub {
                 blocking: blockingElements,
                 targetRect: targetRect,  // For obstacle overlap checking
                 screenshot: screenshotB64,
-                page_text: pageText
+                page_text: pageText,
+                a11y_snapshot: a11ySnapshot  // Phase 12: For accessibility auditing
             },
             id: nanoid()
         });
@@ -1226,6 +1251,22 @@ class CBAHub {
                 }
                 console.log(`[CBA Hub] Sentinel Action SUCCESS: ${msg.selector} `);
             }
+
+            // Phase 12: A11y Sentinel DOM Snapshot
+            if (msg.cmd === 'get_a11y_snapshot') {
+                console.log(`[CBA Hub] A11y Snapshot requested...`);
+                const snapshot = await this.getA11ySnapshot();
+                const sentinel = this.sentinels.get(id);
+                if (sentinel?.ws?.readyState === 1) {
+                    sentinel.ws.send(JSON.stringify({
+                        jsonrpc: '2.0',
+                        method: 'starlight.a11y_snapshot',
+                        params: snapshot,
+                        id: msg.id
+                    }));
+                }
+                return;
+            }
         } catch (e) {
             console.error(`[CBA Hub] Sentinel action failed: ${e.message} `);
         }
@@ -1254,6 +1295,91 @@ class CBAHub {
                 }
                 hideObstacles(document);
             });
+        }
+    }
+
+    /**
+     * Phase 12: Get DOM snapshot for A11y Sentinel accessibility auditing.
+     * Extracts elements with their attributes and computed styles.
+     */
+    async getA11ySnapshot() {
+        if (!this.page) return { elements: [], computed: [] };
+
+        try {
+            const snapshot = await this.page.evaluate(() => {
+                const elements = [];
+                const computed = [];
+
+                // Collect all relevant elements
+                const allElements = document.querySelectorAll('*');
+                let count = 0;
+                const maxElements = 500; // Limit for performance
+
+                for (const el of allElements) {
+                    if (count >= maxElements) break;
+
+                    const tag = el.tagName;
+
+                    // Handle SVG elements where className is SVGAnimatedString
+                    const classStr = typeof el.className === 'string' ? el.className : (el.className?.baseVal || '');
+
+                    // Collect element data
+                    const elementData = {
+                        tag: tag,
+                        selector: el.id ? `#${el.id}` : (classStr ? `.${classStr.split(' ')[0]}` : tag.toLowerCase()),
+                        text: (el.innerText || el.textContent || '').slice(0, 100).trim(),
+                        hasLabel: !!el.labels?.length,
+                        attributes: {
+                            id: el.id || null,
+                            className: classStr || null,
+                            alt: el.getAttribute('alt'),
+                            role: el.getAttribute('role'),
+                            'aria-label': el.getAttribute('aria-label'),
+                            'aria-labelledby': el.getAttribute('aria-labelledby'),
+                            'aria-hidden': el.getAttribute('aria-hidden'),
+                            href: el.getAttribute('href'),
+                            type: el.getAttribute('type'),
+                            for: el.getAttribute('for'),
+                            title: el.getAttribute('title'),
+                            tabindex: el.getAttribute('tabindex'),
+                            width: el.getAttribute('width'),
+                            height: el.getAttribute('height'),
+                            src: el.getAttribute('src')?.slice(0, 100)
+                        }
+                    };
+
+                    elements.push(elementData);
+
+                    // Collect computed styles for text elements and interactive elements
+                    if (['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'P', 'SPAN', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LABEL', 'DIV'].includes(tag)) {
+                        const styles = window.getComputedStyle(el);
+                        computed.push({
+                            tag: tag,
+                            selector: elementData.selector,
+                            text: elementData.text,
+                            styles: {
+                                color: styles.color,
+                                backgroundColor: styles.backgroundColor,
+                                fontSize: styles.fontSize,
+                                fontWeight: styles.fontWeight,
+                                outline: styles.outline,
+                                outlineStyle: styles.outlineStyle,
+                                boxShadow: styles.boxShadow
+                            }
+                        });
+                    }
+
+                    count++;
+                }
+
+                return { elements, computed };
+            });
+
+            console.log(`[CBA Hub] A11y snapshot collected: ${snapshot.elements.length} elements, ${snapshot.computed.length} with styles`);
+            return snapshot;
+        } catch (e) {
+            console.error(`[CBA Hub] A11y snapshot failed: ${e.message}`);
+            return { elements: [], computed: [] };
         }
     }
 
@@ -1399,6 +1525,53 @@ class CBAHub {
                         letter-spacing: -0.03em;
                     }
 
+                    /* Phase 12: Accessibility Dashboard */
+                    .a11y-dashboard {
+                        margin-top: 3rem;
+                        padding: 2rem;
+                        background: var(--bg-secondary);
+                        border-radius: 16px;
+                        border: 1px solid var(--border);
+                    }
+                    .a11y-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 1.5rem;
+                        margin-bottom: 1.5rem;
+                    }
+                    .a11y-score {
+                        width: 80px;
+                        height: 80px;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 1.5rem;
+                        font-weight: 800;
+                        border: 4px solid;
+                    }
+                    .a11y-score.good { border-color: var(--accent); color: var(--accent); }
+                    .a11y-score.acceptable { border-color: #3b82f6; color: #3b82f6; }
+                    .a11y-score.needs-work { border-color: #f59e0b; color: #f59e0b; }
+                    .a11y-score.critical { border-color: #f43f5e; color: #f43f5e; }
+                    .a11y-info h3 { margin: 0 0 0.5rem 0; font-size: 1.2rem; }
+                    .a11y-violations {
+                        display: grid;
+                        gap: 0.5rem;
+                        margin-top: 1rem;
+                    }
+                    .a11y-violation {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        padding: 0.75rem;
+                        background: rgba(255,255,255,0.03);
+                        border-radius: 8px;
+                    }
+                    .violation-rule { font-weight: 600; min-width: 120px; }
+                    .violation-wcag { color: var(--text-secondary); font-size: 0.8rem; min-width: 60px; }
+                    .violation-msg { flex: 1; color: var(--text-secondary); font-size: 0.9rem; }
+
                     .meta { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem; font-family: 'JetBrains Mono', monospace; }
                     .card-title { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 700; }
                     
@@ -1472,6 +1645,55 @@ class CBAHub {
             }
         }).join('')}
                 </div>
+
+                ${this.a11yReport ? (() => {
+                // Group violations by rule type for summary
+                const violationsByRule = {};
+                (this.a11yReport.violations || []).forEach(v => {
+                    if (!violationsByRule[v.rule]) {
+                        violationsByRule[v.rule] = { count: 0, wcag: v.wcag, impact: v.impact, samples: [] };
+                    }
+                    violationsByRule[v.rule].count++;
+                    if (violationsByRule[v.rule].samples.length < 3) {
+                        violationsByRule[v.rule].samples.push(v.message);
+                    }
+                });
+
+                return `
+                <div class="a11y-dashboard">
+                    <h2>♿ Accessibility Audit</h2>
+                    <div class="a11y-header">
+                        <div class="a11y-score ${this.a11yReport.score >= 0.9 ? 'good' : this.a11yReport.score >= 0.7 ? 'acceptable' : this.a11yReport.score >= 0.5 ? 'needs-work' : 'critical'}">
+                            ${Math.round(this.a11yReport.score * 100)}%
+                        </div>
+                        <div class="a11y-info">
+                            <h3>${this.a11yReport.level || 'Unknown Level'}</h3>
+                            <p>${this.a11yReport.violations?.length || 0} violations found | ${this.a11yReport.passes || 0} checks passed</p>
+                        </div>
+                    </div>
+                    
+                    ${Object.keys(violationsByRule).length > 0 ? `
+                    <h4 style="margin-top: 1.5rem; margin-bottom: 1rem;">Violations by Category</h4>
+                    <div class="a11y-violations">
+                        ${Object.entries(violationsByRule).map(([rule, data]) => `
+                            <div class="a11y-violation" style="flex-direction: column; align-items: flex-start;">
+                                <div style="display: flex; gap: 0.75rem; align-items: center; width: 100%;">
+                                    <span class="badge ${data.impact === 'critical' ? 'badge-danger' : data.impact === 'serious' ? 'badge-warning' : 'badge-info'}">${data.impact}</span>
+                                    <span class="violation-rule">${rule}</span>
+                                    <span class="violation-wcag">${data.wcag || ''}</span>
+                                    <span style="margin-left: auto; font-weight: 700; color: var(--accent);">${data.count} issues</span>
+                                </div>
+                                <div style="margin-top: 0.5rem; padding-left: 0.5rem; border-left: 2px solid var(--border);">
+                                    ${data.samples.map(s => `<div class="violation-msg" style="font-size: 0.85rem;">${s}</div>`).join('')}
+                                    ${data.count > 3 ? `<div class="meta" style="margin-top: 0.25rem;">...and ${data.count - 3} more</div>` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ` : '<p class="meta">No accessibility violations detected! 🎉</p>'}
+                </div>
+                `;
+            })() : ''}
 
                 <div class="roi-dashboard">
                     <h2>📈 Business Value Dashboard</h2>
