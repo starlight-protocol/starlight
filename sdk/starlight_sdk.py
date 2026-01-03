@@ -122,6 +122,9 @@ class SentinelBase(ABC):
         print(f"[{self.layer}] Shutdown complete.")
 
     async def _register(self):
+        # Security: Get auth token from config
+        auth_token = self.config.get("hub", {}).get("security", {}).get("authToken")
+        
         msg = {
             "jsonrpc": "2.0",
             "method": "starlight.registration",
@@ -129,7 +132,9 @@ class SentinelBase(ABC):
                 "layer": self.layer,
                 "priority": self.priority,
                 "selectors": self.selectors,
-                "capabilities": self.capabilities
+                "capabilities": self.capabilities,
+                "version": "1.0.0",
+                "authToken": auth_token
             },
             "id": "reg-" + str(int(time.time()))
         }

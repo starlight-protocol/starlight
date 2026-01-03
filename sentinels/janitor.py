@@ -17,6 +17,10 @@ from sdk.starlight_sdk import SentinelBase
 class JanitorSentinel(SentinelBase):
     def __init__(self):
         super().__init__(layer_name="JanitorSentinel", priority=5)
+        # Load janitor config
+        janitor_config = self.config.get("janitor", {})
+        self.exploration_delay = janitor_config.get("explorationDelayMs", 300) / 1000.0
+        self.remediation_delay = janitor_config.get("remediationDelayMs", 1000) / 1000.0
         # Comprehensive blocking patterns for common UI obstacles
         self.blocking_patterns = [
             # Modals and Popups
@@ -92,12 +96,12 @@ class JanitorSentinel(SentinelBase):
                 await self.send_action("click", full_sel)
                 self.tried_selectors.append(full_sel)
                 self.current_action_selector = full_sel  # Track for learning
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(self.exploration_delay)
             
             # Logic Fix: Store the current selector being tried; on success, we learn it
             self.last_action = {"id": obstacle_id, "selector": self.current_action_selector, "known": False}
 
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(self.remediation_delay)
         await self.send_resume(re_check=True)
         self.is_hijacking = False
 

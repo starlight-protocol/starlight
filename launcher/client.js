@@ -115,10 +115,11 @@ function updateVitals(data) {
 function updateStatus(status) {
     processStatus = status;
 
-    // Update Hub
-    updateProcessUI('hub', status.hub);
-    updateProcessUI('pulse', status.pulse);
-    updateProcessUI('janitor', status.janitor);
+    // Update all process statuses dynamically
+    Object.keys(status).forEach(name => {
+        if (name === 'mission') return; // Skip mission, handled separately
+        updateProcessUI(name, status[name]);
+    });
 
     // Update launch button
     if (status.mission === 'running') {
@@ -156,9 +157,13 @@ function updateMissionDropdown(missions) {
 }
 
 function updateProcessUI(name, state) {
-    const icon = statusIcons[name];
-    const card = statusCards[name];
+    // Get elements dynamically - they may not exist in statusIcons/statusCards
+    const icon = document.getElementById(`${name}-status`);
+    const card = document.getElementById(`${name}-card`);
     const btn = document.getElementById(`${name}-btn`);
+
+    // Skip if elements don't exist (e.g., sentinel cards not yet rendered)
+    if (!icon || !card || !btn) return;
 
     if (state === 'running') {
         icon.textContent = '🟢';

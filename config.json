@@ -11,6 +11,14 @@
         "shadowDom": {
             "enabled": true,
             "maxDepth": 5
+        },
+        "security": {
+            "authToken": null,
+            "ssl": {
+                "enabled": false,
+                "keyPath": null,
+                "certPath": null
+            }
         }
     },
     "aura": {
@@ -22,6 +30,11 @@
         "reconnectDelay": 3,
         "heartbeatInterval": 2,
         "maxVetoCount": 3
+    },
+    "janitor": {
+        "explorationDelayMs": 300,
+        "remediationDelayMs": 1000,
+        "selfHealRoiSeconds": 120
     },
     "vision": {
         "model": "moondream",

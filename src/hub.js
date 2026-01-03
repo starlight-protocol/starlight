@@ -7,6 +7,7 @@ const TelemetryEngine = require('./telemetry');
 const ActionRecorder = require('./recorder');
 const WebhookNotifier = require('./webhook');
 const http = require('http');
+const https = require('https');
 
 // Security: HTML escaping to prevent XSS
 function escapeHtml(str) {
@@ -25,16 +26,50 @@ class CBAHub {
         this.headless = headless || this.config.hub?.headless || false;
 
         this.port = this.config.hub?.port || port;
+        this.authToken = this.config.hub?.security?.authToken || null;
 
-        this.server = http.createServer((req, res) => {
+        // Create HTTP or HTTPS server based on SSL config
+        const sslConfig = this.config.hub?.security?.ssl;
+        const requestHandler = (req, res) => {
             if (req.url === '/health') {
-                res.writeHead(200, { 'Content-Type': 'text/plain' });
-                res.end('OK');
+                const status = {
+                    status: 'healthy',
+                    version: '3.0.3',
+                    protocol: 'starlight/1.0.0',
+                    uptime: process.uptime(),
+                    sentinels: Array.from(this.sentinels?.values() || []).map(s => ({
+                        layer: s.layer,
+                        priority: s.priority,
+                        capabilities: s.capabilities
+                    })),
+                    mission: {
+                        active: (this.commandQueue?.length || 0) > 0 || this.isProcessing,
+                        queueLength: this.commandQueue?.length || 0,
+                        isLocked: this.isLocked || false
+                    },
+                    security: {
+                        authEnabled: !!this.authToken,
+                        sslEnabled: sslConfig?.enabled || false
+                    }
+                };
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(status, null, 2));
             } else {
                 res.writeHead(404);
                 res.end();
             }
-        });
+        };
+
+        if (sslConfig?.enabled && sslConfig.keyPath && sslConfig.certPath) {
+            const sslOptions = {
+                key: fs.readFileSync(sslConfig.keyPath),
+                cert: fs.readFileSync(sslConfig.certPath)
+            };
+            this.server = https.createServer(sslOptions, requestHandler);
+            console.log('[CBA Hub] SSL enabled - using WSS (secure WebSocket)');
+        } else {
+            this.server = http.createServer(requestHandler);
+        }
 
         this.wss = new WebSocketServer({ server: this.server });
         this.browser = null;
@@ -114,21 +149,23 @@ class CBAHub {
 
         console.log('[CBA Hub] Phase 9: Traffic Sovereign ENABLED');
 
+        // Extract config values outside the callback to avoid scope issues
+        const blockPatterns = networkConfig.blockPatterns || [];
+        const latency = networkConfig.latencyMs || 0;
+
         await this.page.route('**/*', async (route) => {
             const url = route.request().url();
 
             // Check block patterns
-            const blockPatterns = networkConfig.blockPatterns || [];
             for (const pattern of blockPatterns) {
                 if (url.includes(pattern)) {
-                    console.log(`[CBA Hub] 🚫 BLOCKED: ${url}`);
+                    console.log(`[CBA Hub] BLOCKED: ${url}`);
                     await route.abort('blockedbyclient');
                     return;
                 }
             }
 
             // Apply latency if configured
-            const latency = networkConfig.latencyMs || 0;
             if (latency > 0) {
                 await new Promise(r => setTimeout(r, latency));
             }
@@ -137,7 +174,7 @@ class CBAHub {
             await route.continue();
         });
 
-        console.log(`[CBA Hub] Traffic rules: block=${blockPatterns.length} patterns, latency=${networkConfig.latencyMs || 0}ms`);
+        console.log(`[CBA Hub] Traffic rules: block=${blockPatterns.length} patterns, latency=${latency}ms`);
     }
 
     async init() {
@@ -493,13 +530,20 @@ class CBAHub {
 
         switch (msg.method) {
             case 'starlight.registration':
+                // Security: Validate auth token if enabled
+                if (this.authToken && params.authToken !== this.authToken) {
+                    console.warn(`[CBA Hub] Rejected registration from ${params.layer}: Invalid auth token`);
+                    ws.close(4001, 'Unauthorized: Invalid auth token');
+                    return;
+                }
                 this.sentinels.set(id, {
                     ws,
                     lastSeen: Date.now(),
                     layer: params.layer,
                     priority: params.priority,
                     selectors: params.selectors,
-                    capabilities: params.capabilities
+                    capabilities: params.capabilities,
+                    protocolVersion: params.version || '1.0.0'
                 });
                 console.log(`[CBA Hub] Registered Sentinel: ${params.layer} (Priority: ${params.priority})`);
                 break;
