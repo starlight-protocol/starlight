@@ -490,7 +490,7 @@ This specification does not require any IANA registrations.
 ## Appendix A: Reference Implementation
 
 The reference implementation is available at:
-https://github.com/godhiraj-code/cba
+https://github.com/starlight-protocol/starlight
 
 Components:
 - **Hub:** `src/hub.js` (Node.js)

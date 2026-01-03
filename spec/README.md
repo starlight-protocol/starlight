@@ -140,7 +140,7 @@ node test/my_mission.js
 
 ## Community
 
-- **GitHub**: https://github.com/godhiraj-code/cba
+- **GitHub**: https://github.com/starlight-protocol/starlight
 - **Author**: [Dhiraj Das](https://www.dhirajdas.dev)
 
 ### Contributing
