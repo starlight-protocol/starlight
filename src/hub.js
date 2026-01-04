@@ -659,6 +659,19 @@ class CBAHub {
             case 'starlight.getRecordedSteps':
                 this.broadcastToClient(id, { type: 'RECORDED_STEPS', steps: this.recorder.getSteps() });
                 break;
+
+            // Phase 17: Inter-Sentinel Side-Talk
+            case 'starlight.sidetalk':
+                await this.handleSideTalk(id, params, sentinel);
+                break;
+
+            // Phase 17: Warp Context Capture
+            case 'starlight.warp_capture':
+                await this.handleWarpCapture(id, params);
+                break;
+            case 'starlight.warp_restore':
+                await this.handleWarpRestore(id, params);
+                break;
         }
     }
 
@@ -1379,7 +1392,218 @@ class CBAHub {
             return snapshot;
         } catch (e) {
             console.error(`[CBA Hub] A11y snapshot failed: ${e.message}`);
-            return { elements: [], computed: [] };
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 17: Inter-Sentinel Side-Talk
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Handle side-talk messages between Sentinels.
+     * Routes messages without requiring direct Sentinel connections.
+     * Handles Sentinel availability (offline/unavailable scenarios).
+     */
+    async handleSideTalk(senderId, params, senderSentinel) {
+        const { from, to, topic, payload, replyTo, ttl = 5000 } = params;
+
+        console.log(`[CBA Hub] Side-Talk: ${from} → ${to} (topic: ${topic})`);
+
+        // Validate sender
+        if (!senderSentinel || senderSentinel.layer !== from) {
+            console.warn(`[CBA Hub] Side-Talk rejected: sender mismatch (${from})`);
+            return;
+        }
+
+        // Build the side-talk envelope
+        const envelope = {
+            jsonrpc: '2.0',
+            method: 'starlight.sidetalk',
+            params: {
+                from,
+                to,
+                topic,
+                payload,
+                replyTo,
+                timestamp: new Date().toISOString()
+            },
+            id: `sidetalk-${nanoid(8)}`
+        };
+
+        // Track delivery status
+        const deliveryStatus = {
+            sent: 0,
+            delivered: 0,
+            unavailable: []
+        };
+
+        // Broadcast or direct message
+        if (to === '*') {
+            // Broadcast to all Sentinels except sender
+            for (const [id, sentinel] of this.sentinels.entries()) {
+                if (sentinel.layer !== from) {
+                    const success = this.deliverSideTalk(sentinel, envelope);
+                    deliveryStatus.sent++;
+                    if (success) {
+                        deliveryStatus.delivered++;
+                    } else {
+                        deliveryStatus.unavailable.push(sentinel.layer);
+                    }
+                }
+            }
+            console.log(`[CBA Hub] Side-Talk broadcast: ${deliveryStatus.delivered}/${deliveryStatus.sent} delivered`);
+        } else {
+            // Direct message to specific Sentinel
+            const targetSentinel = Array.from(this.sentinels.entries())
+                .find(([id, s]) => s.layer === to)?.[1];
+
+            if (!targetSentinel) {
+                console.warn(`[CBA Hub] Side-Talk: Target Sentinel '${to}' not found/unavailable`);
+
+                // Notify sender of failed delivery
+                this.deliverSideTalk(senderSentinel, {
+                    jsonrpc: '2.0',
+                    method: 'starlight.sidetalk_ack',
+                    params: {
+                        originalId: envelope.id,
+                        status: 'undeliverable',
+                        reason: `Sentinel '${to}' is not available`,
+                        availableSentinels: Array.from(this.sentinels.values()).map(s => s.layer)
+                    },
+                    id: `sidetalk-ack-${nanoid(8)}`
+                });
+                return;
+            }
+
+            const success = this.deliverSideTalk(targetSentinel, envelope);
+            if (!success) {
+                console.warn(`[CBA Hub] Side-Talk: Failed to deliver to '${to}'`);
+            }
+        }
+
+        // Log side-talk for debugging
+        this.missionTrace.push({
+            type: 'SIDETALK',
+            from,
+            to,
+            topic,
+            deliveryStatus,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    /**
+     * Attempt to deliver a side-talk message to a Sentinel.
+     * Returns true if sent successfully, false if Sentinel is unavailable.
+     */
+    deliverSideTalk(sentinel, envelope) {
+        try {
+            if (!sentinel.ws || sentinel.ws.readyState !== WebSocket.OPEN) {
+                return false;
+            }
+            sentinel.ws.send(JSON.stringify(envelope));
+            return true;
+        } catch (e) {
+            console.error(`[CBA Hub] Side-Talk delivery error: ${e.message}`);
+            return false;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 17: Starlight Warp (Context Serialization)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Capture current browser context to a .warp file.
+     * Security: All data is sanitized by default.
+     */
+    async handleWarpCapture(clientId, params) {
+        const { reason = 'manual', sanitize = true, encrypt = false } = params;
+
+        console.log(`[CBA Hub] Warp Capture requested (reason: ${reason}, sanitize: ${sanitize})`);
+
+        // Security warning for unsanitized captures
+        if (!sanitize) {
+            console.warn('[CBA Hub] ⚠️ SECURITY WARNING: Creating unsanitized warp file!');
+        }
+
+        try {
+            // Lazy-load warp module
+            if (!this.warp) {
+                const { StarlightWarp } = require('./warp');
+                this.warp = new StarlightWarp(this.page, {
+                    outputDir: this.config.warp?.outputDir || './warps',
+                    sanitize,
+                    encrypt,
+                    encryptionKey: this.config.warp?.encryptionKey
+                });
+                await this.warp.initialize();
+            }
+
+            const filepath = await this.warp.capture(reason);
+
+            this.broadcastToClient(clientId, {
+                type: 'WARP_CAPTURED',
+                success: true,
+                filepath,
+                sanitized: sanitize
+            });
+
+            // Add to mission trace
+            this.missionTrace.push({
+                type: 'WARP_CAPTURE',
+                reason,
+                filepath,
+                sanitized: sanitize,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error(`[CBA Hub] Warp capture failed: ${error.message}`);
+            this.broadcastToClient(clientId, {
+                type: 'WARP_CAPTURED',
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Restore browser context from a .warp file.
+     */
+    async handleWarpRestore(clientId, params) {
+        const { filepath, restoreUrl = true, restoreCookies = true, restoreStorage = true } = params;
+
+        console.log(`[CBA Hub] Warp Restore requested: ${filepath}`);
+
+        try {
+            if (!this.warp) {
+                const { StarlightWarp } = require('./warp');
+                this.warp = new StarlightWarp(this.page, {
+                    outputDir: this.config.warp?.outputDir || './warps'
+                });
+            }
+
+            const data = await this.warp.restore(filepath, {
+                restoreUrl,
+                restoreCookies,
+                restoreStorage
+            });
+
+            this.broadcastToClient(clientId, {
+                type: 'WARP_RESTORED',
+                success: true,
+                url: data.url,
+                sanitized: data._sanitized
+            });
+
+        } catch (error) {
+            console.error(`[CBA Hub] Warp restore failed: ${error.message}`);
+            this.broadcastToClient(clientId, {
+                type: 'WARP_RESTORED',
+                success: false,
+                error: error.message
+            });
         }
     }
 

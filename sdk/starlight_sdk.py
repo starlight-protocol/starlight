@@ -175,6 +175,11 @@ class SentinelBase(ABC):
             await self.on_entropy(params)
         elif method == "starlight.sovereign_update":
             await self.on_context_update(params.get("context", {}))
+        # Phase 17: Inter-Sentinel Side-Talk
+        elif method == "starlight.sidetalk":
+            await self.on_sidetalk(params)
+        elif method == "starlight.sidetalk_ack":
+            await self.on_sidetalk_ack(params)
         else:
             # Phase 7.3: For responses/broadcasts without method, pass full data
             await self.on_message(method, params if method else data, msg_id)
@@ -202,6 +207,36 @@ class SentinelBase(ABC):
     async def update_context(self, context_data):
         """Inject data into the Hub's sovereign state."""
         await self._send_msg("starlight.context_update", {"context": context_data})
+
+    # Phase 17: Inter-Sentinel Side-Talk
+    async def send_sidetalk(self, to, topic, payload, reply_to=None):
+        """
+        Send a side-talk message to another Sentinel.
+        
+        Args:
+            to: Target Sentinel name (e.g., 'A11ySentinel') or '*' for broadcast
+            topic: Message topic (e.g., 'environment_state', 'capability_query')
+            payload: Dict with message data
+            reply_to: Optional message ID to reply to
+        """
+        params = {
+            "from": self.layer,
+            "to": to,
+            "topic": topic,
+            "payload": payload
+        }
+        if reply_to:
+            params["replyTo"] = reply_to
+        await self._send_msg("starlight.sidetalk", params)
+        print(f"[{self.layer}] Side-Talk → {to} (topic: {topic})")
+
+    async def broadcast_state(self, stable=True, mutation_rate=0):
+        """Convenience method to broadcast environment state to all Sentinels."""
+        await self.send_sidetalk("*", "environment_state", {
+            "stable": stable,
+            "mutationRate": mutation_rate,
+            "timestamp": time.time()
+        })
 
     async def _send_msg(self, method, params):
         if self._websocket:
@@ -232,3 +267,31 @@ class SentinelBase(ABC):
 
     async def on_message(self, method, params, msg_id):
         pass
+
+    # Phase 17: Side-Talk Hooks (Override in Sentinel for custom handling)
+    async def on_sidetalk(self, params):
+        """
+        Called when a side-talk message is received from another Sentinel.
+        Override in your Sentinel to handle inter-Sentinel communication.
+        
+        Args:
+            params: {from, to, topic, payload, timestamp}
+        """
+        sender = params.get("from", "Unknown")
+        topic = params.get("topic", "unknown")
+        print(f"[{self.layer}] Side-Talk received from {sender} (topic: {topic})")
+
+    async def on_sidetalk_ack(self, params):
+        """
+        Called when a side-talk delivery acknowledgment is received.
+        Status can be 'delivered' or 'undeliverable'.
+        
+        Args:
+            params: {originalId, status, reason, availableSentinels}
+        """
+        status = params.get("status", "unknown")
+        if status == "undeliverable":
+            reason = params.get("reason", "Unknown reason")
+            available = params.get("availableSentinels", [])
+            print(f"[{self.layer}] Side-Talk undeliverable: {reason}")
+            print(f"[{self.layer}] Available Sentinels: {', '.join(available)}")
