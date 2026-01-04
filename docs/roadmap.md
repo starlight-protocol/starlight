@@ -86,8 +86,8 @@ To transform Constellation-Based Automation from a smart framework into a global
 
 ## ♿ PHASE 12: Accessibility & Compliance Testing
 *Shift-left on accessibility.*
-- **A11y Sentinel**: WCAG 2.1 automated audits during every mission. [PLANNED]
-- **Color Contrast Analyzer**: Real-time detection of contrast failures. [PLANNED]
+- **A11y Sentinel**: WCAG 2.1 automated audits during every mission. [DONE]
+- **Color Contrast Analyzer**: Real-time detection of contrast failures. [DONE]
 - **Screen Reader Simulation**: Validate ARIA labels and keyboard navigation. [PLANNED]
 - **Compliance Reports**: PDF generation for audit trails (GDPR, HIPAA readiness). [PLANNED]
 
