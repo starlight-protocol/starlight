@@ -414,7 +414,217 @@ class CBAHub {
         return null;
     }
 
+    /**
+     * Resolve a form input by semantic goal (label text, placeholder, aria-label).
+     * This enables fillGoal('Search') to find inputs without hardcoded selectors.
+     */
+    async resolveFormIntent(goal) {
+        const shadowEnabled = this.config.hub?.shadowDom?.enabled !== false;
+        const maxDepth = this.config.hub?.shadowDom?.maxDepth || 5;
+
+        const target = await this.page.evaluate(({ goalText, shadowEnabled, maxDepth }) => {
+            const normalizedGoal = goalText.toLowerCase();
+
+            // Collect all form inputs including shadow DOM
+            function collectInputs(root, depth = 0) {
+                if (depth > maxDepth) return [];
+                let inputs = Array.from(root.querySelectorAll('input, textarea, select'));
+
+                if (shadowEnabled) {
+                    const allElements = root.querySelectorAll('*');
+                    for (const el of allElements) {
+                        if (el.shadowRoot) {
+                            inputs = inputs.concat(collectInputs(el.shadowRoot, depth + 1));
+                        }
+                    }
+                }
+                return inputs;
+            }
+
+            const inputs = collectInputs(document);
+
+            // 1. Match by associated <label> text
+            let match = inputs.find(input => {
+                if (input.id) {
+                    const label = document.querySelector(`label[for="${input.id}"]`);
+                    if (label && (label.innerText || label.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            // 2. Match by placeholder attribute
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('placeholder') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            // 3. Match by aria-label
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            // 4. Match by name attribute
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('name') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            // 5. Match by title attribute
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('title') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            if (match) {
+                // Generate selector
+                if (match.id) return { selector: `#${match.id}` };
+                if (match.name) return { selector: `[name="${match.name}"]` };
+                if (match.placeholder) return { selector: `[placeholder="${match.placeholder}"]` };
+                if (match.className && typeof match.className === 'string') {
+                    return { selector: `.${match.className.split(' ').filter(c => c).join('.')}` };
+                }
+                return { selector: match.tagName.toLowerCase() };
+            }
+            return null;
+        }, { goalText: goal, shadowEnabled, maxDepth });
+
+        if (target) {
+            console.log(`[CBA Hub] Form input resolved for "${goal}" -> ${target.selector}`);
+            return { selector: target.selector, selfHealed: false };
+        }
+
+        // Fallback: Check historical memory for form fills
+        const formKey = `fill:${goal}`;
+        if (this.historicalMemory.has(formKey)) {
+            console.log(`[CBA Hub] Phase 7: Form resolution failed. Using Predictive Memory for "${goal}" -> ${this.historicalMemory.get(formKey)}`);
+            return { selector: this.historicalMemory.get(formKey), selfHealed: true };
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a select dropdown by semantic goal (label text, name, aria-label).
+     */
+    async resolveSelectIntent(goal) {
+        const target = await this.page.evaluate((goalText) => {
+            const normalizedGoal = goalText.toLowerCase();
+            const selects = Array.from(document.querySelectorAll('select'));
+
+            // Match by associated label
+            let match = selects.find(select => {
+                if (select.id) {
+                    const label = document.querySelector(`label[for="${select.id}"]`);
+                    if (label && (label.innerText || label.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            // Match by aria-label
+            if (!match) {
+                match = selects.find(s => (s.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal));
+            }
+
+            // Match by name
+            if (!match) {
+                match = selects.find(s => (s.getAttribute('name') || '').toLowerCase().includes(normalizedGoal));
+            }
+
+            if (match) {
+                if (match.id) return { selector: `#${match.id}` };
+                if (match.name) return { selector: `[name="${match.name}"]` };
+                return { selector: 'select' };
+            }
+            return null;
+        }, goal);
+
+        if (target) {
+            console.log(`[CBA Hub] Select resolved for "${goal}" -> ${target.selector}`);
+            return { selector: target.selector, selfHealed: false };
+        }
+
+        const formKey = `select:${goal}`;
+        if (this.historicalMemory.has(formKey)) {
+            return { selector: this.historicalMemory.get(formKey), selfHealed: true };
+        }
+        return null;
+    }
+
+    /**
+     * Resolve a checkbox by semantic goal (label text, aria-label).
+     */
+    async resolveCheckboxIntent(goal) {
+        const target = await this.page.evaluate((goalText) => {
+            const normalizedGoal = goalText.toLowerCase();
+            const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"], input[type="radio"]'));
+
+            // Match by associated label text (label wrapping or for= attribute)
+            let match = checkboxes.find(cb => {
+                // Check parent label
+                const parentLabel = cb.closest('label');
+                if (parentLabel && (parentLabel.innerText || parentLabel.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                    return true;
+                }
+                // Check for= label
+                if (cb.id) {
+                    const label = document.querySelector(`label[for="${cb.id}"]`);
+                    if (label && (label.innerText || label.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            // Match by aria-label
+            if (!match) {
+                match = checkboxes.find(cb => (cb.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal));
+            }
+
+            if (match) {
+                if (match.id) return { selector: `#${match.id}` };
+                if (match.name) return { selector: `[name="${match.name}"]` };
+                return { selector: `input[type="${match.type}"]` };
+            }
+            return null;
+        }, goal);
+
+        if (target) {
+            console.log(`[CBA Hub] Checkbox resolved for "${goal}" -> ${target.selector}`);
+            return { selector: target.selector, selfHealed: false };
+        }
+
+        const formKey = `check:${goal}`;
+        if (this.historicalMemory.has(formKey)) {
+            return { selector: this.historicalMemory.get(formKey), selfHealed: true };
+        }
+        return null;
+    }
+
     loadHistoricalMemory() {
+        // Load persistent memory file (from previous sessions)
+        const memoryFile = path.join(process.cwd(), 'starlight_memory.json');
+        if (fs.existsSync(memoryFile)) {
+            try {
+                const memory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+                Object.entries(memory).forEach(([goal, selector]) => {
+                    this.historicalMemory.set(goal, selector);
+                });
+                console.log(`[CBA Hub] 🧠 Loaded ${Object.keys(memory).length} learned mappings from starlight_memory.json`);
+            } catch (e) {
+                console.warn('[CBA Hub] Could not load starlight_memory.json:', e.message);
+            }
+        }
+
+        // Also load from mission trace (for backward compatibility)
         const traceFile = path.join(process.cwd(), 'mission_trace.json');
         if (fs.existsSync(traceFile)) {
             try {
@@ -470,6 +680,70 @@ class CBAHub {
             } catch (e) {
                 console.warn("[CBA Hub] Failed to load temporal ghosting metrics:", e.message);
             }
+        }
+    }
+
+    /**
+     * Save learned goal→selector mappings to persistent storage.
+     * Called on shutdown to ensure learning persists across sessions.
+     */
+    async saveHistoricalMemory() {
+        if (this.historicalMemory.size === 0) {
+            console.log('[CBA Hub] No learned mappings to save.');
+            return;
+        }
+
+        const memoryFile = path.join(process.cwd(), 'starlight_memory.json');
+
+        // Load existing memory and merge with current session
+        let existingMemory = {};
+        if (fs.existsSync(memoryFile)) {
+            try {
+                existingMemory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+            } catch (e) {
+                console.warn('[CBA Hub] Could not load existing memory file:', e.message);
+            }
+        }
+
+        // Merge: current session overwrites existing (newer mappings win)
+        const allMappings = { ...existingMemory };
+        this.historicalMemory.forEach((selector, goal) => {
+            // Skip ghost metrics (they're saved separately)
+            if (!goal.startsWith('ghost:')) {
+                allMappings[goal] = selector;
+            }
+        });
+
+        // Atomic write
+        const tempFile = memoryFile + '.tmp';
+        try {
+            fs.writeFileSync(tempFile, JSON.stringify(allMappings, null, 2));
+            fs.renameSync(tempFile, memoryFile);
+            console.log(`[CBA Hub] 🧠 Memory saved: ${Object.keys(allMappings).length} learned mappings`);
+        } catch (e) {
+            console.error('[CBA Hub] Failed to save memory:', e.message);
+            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        }
+    }
+
+    /**
+     * Learn a successful goal→selector mapping.
+     * Called after successful command execution with semantic goal.
+     */
+    learnMapping(goal, selector, cmd = null) {
+        if (!goal || !selector) return;
+
+        // Store with command prefix for more specific recall
+        const key = cmd ? `${cmd}:${goal}` : goal;
+        const existing = this.historicalMemory.get(key);
+
+        if (existing !== selector) {
+            this.historicalMemory.set(key, selector);
+            // Also store without prefix for backward compatibility
+            if (cmd) {
+                this.historicalMemory.set(goal, selector);
+            }
+            console.log(`[CBA Hub] 🧠 LEARNED: ${key} -> ${selector}`);
         }
     }
 
@@ -613,8 +887,9 @@ class CBAHub {
                 break;
             case 'starlight.intent':
                 // Phase 5: Handle Semantic Intent (Goal-based)
-                if (msg.params.goal) {
-                    console.log(`[CBA Hub] Resolving Semantic Goal: "${msg.params.goal}"`);
+                // Only run default click resolver if cmd is 'click' or not set
+                if (msg.params.goal && (!msg.params.cmd || msg.params.cmd === 'click')) {
+                    console.log(`[CBA Hub] Resolving Click Goal: "${msg.params.goal}"`);
                     const result = await this.resolveSemanticIntent(msg.params.goal);
                     if (result) {
                         msg.params.selector = result.selector;
@@ -654,6 +929,94 @@ class CBAHub {
                             id: msg.id,
                             success: false,
                             error: `Could not find element matching goal "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
+                // Handle goal-based fill commands (semantic form resolution)
+                if (msg.params.cmd === 'fill' && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Form Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveFormIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) {
+                            this.totalSavedTime += 120; // ROI: 2 mins triage avoided
+                        }
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve form goal: ${msg.params.goal}`);
+                        this.reportData.push({
+                            type: 'COMMAND',
+                            id: msg.id,
+                            cmd: 'fill',
+                            goal: msg.params.goal,
+                            selector: null,
+                            url: null,
+                            success: false,
+                            forcedProceed: false,
+                            selfHealed: false,
+                            predictiveWait: false,
+                            timestamp: new Date().toLocaleTimeString(),
+                            beforeScreenshot: null,
+                            afterScreenshot: null,
+                            error: `Failed to resolve form goal: ${msg.params.goal}`
+                        });
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE',
+                            id: msg.id,
+                            success: false,
+                            error: `Could not find form input matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
+                // Handle goal-based select commands
+                if (msg.params.cmd === 'select' && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Select Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveSelectIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve select goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find dropdown matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
+                // Handle goal-based check/uncheck commands
+                if ((msg.params.cmd === 'check' || msg.params.cmd === 'uncheck') && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Checkbox Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveCheckboxIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve checkbox goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find checkbox matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
+                // Handle goal-based hover/scroll commands (use click resolver)
+                if ((msg.params.cmd === 'hover' || msg.params.cmd === 'scroll') && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving ${msg.params.cmd} Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveSemanticIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve ${msg.params.cmd} goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find element matching "${msg.params.goal}"`
                         });
                         return;
                     }
@@ -798,6 +1161,39 @@ class CBAHub {
                 reason: reason,
                 timestamp: new Date().toLocaleTimeString()
             });
+
+            // Record in-progress command as failed
+            if (this.currentCommand) {
+                console.log(`[CBA Hub] Recording in-progress command as failed: ${this.currentCommand.goal || this.currentCommand.cmd}`);
+
+                // Try to capture final state screenshot
+                let interruptedScreenshot = null;
+                if (this.page) {
+                    try {
+                        interruptedScreenshot = await this.takeScreenshot('INTERRUPTED_STATE');
+                    } catch (e) {
+                        console.warn('[CBA Hub] Could not capture interrupted state screenshot:', e.message);
+                    }
+                }
+
+                this.reportData.push({
+                    type: 'COMMAND',
+                    id: this.currentCommand.id,
+                    cmd: this.currentCommand.cmd,
+                    goal: this.currentCommand.goal,
+                    selector: this.currentCommand.selector,
+                    url: this.currentCommand.url,
+                    success: false,
+                    forcedProceed: false,
+                    selfHealed: false,
+                    predictiveWait: false,
+                    timestamp: new Date().toLocaleTimeString(),
+                    beforeScreenshot: interruptedScreenshot, // Show state at interruption
+                    afterScreenshot: interruptedScreenshot,  // Same screenshot for both
+                    error: `Command interrupted: ${reason}`
+                });
+                this.currentCommand = null;
+            }
         }
 
         console.log("[CBA Hub] Closing gracefully...");
@@ -837,6 +1233,10 @@ class CBAHub {
             mttr: this.telemetry.getStats().avgRecoveryTimeMs,
             error: missionSuccess ? null : 'Mission had failures'
         });
+
+        // Save learned memory before shutdown
+        await this.saveHistoricalMemory();
+        await this.saveTemporalMetrics();
 
         if (this.page) await this.page.close();
         if (this.browser) await this.browser.close();
@@ -950,6 +1350,7 @@ class CBAHub {
         this.isProcessing = true;
         try {
             const msg = this.commandQueue.shift();
+            this.currentCommand = msg; // Track for failure reporting on shutdown
             if (msg.internal && msg.cmd === 'nop') {
                 console.log("[CBA Hub] Processing RE_CHECK settling (500ms)...");
                 await new Promise(r => setTimeout(r, 500));
@@ -1015,6 +1416,11 @@ class CBAHub {
             }
             const selfHealed = originalSelector !== msg.selector;
 
+            // Learn successful goal→selector mappings
+            if (success && msg.goal && msg.selector) {
+                this.learnMapping(msg.goal, msg.selector, msg.cmd);
+            }
+
             // Brief wait for UI to reflect change before "AFTER" capture
             await new Promise(r => setTimeout(r, 500));
             const afterScreenshot = await this.takeScreenshot(`AFTER_${msg.cmd}`);
@@ -1029,6 +1435,7 @@ class CBAHub {
                 success,
                 forcedProceed,
                 selfHealed: selfHealed || msg.selfHealed,
+                learned: success && msg.goal && msg.selector, // Track that we learned from this
                 predictiveWait,
                 timestamp: new Date().toLocaleTimeString(),
                 beforeScreenshot,
@@ -1044,6 +1451,7 @@ class CBAHub {
                 context: this.sovereignState // Phase 4: Return shared context to Intent
             });
         } finally {
+            this.currentCommand = null; // Clear tracking
             this.isProcessing = false;
         }
         this.processQueue();
@@ -1309,6 +1717,19 @@ class CBAHub {
                 if (msg.cmd === 'goto') await this.page.goto(msg.url);
                 else if (msg.cmd === 'click') await this.page.click(msg.selector);
                 else if (msg.cmd === 'fill') await this.page.fill(msg.selector, msg.text);
+                else if (msg.cmd === 'select') await this.page.selectOption(msg.selector, msg.value);
+                else if (msg.cmd === 'hover') await this.page.hover(msg.selector);
+                else if (msg.cmd === 'check') await this.page.check(msg.selector);
+                else if (msg.cmd === 'uncheck') await this.page.uncheck(msg.selector);
+                else if (msg.cmd === 'scroll') {
+                    if (msg.selector) {
+                        await this.page.locator(msg.selector).scrollIntoViewIfNeeded();
+                    } else {
+                        await this.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                    }
+                }
+                else if (msg.cmd === 'press') await this.page.keyboard.press(msg.key);
+                else if (msg.cmd === 'type') await this.page.keyboard.type(msg.text);
                 else if (msg.cmd === 'checkpoint') {
                     console.log(`[CBA Hub] 🚩 Checkpoint reached: ${msg.name}`);
                     this.recordTrace('CHECKPOINT', 'System', {
