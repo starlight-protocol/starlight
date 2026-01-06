@@ -1004,7 +1004,15 @@ class CBAHub {
             // v2.1: Robust Screenshot Timing (Wait for settlement)
             const beforeScreenshot = await this.takeScreenshot(`BEFORE_${msg.cmd}`);
             const originalSelector = msg.selector;
-            const success = await this.executeCommand(msg);
+            let success = false;
+            let commandError = null;
+            try {
+                success = await this.executeCommand(msg);
+            } catch (e) {
+                success = false;
+                commandError = e.message;
+                console.error(`[CBA Hub] Command execution error: ${commandError}`);
+            }
             const selfHealed = originalSelector !== msg.selector;
 
             // Brief wait for UI to reflect change before "AFTER" capture
@@ -1024,13 +1032,15 @@ class CBAHub {
                 predictiveWait,
                 timestamp: new Date().toLocaleTimeString(),
                 beforeScreenshot,
-                afterScreenshot
+                afterScreenshot,
+                error: commandError
             });
 
             this.broadcastToClient(null, {
                 type: 'COMMAND_COMPLETE',
                 id: msg.id,
                 success,
+                error: commandError || (success ? null : `Command "${msg.cmd}" failed on ${msg.goal || msg.selector}`),
                 context: this.sovereignState // Phase 4: Return shared context to Intent
             });
         } finally {
@@ -1726,13 +1736,21 @@ class CBAHub {
     async generateReport() {
         console.log("[CBA Hub] Generating Hero Story Report...");
         const totalSavedMins = Math.floor(this.totalSavedTime / 60);
+
+        // Calculate overall mission success from reportData
+        const failedCommands = this.reportData.filter(i => i.type === 'COMMAND' && !i.success);
+        const hasFailure = this.reportData.some(i => i.type === 'FAILURE') || failedCommands.length > 0;
+        const statusEmoji = hasFailure ? '❌' : '✅';
+        const statusText = hasFailure ? 'Mission Failed' : 'Mission Complete';
+        const statusColor = hasFailure ? '#f43f5e' : '#10B981';
+
         const html = `
     <!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>CBA Hero Story: Navigational Proof</title>
+                <title>CBA Hero Story: ${statusText}</title>
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
                     
@@ -1901,9 +1919,10 @@ class CBAHub {
                 </style>
             </head>
             <body>
-                <div class="hero-header">
-                    <h1>🌠 Starlight Protocol: The Hero's Journey</h1>
+                <div class="hero-header" style="border-color: ${statusColor};">
+                    <h1>${statusEmoji} Starlight Protocol: ${statusText}</h1>
                     <p>Evidence-based automation for the modern web.</p>
+                    ${hasFailure ? `<p style="color: ${statusColor}; font-weight: 700; margin-top: 1rem;">⚠️ ${failedCommands.length} command(s) failed during this mission.</p>` : ''}
                 </div>
 
                 <div id="timeline">
