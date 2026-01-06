@@ -234,6 +234,16 @@ Sentinels can now communicate directly with each other:
 - **Stability Broadcast**: Pulse tells everyone "environment is stable"
 - **Availability Handling**: If a Sentinel is offline, sender gets notified
 
+### 🗳️ Consensus Mesh (Quorum)
+The Hub no longer waits for every single Sentinel to "handshake". If a majority (Quorum) agrees the path is clear, the mission proceeds.
+- **Fail-Fast**: Respects any Veto (WAIT) immediately.
+- **Performance**: High-speed execution even with laggy Sentinels.
+
+### 🌀 Temporal Ghosting (Speed Limit)
+Run missions in "Ghost Mode" to find the UI's performance limits.
+- **Observation**: Tracks exact settlement times for every button and input.
+- **Optimization**: Automatically adjusts mission pace based on past findings.
+
 ---
 
 ## 11. Phase 15: Visual Sentinel Editor & Fleet Manager (NEW in v3.0.3)

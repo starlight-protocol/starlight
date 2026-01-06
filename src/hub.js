@@ -25,7 +25,7 @@ class CBAHub {
         this.config = this.loadConfig();
         this.headless = headless || this.config.hub?.headless || false;
 
-        this.port = this.config.hub?.port || port;
+        this.port = port || this.config.hub?.port || 8080;
         this.authToken = this.config.hub?.security?.authToken || null;
 
         // Create HTTP or HTTPS server based on SSL config
@@ -103,7 +103,7 @@ class CBAHub {
         this.telemetry = new TelemetryEngine(path.join(process.cwd(), 'telemetry.json'));
         this.webhooks = new WebhookNotifier(this.config.webhooks);
         this.recoveryTimes = []; // Track recovery times for MTTR
-        this.init();
+        this.temporalMetrics = []; // Phase 17.4: Temporal Ghosting metrics
     }
 
     loadConfig() {
@@ -454,6 +454,23 @@ class CBAHub {
                 console.warn("[CBA Hub] Failed to load historical memory:", e.message);
             }
         }
+
+        // Phase 17.4: Load Temporal Ghosting Metrics
+        const ghostFile = path.join(process.cwd(), 'temporal_ghosting.json');
+        if (fs.existsSync(ghostFile)) {
+            try {
+                const metrics = JSON.parse(fs.readFileSync(ghostFile, 'utf8'));
+                metrics.forEach(m => {
+                    const key = `${m.command}:${m.selector || ''}`;
+                    // Store the max latency seen for this target to use as a stability hint
+                    const existing = this.historicalMemory.get(`ghost:${key}`) || 0;
+                    this.historicalMemory.set(`ghost:${key}`, Math.max(existing, m.latency_ms));
+                });
+                console.log(`  - Temporal Ghosting: ${metrics.length} observations loaded.`);
+            } catch (e) {
+                console.warn("[CBA Hub] Failed to load temporal ghosting metrics:", e.message);
+            }
+        }
     }
 
     isHistoricallyUnstable() {
@@ -801,6 +818,7 @@ class CBAHub {
         console.log("[CBA Hub] Generating Hero Story Report...");
         await this.generateReport();
         await this.saveMissionTrace();
+        await this.saveTemporalMetrics(); // Phase 17.4: Temporal Ghosting
 
         // Phase 10: Record Mission Telemetry
         const missionSuccess = this.reportData.every(item => item.type !== 'COMMAND' || item.success);
@@ -825,7 +843,9 @@ class CBAHub {
         this.server.close(() => {
             this.wss.close(() => {
                 console.log("[CBA Hub] Hub shutdown complete.");
-                process.exit(0);
+                if (require.main === module) {
+                    process.exit(0);
+                }
             });
         });
     }
@@ -936,6 +956,14 @@ class CBAHub {
                 this.isProcessing = false;
                 this.processQueue();
                 return;
+            }
+
+            // Phase 17.4: Temporal Optimization (Ghost-Based Pacing)
+            const ghostKey = `ghost:${msg.cmd}:${msg.selector || ''}`;
+            if (this.historicalMemory.has(ghostKey)) {
+                const ghostLatency = this.historicalMemory.get(ghostKey);
+                msg.stabilityHint = Math.max(msg.stabilityHint || 0, ghostLatency);
+                console.log(`[CBA Hub] TEMPORAL OPTIMIZATION: Applying Ghost Hint (${ghostLatency}ms) for ${msg.cmd}`);
             }
 
             // Phase 7.2: Aura-Based Throttling (Predictive Pacing)
@@ -1170,60 +1198,121 @@ class CBAHub {
             id: nanoid()
         });
 
-        // Use standard pendingRequests logic
-        const promises = relevantSentinels.map(([id, s]) => {
-            return new Promise((resolve, reject) => {
-                this.pendingRequests.set(id, { resolve, reject, layer: s.layer });
+        const quorumThreshold = this.config.hub?.quorumThreshold || 1.0;
+        const consensusTimeout = this.config.hub?.consensusTimeout || 5000;
+        const totalSentinels = relevantSentinels.length;
+        const requiredConfidence = totalSentinels * quorumThreshold;
+
+        let receivedConfidence = 0;
+        let receivedVeto = null;
+        let responsesCount = 0;
+
+        return new Promise((resolve) => {
+            const cleanup = () => {
+                relevantSentinels.forEach(([id]) => this.pendingRequests.delete(id));
+                clearTimeout(budgetTimer);
+                clearTimeout(consensusTimer);
+            };
+
+            const budgetTimer = setTimeout(() => {
+                const missing = relevantSentinels
+                    .filter(([id]) => this.pendingRequests.has(id))
+                    .map(([_, s]) => s.layer);
+                if (missing.length > 0) {
+                    console.warn(`[CBA Hub] Handshake TIMEOUT: Missing signals from [${missing.join(', ')}] after ${syncBudget}ms.`);
+                }
+                cleanup();
+                resolve(false);
+            }, syncBudget);
+
+            let consensusTimer = null;
+
+            relevantSentinels.forEach(([id, s]) => {
+                this.pendingRequests.set(id, {
+                    layer: s.layer,
+                    resolve: (response) => {
+                        responsesCount++;
+                        const confidence = response.params?.confidence ?? 1.0;
+
+                        if (response.method === 'starlight.wait') {
+                            receivedVeto = response;
+                            console.log(`[CBA Hub] Stability VETO from ${s.layer} (Confidence: ${confidence}).`);
+                            cleanup();
+                            setTimeout(async () => {
+                                const delay = response.params?.retryAfterMs || 1000;
+                                await new Promise(r => setTimeout(r, delay));
+                                resolve(false);
+                            }, 0);
+                            return;
+                        }
+
+                        if (response.method === 'starlight.clear') {
+                            receivedConfidence += confidence;
+                        }
+
+                        // Check if quorum reached
+                        if (receivedConfidence >= requiredConfidence && !receivedVeto) {
+                            console.log(`[CBA Hub] Consensus MET (${receivedConfidence.toFixed(1)}/${requiredConfidence.toFixed(1)}). Proceeding...`);
+                            cleanup();
+                            resolve(true);
+                        } else if (responsesCount === totalSentinels) {
+                            // All responded but quorum not reached (shouldn't happen with default 1.0 unless confidence < 1)
+                            console.log(`[CBA Hub] Handshake COMPLETED. Final confidence: ${receivedConfidence.toFixed(1)}/${requiredConfidence.toFixed(1)}`);
+                            cleanup();
+                            resolve(receivedConfidence >= requiredConfidence);
+                        } else if (quorumThreshold < 1.0 && !consensusTimer) {
+                            // Start consensus timeout once we have at least one response
+                            consensusTimer = setTimeout(() => {
+                                console.log(`[CBA Hub] Consensus TIMEOUT (${receivedConfidence.toFixed(1)}/${requiredConfidence.toFixed(1)}).`);
+                                cleanup();
+                                resolve(receivedConfidence >= requiredConfidence);
+                            }, consensusTimeout);
+                        }
+                    },
+                    reject: () => {
+                        responsesCount++;
+                        if (responsesCount === totalSentinels && !receivedVeto) {
+                            cleanup();
+                            resolve(receivedConfidence >= requiredConfidence);
+                        }
+                    }
+                });
             });
         });
-
-        try {
-            const results = await Promise.race([
-                Promise.all(promises),
-                new Promise((_, r) => setTimeout(() => r('timeout'), syncBudget))
-            ]);
-            console.log(`[CBA Hub] Handshake COMPLETED for ${msg.cmd}.`);
-
-            // Phase 3: Check for Stability Wait requests
-            const waitRequest = results.find(res => res && res.method === 'starlight.wait');
-            if (waitRequest) {
-                const delay = waitRequest.params?.retryAfterMs || 1000;
-                console.log(`[CBA Hub] Stability VETO from Sentinel. Waiting ${delay}ms...`);
-                await new Promise(r => setTimeout(r, delay));
-                return false;
-            }
-
-            return true;
-        } catch (e) {
-            if (e === 'timeout') {
-                const missing = Array.from(this.pendingRequests.values()).map(r => r.layer).join(', ');
-                console.warn(`[CBA Hub] Handshake TIMEOUT: Missing signals from [${missing}] within ${syncBudget}ms.`);
-                this.pendingRequests.clear();
-            }
-            return false;
-        }
     }
 
     async executeCommand(msg, retry = true) {
+        const startTime = Date.now();
         try {
             // Lazy launch browser if needed
             if (!this.page) {
-                console.log('[CBA Hub] Launching browser for mission mission execution...');
+                console.log('[CBA Hub] Launching browser for mission execution...');
                 this.browser = await chromium.launch({ headless: this.headless });
                 const context = await this.browser.newContext();
                 this.page = await context.newPage();
             }
 
-            if (msg.cmd === 'goto') await this.page.goto(msg.url);
-            else if (msg.cmd === 'click') await this.page.click(msg.selector);
-            else if (msg.cmd === 'fill') await this.page.fill(msg.selector, msg.text);
-            else if (msg.cmd === 'checkpoint') {
-                console.log(`[CBA Hub] 🚩 Checkpoint reached: ${msg.name}`);
-                this.recordTrace('CHECKPOINT', 'System', {
-                    method: 'starlight.checkpoint',
-                    params: { name: msg.name }
-                });
+            if (this.config.hub?.ghostMode && msg.cmd !== 'goto' && msg.cmd !== 'checkpoint') {
+                console.log(`[CBA Hub] GHOST MODE: Timed ${msg.cmd} on ${msg.selector || 'target'}. Observation only.`);
+                await new Promise(r => setTimeout(r, 50));
+            } else {
+                if (msg.cmd === 'goto') await this.page.goto(msg.url);
+                else if (msg.cmd === 'click') await this.page.click(msg.selector);
+                else if (msg.cmd === 'fill') await this.page.fill(msg.selector, msg.text);
+                else if (msg.cmd === 'checkpoint') {
+                    console.log(`[CBA Hub] 🚩 Checkpoint reached: ${msg.name}`);
+                    this.recordTrace('CHECKPOINT', 'System', {
+                        method: 'starlight.checkpoint',
+                        params: { name: msg.name }
+                    });
+                }
             }
+
+            // Phase 17.4: Track temporal ghosting metrics
+            if (this.config.hub?.ghostMode) {
+                this.recordTemporalGhosting(msg, Date.now() - startTime);
+            }
+
             return true;
         } catch (e) {
             console.warn(`[CBA Hub] Command failure on ${msg.selector}: ${e.message}`);
@@ -1937,10 +2026,34 @@ class CBAHub {
         fs.writeFileSync(traceFile, JSON.stringify(this.missionTrace, null, 2));
         console.log("[CBA Hub] Mission Trace saved to mission_trace.json");
     }
+
+    // Phase 17.4: Temporal Ghosting
+    recordTemporalGhosting(msg, latency) {
+        this.temporalMetrics.push({
+            timestamp: new Date().toISOString(),
+            command: msg.cmd,
+            selector: msg.selector || null,
+            latency_ms: latency,
+            type: 'settlement_observation'
+        });
+        console.log(`[CBA Hub] 🌀 Ghost Observation: ${msg.cmd} latency = ${latency}ms`);
+    }
+
+    async saveTemporalMetrics() {
+        if (this.temporalMetrics.length === 0) return;
+        const metricsFile = path.join(process.cwd(), 'temporal_ghosting.json');
+        fs.writeFileSync(metricsFile, JSON.stringify(this.temporalMetrics, null, 2));
+        console.log(`[CBA Hub] Temporal Ghosting metrics saved to temporal_ghosting.json (${this.temporalMetrics.length} samples)`);
+    }
 }
 
-const args = process.argv.slice(2);
-const headless = args.includes('--headless');
-const port = args.find(a => a.startsWith('--port='))?.split('=')[1] || 8080;
+module.exports = { CBAHub };
 
-new CBAHub(parseInt(port), headless);
+if (require.main === module) {
+    const args = process.argv.slice(2);
+    const headless = args.includes('--headless');
+    const port = args.find(a => a.startsWith('--port='))?.split('=')[1] || 8080;
+
+    const hub = new CBAHub(parseInt(port), headless);
+    hub.init();
+}

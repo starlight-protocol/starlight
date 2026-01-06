@@ -383,6 +383,39 @@ ws.send(JSON.stringify({
 
 ---
 
+## 5.3 Phase 17: Consensus Mesh (Quorum Protocol)
+
+The Hub supports decentralized decision-making through weight-based voting.
+
+### Quorum Configuration
+```json
+{
+    "hub": {
+        "quorumThreshold": 0.6,
+        "consensusTimeout": 5000
+    }
+}
+```
+
+### Voting Logic
+- **Quorum Met**: If `total_confidence >= total_sentinels * quorumThreshold`, the Hub proceeds immediately.
+- **Veto Supremacy**: Any `starlight.wait` or `starlight.hijack` signal overrides the quorum and stops execution.
+- **Confidence Scores**: Sentinels can specify `confidence` (0.0 - 1.0) in their response to weight their vote.
+
+---
+
+## 5.4 Phase 17: Temporal Ghosting
+
+Identify the environmental "speed limit" by running missions without state-changing actions.
+
+### Ghost Mode
+Enable `ghostMode` in `config.json` to perform observation-only runs. The Hub will track the time it takes for UI elements to settle and for Sentinels to clear the path.
+
+### Temporal Optimization
+Metrics are saved to `temporal_ghosting.json`. In subsequent runs, the Hub loads these observations and injects them as `stabilityHint` values to proactively slow down for known slow UI transitions.
+
+---
+
 ## 6. Phase 7: Predictive Intelligence
 
 ### Historical Learning Engine

@@ -186,11 +186,16 @@ class SentinelBase(ABC):
 
     # --- Communication Methods ---
 
-    async def send_clear(self):
-        await self._send_msg("starlight.clear", {})
+    async def send_clear(self, confidence=1.0):
+        """Approve execution with an optional confidence score (0.0-1.0)."""
+        await self._send_msg("starlight.clear", {"confidence": confidence})
 
-    async def send_wait(self, retry_after_ms=1000):
-        await self._send_msg("starlight.wait", {"retryAfterMs": retry_after_ms})
+    async def send_wait(self, retry_after_ms=1000, confidence=1.0):
+        """Veto execution with an optional confidence score (0.0-1.0)."""
+        await self._send_msg("starlight.wait", {
+            "retryAfterMs": retry_after_ms,
+            "confidence": confidence
+        })
 
     async def send_hijack(self, reason):
         await self._send_msg("starlight.hijack", {"reason": reason})

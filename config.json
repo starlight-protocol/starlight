@@ -12,6 +12,9 @@
             "enabled": true,
             "maxDepth": 5
         },
+        "quorumThreshold": 1.0,
+        "consensusTimeout": 5000,
+        "ghostMode": false,
         "security": {
             "authToken": null,
             "ssl": {
