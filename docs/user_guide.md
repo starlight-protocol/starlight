@@ -215,7 +215,28 @@ CBA features **Time-Travel Triage**, allowing you to inspect missions with surgi
 
 ---
 
-## 10. Phase 15: Visual Sentinel Editor & Fleet Manager (NEW in v3.0.3)
+## 10. Phase 17: Deep Mesh Intelligence (NEW)
+
+### 🛸 Starlight Warp (Failure Triage)
+When a test fails, capture the **exact browser state** for instant debugging:
+
+**What's Captured:**
+- Screenshot, URL, cookies, localStorage
+- Console logs, network requests
+- Full DOM snapshot
+
+**Security:** All sensitive data (emails, tokens, passwords) is automatically redacted.
+
+**Use Case:** Share the `.warp` file with teammates—they can restore and see exactly what you saw.
+
+### 🗣️ Inter-Sentinel Side-Talk
+Sentinels can now communicate directly with each other:
+- **Stability Broadcast**: Pulse tells everyone "environment is stable"
+- **Availability Handling**: If a Sentinel is offline, sender gets notified
+
+---
+
+## 11. Phase 15: Visual Sentinel Editor & Fleet Manager (NEW in v3.0.3)
 
 ### 🛠️ Creating Custom Sentinels (No-Code)
 
