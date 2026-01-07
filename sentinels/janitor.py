@@ -15,28 +15,22 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sdk.starlight_sdk import SentinelBase
 
 class JanitorSentinel(SentinelBase):
-    def __init__(self):
-        super().__init__(layer_name="JanitorSentinel", priority=5)
+    def __init__(self, uri=None):
+        super().__init__(layer_name="JanitorSentinel", priority=5, uri=uri)
         # Load janitor config
         janitor_config = self.config.get("janitor", {})
         self.exploration_delay = janitor_config.get("explorationDelayMs", 300) / 1000.0
         self.remediation_delay = janitor_config.get("remediationDelayMs", 1000) / 1000.0
         # Comprehensive blocking patterns for common UI obstacles
+        # Refined (v1.2.2): Removed generic IDs (newsletter) to prevent false positives on forms
         self.blocking_patterns = [
             # Modals and Popups
             ".modal", ".popup", "#overlay", ".obstacle", "#stabilize-btn",
             ".shadow-overlay", ".shadow-close-btn",
-            # Newsletter/Subscribe popups
+            # Newsletter/Subscribe popups (Intelligent Filter checks Tag)
             ".newsletter", "#newsletter", ".subscribe-popup", "#subscribe-modal",
             ".email-popup", ".signup-modal", ".newsletter-modal", ".newsletter-popup",
-            # Cookie consent
-            ".cookie-consent", "#cookie-banner", ".cookie-notice", ".gdpr-banner",
-            # Generic overlays
-            ".overlay", ".backdrop", ".lightbox", ".dialog",
-            # Toast/notification dismissals
-            ".toast", ".notification", ".snackbar", ".alert-dismissible",
-            # Common close button patterns
-            ".close-btn", ".dismiss-btn", "[data-dismiss]", ".btn-close",
+            # Cookie consent-btn", ".dismiss-btn", "[data-dismiss]", ".btn-close",
             # CAPTCHA and Robot Detection
             ".g-recaptcha", "#recaptcha", ".recaptcha-checkbox",
             "[data-sitekey]",  # reCAPTCHA marker
@@ -77,6 +71,13 @@ class JanitorSentinel(SentinelBase):
             if matched_pattern:
                 obstacle_id = b.get('selector', matched_pattern)
                 
+                # INTELLIGENT FILTER: Ignore non-blocking functional elements (Inputs, Selects)
+                tag = b.get("tagName", "").upper()
+                input_type = (b.get("inputType") or "").lower()
+                if tag in ["INPUT", "SELECT", "TEXTAREA", "OPTION", "LABEL"]:
+                    print(f"[{self.layer}] Skipping {obstacle_id} - Ignored Tag: {tag} (type={input_type})")
+                    continue
+                
                 # SMART OVERLAP CHECK: Only clear if obstacle actually overlaps target or covers viewport
                 if target_rect and b.get("rect"):
                     # Parse obstacle rect
@@ -84,9 +85,9 @@ class JanitorSentinel(SentinelBase):
                         obs_dims = b["rect"].split("x")
                         obs_width, obs_height = int(obs_dims[0]), int(obs_dims[1])
                         
-                        # If obstacle is small and doesn't cover significant viewport, skip
-                        # Large overlays (modal backdrops) typically cover full viewport
-                        if obs_width < 500 and obs_height < 500:
+                        # Heuristic: Skip small generic elements, but ALWAYS catch specific obstacles
+                        is_generic = matched_pattern in [".modal", ".popup", "#overlay", ".overlay", ".dialog"]
+                        if is_generic and obs_width < 500 and obs_height < 500:
                             print(f"[{self.layer}] Skipping {obstacle_id} - small element, unlikely to block target")
                             continue
                     except:
@@ -160,8 +161,9 @@ class JanitorSentinel(SentinelBase):
                 self.current_action_selector = full_sel  # Track for learning
                 await asyncio.sleep(self.exploration_delay)
             
-            # Logic Fix: Store the current selector being tried; on success, we learn it
-            self.last_action = {"id": obstacle_id, "selector": self.current_action_selector, "known": False}
+            # Logic Fix: Do NOT learn from blind heuristics because we don't know which one worked.
+            # Only learn if we have precise feedback (which we don't in this loop).
+            self.last_action = None
 
         await asyncio.sleep(self.remediation_delay)
         await self.send_resume(re_check=True)
@@ -189,5 +191,10 @@ class JanitorSentinel(SentinelBase):
             self.last_action = None
 
 if __name__ == "__main__":
-    sentinel = JanitorSentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+    
+    sentinel = JanitorSentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())

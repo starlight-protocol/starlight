@@ -757,6 +757,15 @@ class CBAHub {
             this.historicalAuras.has(bucket - 1);
     }
 
+    broadcastToClients(msg) {
+        const payload = JSON.stringify(msg);
+        for (const client of this.wss.clients) {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(payload);
+            }
+        }
+    }
+
     broadcastContextUpdate() {
         const msg = JSON.stringify({
             jsonrpc: '2.0',
@@ -1322,6 +1331,16 @@ class CBAHub {
             screenshot
         });
 
+        // Broadcast HIJACK event to clients for test verification
+        this.broadcastToClients({
+            jsonrpc: '2.0',
+            method: 'starlight.hijack',
+            params: {
+                sentinel: requested.layer,
+                reason: msg.reason
+            }
+        });
+
         for (const req of this.pendingRequests.values()) req.reject();
         this.pendingRequests.clear();
     }
@@ -1570,6 +1589,8 @@ class CBAHub {
                         results.push({
                             selector: shadowSelector || s,
                             id: el.id,
+                            tagName: el.tagName,
+                            inputType: el.getAttribute('type'),
                             className: typeof el.className === 'string' ? el.className : '',
                             display: style.display,
                             rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,

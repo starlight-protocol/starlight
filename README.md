@@ -114,6 +114,7 @@ All communication uses JSON-RPC 2.0:
 | **Visual Sentinel Editor** | Create custom Sentinels without code |
 | **Shadow DOM Support** | Pierces web component boundaries |
 | **Webhook Alerts** | Slack/Teams notifications |
+| **Upload Automation** | Native file upload support (selector & semantic) |
 | **ROI Dashboard** | Quantifies time saved |
 
 ---

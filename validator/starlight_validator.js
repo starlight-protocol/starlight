@@ -14,7 +14,7 @@ const WebSocket = require('ws');
 const { WebSocketServer } = require('ws');
 
 class StarlightValidator {
-    constructor(port = 8090) {
+    constructor(port = 8095) {
         this.port = port;
         this.wss = null;
         this.client = null;
@@ -28,7 +28,7 @@ class StarlightValidator {
      */
     async start() {
         return new Promise((resolve) => {
-            this.wss = new WebSocketServer({ port: this.port });
+            this.wss = new WebSocketServer({ port: this.port, host: '127.0.0.1' });
 
             this.wss.on('connection', (ws) => {
                 console.log('[Validator] Sentinel connected');

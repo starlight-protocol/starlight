@@ -31,16 +31,22 @@
 <body>
     <h1>CAPTCHA Detection Test</h1>
 
-    <div class="g-recaptcha" data-sitekey="test-key">
-        <div class="rc-anchor">
-            I'm not a robot
-            <input type="checkbox" />
+    <div id="blocking-container">
+        <div class="g-recaptcha" data-sitekey="test-key">
+            <div class="rc-anchor">
+                I'm not a robot
+                <input type="checkbox" />
+            </div>
+            <!-- Mock Dismiss Button for Janitor Pattern Matching -->
+            <button id="dismiss-btn" style="margin-top: 5px;"
+                onclick="document.getElementById('blocking-container').style.display='none'">Dismiss Security
+                Check</button>
         </div>
-    </div>
 
-    <div id="captcha-form">
-        <p>Please verify you're human to continue.</p>
-        <p>Are you a robot? Click here to prove you're not.</p>
+        <div id="captcha-form">
+            <p>Please verify you're human to continue.</p>
+            <p>Are you a robot? Click here to prove you're not.</p>
+        </div>
     </div>
 
     <div class="captcha-container">

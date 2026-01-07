@@ -30,6 +30,9 @@ class IntentRunner {
 
             this.ws.on('message', (data) => {
                 const msg = JSON.parse(data);
+                if (this.onMessage) {
+                    this.onMessage(msg);
+                }
                 this._handleMessage(msg);
             });
 
@@ -45,6 +48,15 @@ class IntentRunner {
     }
 
     _handleMessage(msg) {
+        // Internal Protocol Tracking
+        const msgType = msg.method || msg.type;
+
+        if (msgType === 'starlight.hijack') {
+            console.log(`[IntentRunner] 🛡️ Sentinel Hijack Detected: ${msg.params?.sentinel || msg.sentinel}`);
+            this.lastActionHijacked = true;
+            this.hijackDetails = msg;
+        }
+
         if (msg.type === 'COMMAND_COMPLETE') {
             const pending = this.pendingCommands.get(msg.id);
             if (pending) {
@@ -186,8 +198,8 @@ class IntentRunner {
      * @param {string} name - Checkpoint name
      * @returns {Promise<object>} Command result
      */
-    async checkpoint(name) {
-        return this._sendCommand({ cmd: 'checkpoint', name });
+    async checkpoint(name, options = {}) {
+        return this._sendCommand({ cmd: 'checkpoint', name }, options.timeout);
     }
 
     /**

@@ -1,5 +1,5 @@
 """
-Starlight Sentinel SDK (v1.2.1)
+Starlight Sentinel SDK (v1.2.2)
 Standardizes the creation of autonomous agents for the CBA ecosystem.
 
 Phase 18: Extended action methods for universal automation commands.
