@@ -1,8 +1,8 @@
 """
-Starlight Sentinel SDK (v2.7)
+Starlight Sentinel SDK (v1.2.0)
 Standardizes the creation of autonomous agents for the CBA ecosystem.
 
-Phase 8: Added graceful shutdown, proper exception handling, and atomic file writes.
+Phase 18: Extended action methods for universal automation commands.
 """
 
 import asyncio
@@ -203,10 +203,52 @@ class SentinelBase(ABC):
     async def send_resume(self, re_check=True):
         await self._send_msg("starlight.resume", {"re_check": re_check})
 
-    async def send_action(self, cmd, selector, text=None):
+    async def send_action(self, cmd, selector, text=None, value=None, key=None):
         """Execute a healing action via the Hub."""
         params = {"cmd": cmd, "selector": selector}
         if text: params["text"] = text
+        if value: params["value"] = value
+        if key: params["key"] = key
+        await self._send_msg("starlight.action", params)
+
+    # === Extended Action Methods (v1.2.0) ===
+    
+    async def send_click(self, selector):
+        """Click an element."""
+        await self.send_action("click", selector)
+    
+    async def send_fill(self, selector, text):
+        """Fill an input field."""
+        await self.send_action("fill", selector, text=text)
+    
+    async def send_select(self, selector, value):
+        """Select a dropdown option by value."""
+        await self.send_action("select", selector, value=value)
+    
+    async def send_hover(self, selector):
+        """Hover over an element."""
+        await self.send_action("hover", selector)
+    
+    async def send_check(self, selector):
+        """Check a checkbox."""
+        await self.send_action("check", selector)
+    
+    async def send_uncheck(self, selector):
+        """Uncheck a checkbox."""
+        await self.send_action("uncheck", selector)
+    
+    async def send_scroll(self, selector=None):
+        """Scroll to an element, or scroll to bottom if no selector."""
+        await self.send_action("scroll", selector or "")
+    
+    async def send_press(self, key):
+        """Press a keyboard key."""
+        params = {"cmd": "press", "key": key}
+        await self._send_msg("starlight.action", params)
+    
+    async def send_type(self, text):
+        """Type text using keyboard."""
+        params = {"cmd": "type", "text": text}
         await self._send_msg("starlight.action", params)
 
     async def update_context(self, context_data):
