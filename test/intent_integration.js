@@ -44,10 +44,10 @@ async function runMission() {
         await runner.hoverGoal('Help');
         console.log('[Integration Test] ✅ hoverGoal passed\n');
 
-        // Test 6: scrollTo (using direct selector for non-interactive element)
-        console.log('[Integration Test] 6. Testing scrollTo...');
-        await runner.scrollTo('#footer');
-        console.log('[Integration Test] ✅ scrollTo passed\n');
+        // Test 6: scrollToGoal (semantic scrolling - no hardcoded selectors!)
+        console.log('[Integration Test] 6. Testing scrollToGoal...');
+        await runner.scrollToGoal('Footer');
+        console.log('[Integration Test] ✅ scrollToGoal passed\n');
 
         // Test 7: press
         console.log('[Integration Test] 7. Testing press(Tab)...');
