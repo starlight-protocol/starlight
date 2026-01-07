@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-01-07
+
+### 🧠 Phase 18: Universal Protocol (Learning Persistence & Extended Commands)
+
+#### Added
+- **Learning Persistence**: Hub saves successful goal→selector mappings to `starlight_memory.json`
+  - Automatic load on startup for instant self-healing
+  - `learnMapping()` records successful resolutions in real-time
+  - `saveHistoricalMemory()` persists on shutdown
+- **Extended Commands**: 7 new automation commands in `executeCommand`
+  - `select` - Dropdown selection
+  - `hover` - Mouse hover
+  - `check` / `uncheck` - Checkbox interaction
+  - `scroll` - Scroll to element or bottom
+  - `press` - Keyboard key press
+  - `type` - Keyboard text input
+- **IntentRunner API**: New semantic goal methods
+  - `selectGoal()`, `hoverGoal()`, `checkGoal()`, `uncheckGoal()`
+  - `scrollTo()`, `scrollToGoal()`, `scrollToBottom()`
+  - `press()`, `type()`
+- **CAPTCHA Detection**: JanitorSentinel detects robot challenges (reCAPTCHA, verification prompts)
+- **Python SDK v1.2.0**: Extended action methods for all new commands
+  - `send_select()`, `send_hover()`, `send_check()`, `send_uncheck()`
+  - `send_scroll()`, `send_press()`, `send_type()`
+
+#### Fixed
+- **Goal Resolution Order**: Command-specific resolvers now run before default click resolver
+- **Failure Reporting**: In-progress commands properly recorded as failed on shutdown
+- **Interrupted Command Screenshots**: Timed-out commands now show final state in report
+
+#### Changed
+- **Schema**: `starlight.intent.schema.json` updated with new command enums
+- **Documentation**: User guide updated with Phase 18 features
+
+---
+
 ## [3.0.3] - 2026-01-02
 
 ### 🛠️ Phase 15: Visual Sentinel Editor & Fleet Manager
