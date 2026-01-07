@@ -313,7 +313,54 @@ Get notified on Slack, Teams, or Discord when missions complete.
 
 ---
 
-## 12. Troubleshooting
+## 12. Phase 18: Universal Protocol (NEW in v3.2)
+
+### 🧠 Learning Persistence
+The Hub now **learns and remembers** successful goal→selector mappings across sessions.
+
+**How it works:**
+1. When a semantic goal (e.g., `clickGoal('Submit')`) succeeds, the resolved selector is saved
+2. On shutdown, all learned mappings are written to `starlight_memory.json`
+3. On startup, the Hub loads this memory for instant self-healing
+
+**Example in console:**
+```
+[CBA Hub] 🧠 LEARNED: click:Submit -> button[type="submit"]
+[CBA Hub] 🧠 Memory saved: 15 learned mappings
+```
+
+### 🎛️ Extended Commands API
+The IntentRunner now supports **all common automation actions** with semantic goals:
+
+| Method | Description | Example |
+|--------|-------------|---------|
+| `fillGoal(goal, text)` | Fill input by label/placeholder | `fillGoal('Email', 'user@test.com')` |
+| `selectGoal(goal, value)` | Select dropdown option | `selectGoal('Country', 'usa')` |
+| `checkGoal(goal)` | Check a checkbox | `checkGoal('I agree')` |
+| `uncheckGoal(goal)` | Uncheck a checkbox | `uncheckGoal('Newsletter')` |
+| `hoverGoal(goal)` | Hover over element | `hoverGoal('Menu')` |
+| `scrollToGoal(goal)` | Scroll to element | `scrollToGoal('Footer')` |
+| `press(key)` | Press keyboard key | `press('Enter')` |
+| `type(text)` | Type text (keyboard) | `type('Hello World')` |
+
+**Semantic Resolution Priority:**
+1. Associated `<label>` text
+2. `placeholder` attribute
+3. `aria-label` attribute
+4. `name` attribute
+5. Historical memory (self-healing)
+
+### 🛡️ CAPTCHA Detection
+JanitorSentinel now detects CAPTCHA/robot challenges:
+- Google reCAPTCHA elements
+- "Are you a robot?" text patterns
+- Verification prompts
+
+When detected, the Sentinel signals HIJACK for human intervention.
+
+---
+
+## 13. Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
