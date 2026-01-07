@@ -36,7 +36,20 @@ class JanitorSentinel(SentinelBase):
             # Toast/notification dismissals
             ".toast", ".notification", ".snackbar", ".alert-dismissible",
             # Common close button patterns
-            ".close-btn", ".dismiss-btn", "[data-dismiss]", ".btn-close"
+            ".close-btn", ".dismiss-btn", "[data-dismiss]", ".btn-close",
+            # CAPTCHA and Robot Detection
+            ".g-recaptcha", "#recaptcha", ".recaptcha-checkbox",
+            "[data-sitekey]",  # reCAPTCHA marker
+            "#captcha", ".captcha", ".captcha-container",
+            "#challenge-form", ".challenge-form",
+            # Google specific
+            "#captcha-form", ".rc-anchor", ".rc-imageselect",
+            # Robot/verification prompts (text-based detection handled in on_pre_check)
+        ]
+        self.captcha_text_patterns = [
+            "are you a robot", "i'm not a robot", "verify you're human",
+            "unusual traffic", "automated queries", "captcha",
+            "security check", "verify yourself", "prove you're human"
         ]
         self.selectors = self.blocking_patterns 
         self.is_hijacking = False

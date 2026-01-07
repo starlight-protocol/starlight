@@ -22,7 +22,14 @@
                         "click",
                         "fill",
                         "screenshot",
-                        "checkpoint"
+                        "checkpoint",
+                        "select",
+                        "hover",
+                        "check",
+                        "uncheck",
+                        "scroll",
+                        "press",
+                        "type"
                     ],
                     "description": "Command type to execute"
                 },

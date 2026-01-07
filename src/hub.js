@@ -25,7 +25,7 @@ class CBAHub {
         this.config = this.loadConfig();
         this.headless = headless || this.config.hub?.headless || false;
 
-        this.port = this.config.hub?.port || port;
+        this.port = port || this.config.hub?.port || 8080;
         this.authToken = this.config.hub?.security?.authToken || null;
 
         // Create HTTP or HTTPS server based on SSL config
@@ -103,7 +103,7 @@ class CBAHub {
         this.telemetry = new TelemetryEngine(path.join(process.cwd(), 'telemetry.json'));
         this.webhooks = new WebhookNotifier(this.config.webhooks);
         this.recoveryTimes = []; // Track recovery times for MTTR
-        this.init();
+        this.temporalMetrics = []; // Phase 17.4: Temporal Ghosting metrics
     }
 
     loadConfig() {
@@ -414,7 +414,217 @@ class CBAHub {
         return null;
     }
 
+    /**
+     * Resolve a form input by semantic goal (label text, placeholder, aria-label).
+     * This enables fillGoal('Search') to find inputs without hardcoded selectors.
+     */
+    async resolveFormIntent(goal) {
+        const shadowEnabled = this.config.hub?.shadowDom?.enabled !== false;
+        const maxDepth = this.config.hub?.shadowDom?.maxDepth || 5;
+
+        const target = await this.page.evaluate(({ goalText, shadowEnabled, maxDepth }) => {
+            const normalizedGoal = goalText.toLowerCase();
+
+            // Collect all form inputs including shadow DOM
+            function collectInputs(root, depth = 0) {
+                if (depth > maxDepth) return [];
+                let inputs = Array.from(root.querySelectorAll('input, textarea, select'));
+
+                if (shadowEnabled) {
+                    const allElements = root.querySelectorAll('*');
+                    for (const el of allElements) {
+                        if (el.shadowRoot) {
+                            inputs = inputs.concat(collectInputs(el.shadowRoot, depth + 1));
+                        }
+                    }
+                }
+                return inputs;
+            }
+
+            const inputs = collectInputs(document);
+
+            // 1. Match by associated <label> text
+            let match = inputs.find(input => {
+                if (input.id) {
+                    const label = document.querySelector(`label[for="${input.id}"]`);
+                    if (label && (label.innerText || label.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            // 2. Match by placeholder attribute
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('placeholder') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            // 3. Match by aria-label
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            // 4. Match by name attribute
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('name') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            // 5. Match by title attribute
+            if (!match) {
+                match = inputs.find(input =>
+                    (input.getAttribute('title') || '').toLowerCase().includes(normalizedGoal)
+                );
+            }
+
+            if (match) {
+                // Generate selector
+                if (match.id) return { selector: `#${match.id}` };
+                if (match.name) return { selector: `[name="${match.name}"]` };
+                if (match.placeholder) return { selector: `[placeholder="${match.placeholder}"]` };
+                if (match.className && typeof match.className === 'string') {
+                    return { selector: `.${match.className.split(' ').filter(c => c).join('.')}` };
+                }
+                return { selector: match.tagName.toLowerCase() };
+            }
+            return null;
+        }, { goalText: goal, shadowEnabled, maxDepth });
+
+        if (target) {
+            console.log(`[CBA Hub] Form input resolved for "${goal}" -> ${target.selector}`);
+            return { selector: target.selector, selfHealed: false };
+        }
+
+        // Fallback: Check historical memory for form fills
+        const formKey = `fill:${goal}`;
+        if (this.historicalMemory.has(formKey)) {
+            console.log(`[CBA Hub] Phase 7: Form resolution failed. Using Predictive Memory for "${goal}" -> ${this.historicalMemory.get(formKey)}`);
+            return { selector: this.historicalMemory.get(formKey), selfHealed: true };
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve a select dropdown by semantic goal (label text, name, aria-label).
+     */
+    async resolveSelectIntent(goal) {
+        const target = await this.page.evaluate((goalText) => {
+            const normalizedGoal = goalText.toLowerCase();
+            const selects = Array.from(document.querySelectorAll('select'));
+
+            // Match by associated label
+            let match = selects.find(select => {
+                if (select.id) {
+                    const label = document.querySelector(`label[for="${select.id}"]`);
+                    if (label && (label.innerText || label.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            // Match by aria-label
+            if (!match) {
+                match = selects.find(s => (s.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal));
+            }
+
+            // Match by name
+            if (!match) {
+                match = selects.find(s => (s.getAttribute('name') || '').toLowerCase().includes(normalizedGoal));
+            }
+
+            if (match) {
+                if (match.id) return { selector: `#${match.id}` };
+                if (match.name) return { selector: `[name="${match.name}"]` };
+                return { selector: 'select' };
+            }
+            return null;
+        }, goal);
+
+        if (target) {
+            console.log(`[CBA Hub] Select resolved for "${goal}" -> ${target.selector}`);
+            return { selector: target.selector, selfHealed: false };
+        }
+
+        const formKey = `select:${goal}`;
+        if (this.historicalMemory.has(formKey)) {
+            return { selector: this.historicalMemory.get(formKey), selfHealed: true };
+        }
+        return null;
+    }
+
+    /**
+     * Resolve a checkbox by semantic goal (label text, aria-label).
+     */
+    async resolveCheckboxIntent(goal) {
+        const target = await this.page.evaluate((goalText) => {
+            const normalizedGoal = goalText.toLowerCase();
+            const checkboxes = Array.from(document.querySelectorAll('input[type="checkbox"], input[type="radio"]'));
+
+            // Match by associated label text (label wrapping or for= attribute)
+            let match = checkboxes.find(cb => {
+                // Check parent label
+                const parentLabel = cb.closest('label');
+                if (parentLabel && (parentLabel.innerText || parentLabel.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                    return true;
+                }
+                // Check for= label
+                if (cb.id) {
+                    const label = document.querySelector(`label[for="${cb.id}"]`);
+                    if (label && (label.innerText || label.textContent || '').toLowerCase().includes(normalizedGoal)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            // Match by aria-label
+            if (!match) {
+                match = checkboxes.find(cb => (cb.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal));
+            }
+
+            if (match) {
+                if (match.id) return { selector: `#${match.id}` };
+                if (match.name) return { selector: `[name="${match.name}"]` };
+                return { selector: `input[type="${match.type}"]` };
+            }
+            return null;
+        }, goal);
+
+        if (target) {
+            console.log(`[CBA Hub] Checkbox resolved for "${goal}" -> ${target.selector}`);
+            return { selector: target.selector, selfHealed: false };
+        }
+
+        const formKey = `check:${goal}`;
+        if (this.historicalMemory.has(formKey)) {
+            return { selector: this.historicalMemory.get(formKey), selfHealed: true };
+        }
+        return null;
+    }
+
     loadHistoricalMemory() {
+        // Load persistent memory file (from previous sessions)
+        const memoryFile = path.join(process.cwd(), 'starlight_memory.json');
+        if (fs.existsSync(memoryFile)) {
+            try {
+                const memory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+                Object.entries(memory).forEach(([goal, selector]) => {
+                    this.historicalMemory.set(goal, selector);
+                });
+                console.log(`[CBA Hub] 🧠 Loaded ${Object.keys(memory).length} learned mappings from starlight_memory.json`);
+            } catch (e) {
+                console.warn('[CBA Hub] Could not load starlight_memory.json:', e.message);
+            }
+        }
+
+        // Also load from mission trace (for backward compatibility)
         const traceFile = path.join(process.cwd(), 'mission_trace.json');
         if (fs.existsSync(traceFile)) {
             try {
@@ -453,6 +663,87 @@ class CBAHub {
             } catch (e) {
                 console.warn("[CBA Hub] Failed to load historical memory:", e.message);
             }
+        }
+
+        // Phase 17.4: Load Temporal Ghosting Metrics
+        const ghostFile = path.join(process.cwd(), 'temporal_ghosting.json');
+        if (fs.existsSync(ghostFile)) {
+            try {
+                const metrics = JSON.parse(fs.readFileSync(ghostFile, 'utf8'));
+                metrics.forEach(m => {
+                    const key = `${m.command}:${m.selector || ''}`;
+                    // Store the max latency seen for this target to use as a stability hint
+                    const existing = this.historicalMemory.get(`ghost:${key}`) || 0;
+                    this.historicalMemory.set(`ghost:${key}`, Math.max(existing, m.latency_ms));
+                });
+                console.log(`  - Temporal Ghosting: ${metrics.length} observations loaded.`);
+            } catch (e) {
+                console.warn("[CBA Hub] Failed to load temporal ghosting metrics:", e.message);
+            }
+        }
+    }
+
+    /**
+     * Save learned goal→selector mappings to persistent storage.
+     * Called on shutdown to ensure learning persists across sessions.
+     */
+    async saveHistoricalMemory() {
+        if (this.historicalMemory.size === 0) {
+            console.log('[CBA Hub] No learned mappings to save.');
+            return;
+        }
+
+        const memoryFile = path.join(process.cwd(), 'starlight_memory.json');
+
+        // Load existing memory and merge with current session
+        let existingMemory = {};
+        if (fs.existsSync(memoryFile)) {
+            try {
+                existingMemory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+            } catch (e) {
+                console.warn('[CBA Hub] Could not load existing memory file:', e.message);
+            }
+        }
+
+        // Merge: current session overwrites existing (newer mappings win)
+        const allMappings = { ...existingMemory };
+        this.historicalMemory.forEach((selector, goal) => {
+            // Skip ghost metrics (they're saved separately)
+            if (!goal.startsWith('ghost:')) {
+                allMappings[goal] = selector;
+            }
+        });
+
+        // Atomic write
+        const tempFile = memoryFile + '.tmp';
+        try {
+            fs.writeFileSync(tempFile, JSON.stringify(allMappings, null, 2));
+            fs.renameSync(tempFile, memoryFile);
+            console.log(`[CBA Hub] 🧠 Memory saved: ${Object.keys(allMappings).length} learned mappings`);
+        } catch (e) {
+            console.error('[CBA Hub] Failed to save memory:', e.message);
+            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        }
+    }
+
+    /**
+     * Learn a successful goal→selector mapping.
+     * Called after successful command execution with semantic goal.
+     */
+    learnMapping(goal, selector, cmd = null) {
+        if (!goal || !selector) return;
+
+        // Store with command prefix for more specific recall
+        const key = cmd ? `${cmd}:${goal}` : goal;
+        const existing = this.historicalMemory.get(key);
+
+        if (existing !== selector) {
+            this.historicalMemory.set(key, selector);
+            // Also store without prefix for backward compatibility
+            if (cmd) {
+                this.historicalMemory.set(goal, selector);
+            }
+            console.log(`[CBA Hub] 🧠 LEARNED: ${key} -> ${selector}`);
         }
     }
 
@@ -596,8 +887,9 @@ class CBAHub {
                 break;
             case 'starlight.intent':
                 // Phase 5: Handle Semantic Intent (Goal-based)
-                if (msg.params.goal) {
-                    console.log(`[CBA Hub] Resolving Semantic Goal: "${msg.params.goal}"`);
+                // Only run default click resolver if cmd is 'click' or not set
+                if (msg.params.goal && (!msg.params.cmd || msg.params.cmd === 'click')) {
+                    console.log(`[CBA Hub] Resolving Click Goal: "${msg.params.goal}"`);
                     const result = await this.resolveSemanticIntent(msg.params.goal);
                     if (result) {
                         msg.params.selector = result.selector;
@@ -641,6 +933,94 @@ class CBAHub {
                         return;
                     }
                 }
+                // Handle goal-based fill commands (semantic form resolution)
+                if (msg.params.cmd === 'fill' && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Form Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveFormIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) {
+                            this.totalSavedTime += 120; // ROI: 2 mins triage avoided
+                        }
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve form goal: ${msg.params.goal}`);
+                        this.reportData.push({
+                            type: 'COMMAND',
+                            id: msg.id,
+                            cmd: 'fill',
+                            goal: msg.params.goal,
+                            selector: null,
+                            url: null,
+                            success: false,
+                            forcedProceed: false,
+                            selfHealed: false,
+                            predictiveWait: false,
+                            timestamp: new Date().toLocaleTimeString(),
+                            beforeScreenshot: null,
+                            afterScreenshot: null,
+                            error: `Failed to resolve form goal: ${msg.params.goal}`
+                        });
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE',
+                            id: msg.id,
+                            success: false,
+                            error: `Could not find form input matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
+                // Handle goal-based select commands
+                if (msg.params.cmd === 'select' && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Select Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveSelectIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve select goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find dropdown matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
+                // Handle goal-based check/uncheck commands
+                if ((msg.params.cmd === 'check' || msg.params.cmd === 'uncheck') && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Checkbox Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveCheckboxIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve checkbox goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find checkbox matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
+                // Handle goal-based hover/scroll commands (use click resolver)
+                if ((msg.params.cmd === 'hover' || msg.params.cmd === 'scroll') && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving ${msg.params.cmd} Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveSemanticIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve ${msg.params.cmd} goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find element matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
                 this.enqueueCommand(id, { ...msg.params, id: msg.id });
                 break;
             case 'starlight.action':
@@ -658,6 +1038,19 @@ class CBAHub {
                 break;
             case 'starlight.getRecordedSteps':
                 this.broadcastToClient(id, { type: 'RECORDED_STEPS', steps: this.recorder.getSteps() });
+                break;
+
+            // Phase 17: Inter-Sentinel Side-Talk
+            case 'starlight.sidetalk':
+                await this.handleSideTalk(id, params, sentinel);
+                break;
+
+            // Phase 17: Warp Context Capture
+            case 'starlight.warp_capture':
+                await this.handleWarpCapture(id, params);
+                break;
+            case 'starlight.warp_restore':
+                await this.handleWarpRestore(id, params);
                 break;
         }
     }
@@ -768,6 +1161,39 @@ class CBAHub {
                 reason: reason,
                 timestamp: new Date().toLocaleTimeString()
             });
+
+            // Record in-progress command as failed
+            if (this.currentCommand) {
+                console.log(`[CBA Hub] Recording in-progress command as failed: ${this.currentCommand.goal || this.currentCommand.cmd}`);
+
+                // Try to capture final state screenshot
+                let interruptedScreenshot = null;
+                if (this.page) {
+                    try {
+                        interruptedScreenshot = await this.takeScreenshot('INTERRUPTED_STATE');
+                    } catch (e) {
+                        console.warn('[CBA Hub] Could not capture interrupted state screenshot:', e.message);
+                    }
+                }
+
+                this.reportData.push({
+                    type: 'COMMAND',
+                    id: this.currentCommand.id,
+                    cmd: this.currentCommand.cmd,
+                    goal: this.currentCommand.goal,
+                    selector: this.currentCommand.selector,
+                    url: this.currentCommand.url,
+                    success: false,
+                    forcedProceed: false,
+                    selfHealed: false,
+                    predictiveWait: false,
+                    timestamp: new Date().toLocaleTimeString(),
+                    beforeScreenshot: interruptedScreenshot, // Show state at interruption
+                    afterScreenshot: interruptedScreenshot,  // Same screenshot for both
+                    error: `Command interrupted: ${reason}`
+                });
+                this.currentCommand = null;
+            }
         }
 
         console.log("[CBA Hub] Closing gracefully...");
@@ -788,6 +1214,7 @@ class CBAHub {
         console.log("[CBA Hub] Generating Hero Story Report...");
         await this.generateReport();
         await this.saveMissionTrace();
+        await this.saveTemporalMetrics(); // Phase 17.4: Temporal Ghosting
 
         // Phase 10: Record Mission Telemetry
         const missionSuccess = this.reportData.every(item => item.type !== 'COMMAND' || item.success);
@@ -807,12 +1234,18 @@ class CBAHub {
             error: missionSuccess ? null : 'Mission had failures'
         });
 
+        // Save learned memory before shutdown
+        await this.saveHistoricalMemory();
+        await this.saveTemporalMetrics();
+
         if (this.page) await this.page.close();
         if (this.browser) await this.browser.close();
         this.server.close(() => {
             this.wss.close(() => {
                 console.log("[CBA Hub] Hub shutdown complete.");
-                process.exit(0);
+                if (require.main === module) {
+                    process.exit(0);
+                }
             });
         });
     }
@@ -917,12 +1350,21 @@ class CBAHub {
         this.isProcessing = true;
         try {
             const msg = this.commandQueue.shift();
+            this.currentCommand = msg; // Track for failure reporting on shutdown
             if (msg.internal && msg.cmd === 'nop') {
                 console.log("[CBA Hub] Processing RE_CHECK settling (500ms)...");
                 await new Promise(r => setTimeout(r, 500));
                 this.isProcessing = false;
                 this.processQueue();
                 return;
+            }
+
+            // Phase 17.4: Temporal Optimization (Ghost-Based Pacing)
+            const ghostKey = `ghost:${msg.cmd}:${msg.selector || ''}`;
+            if (this.historicalMemory.has(ghostKey)) {
+                const ghostLatency = this.historicalMemory.get(ghostKey);
+                msg.stabilityHint = Math.max(msg.stabilityHint || 0, ghostLatency);
+                console.log(`[CBA Hub] TEMPORAL OPTIMIZATION: Applying Ghost Hint (${ghostLatency}ms) for ${msg.cmd}`);
             }
 
             // Phase 7.2: Aura-Based Throttling (Predictive Pacing)
@@ -963,8 +1405,21 @@ class CBAHub {
             // v2.1: Robust Screenshot Timing (Wait for settlement)
             const beforeScreenshot = await this.takeScreenshot(`BEFORE_${msg.cmd}`);
             const originalSelector = msg.selector;
-            const success = await this.executeCommand(msg);
+            let success = false;
+            let commandError = null;
+            try {
+                success = await this.executeCommand(msg);
+            } catch (e) {
+                success = false;
+                commandError = e.message;
+                console.error(`[CBA Hub] Command execution error: ${commandError}`);
+            }
             const selfHealed = originalSelector !== msg.selector;
+
+            // Learn successful goal→selector mappings
+            if (success && msg.goal && msg.selector) {
+                this.learnMapping(msg.goal, msg.selector, msg.cmd);
+            }
 
             // Brief wait for UI to reflect change before "AFTER" capture
             await new Promise(r => setTimeout(r, 500));
@@ -980,19 +1435,23 @@ class CBAHub {
                 success,
                 forcedProceed,
                 selfHealed: selfHealed || msg.selfHealed,
+                learned: success && msg.goal && msg.selector, // Track that we learned from this
                 predictiveWait,
                 timestamp: new Date().toLocaleTimeString(),
                 beforeScreenshot,
-                afterScreenshot
+                afterScreenshot,
+                error: commandError
             });
 
             this.broadcastToClient(null, {
                 type: 'COMMAND_COMPLETE',
                 id: msg.id,
                 success,
+                error: commandError || (success ? null : `Command "${msg.cmd}" failed on ${msg.goal || msg.selector}`),
                 context: this.sovereignState // Phase 4: Return shared context to Intent
             });
         } finally {
+            this.currentCommand = null; // Clear tracking
             this.isProcessing = false;
         }
         this.processQueue();
@@ -1157,60 +1616,134 @@ class CBAHub {
             id: nanoid()
         });
 
-        // Use standard pendingRequests logic
-        const promises = relevantSentinels.map(([id, s]) => {
-            return new Promise((resolve, reject) => {
-                this.pendingRequests.set(id, { resolve, reject, layer: s.layer });
+        const quorumThreshold = this.config.hub?.quorumThreshold || 1.0;
+        const consensusTimeout = this.config.hub?.consensusTimeout || 5000;
+        const totalSentinels = relevantSentinels.length;
+        const requiredConfidence = totalSentinels * quorumThreshold;
+
+        let receivedConfidence = 0;
+        let receivedVeto = null;
+        let responsesCount = 0;
+
+        return new Promise((resolve) => {
+            const cleanup = () => {
+                relevantSentinels.forEach(([id]) => this.pendingRequests.delete(id));
+                clearTimeout(budgetTimer);
+                clearTimeout(consensusTimer);
+            };
+
+            const budgetTimer = setTimeout(() => {
+                const missing = relevantSentinels
+                    .filter(([id]) => this.pendingRequests.has(id))
+                    .map(([_, s]) => s.layer);
+                if (missing.length > 0) {
+                    console.warn(`[CBA Hub] Handshake TIMEOUT: Missing signals from [${missing.join(', ')}] after ${syncBudget}ms.`);
+                }
+                cleanup();
+                resolve(false);
+            }, syncBudget);
+
+            let consensusTimer = null;
+
+            relevantSentinels.forEach(([id, s]) => {
+                this.pendingRequests.set(id, {
+                    layer: s.layer,
+                    resolve: (response) => {
+                        responsesCount++;
+                        const confidence = response.params?.confidence ?? 1.0;
+
+                        if (response.method === 'starlight.wait') {
+                            receivedVeto = response;
+                            console.log(`[CBA Hub] Stability VETO from ${s.layer} (Confidence: ${confidence}).`);
+                            cleanup();
+                            setTimeout(async () => {
+                                const delay = response.params?.retryAfterMs || 1000;
+                                await new Promise(r => setTimeout(r, delay));
+                                resolve(false);
+                            }, 0);
+                            return;
+                        }
+
+                        if (response.method === 'starlight.clear') {
+                            receivedConfidence += confidence;
+                        }
+
+                        // Check if quorum reached
+                        if (receivedConfidence >= requiredConfidence && !receivedVeto) {
+                            console.log(`[CBA Hub] Consensus MET (${receivedConfidence.toFixed(1)}/${requiredConfidence.toFixed(1)}). Proceeding...`);
+                            cleanup();
+                            resolve(true);
+                        } else if (responsesCount === totalSentinels) {
+                            // All responded but quorum not reached (shouldn't happen with default 1.0 unless confidence < 1)
+                            console.log(`[CBA Hub] Handshake COMPLETED. Final confidence: ${receivedConfidence.toFixed(1)}/${requiredConfidence.toFixed(1)}`);
+                            cleanup();
+                            resolve(receivedConfidence >= requiredConfidence);
+                        } else if (quorumThreshold < 1.0 && !consensusTimer) {
+                            // Start consensus timeout once we have at least one response
+                            consensusTimer = setTimeout(() => {
+                                console.log(`[CBA Hub] Consensus TIMEOUT (${receivedConfidence.toFixed(1)}/${requiredConfidence.toFixed(1)}).`);
+                                cleanup();
+                                resolve(receivedConfidence >= requiredConfidence);
+                            }, consensusTimeout);
+                        }
+                    },
+                    reject: () => {
+                        responsesCount++;
+                        if (responsesCount === totalSentinels && !receivedVeto) {
+                            cleanup();
+                            resolve(receivedConfidence >= requiredConfidence);
+                        }
+                    }
+                });
             });
         });
-
-        try {
-            const results = await Promise.race([
-                Promise.all(promises),
-                new Promise((_, r) => setTimeout(() => r('timeout'), syncBudget))
-            ]);
-            console.log(`[CBA Hub] Handshake COMPLETED for ${msg.cmd}.`);
-
-            // Phase 3: Check for Stability Wait requests
-            const waitRequest = results.find(res => res && res.method === 'starlight.wait');
-            if (waitRequest) {
-                const delay = waitRequest.params?.retryAfterMs || 1000;
-                console.log(`[CBA Hub] Stability VETO from Sentinel. Waiting ${delay}ms...`);
-                await new Promise(r => setTimeout(r, delay));
-                return false;
-            }
-
-            return true;
-        } catch (e) {
-            if (e === 'timeout') {
-                const missing = Array.from(this.pendingRequests.values()).map(r => r.layer).join(', ');
-                console.warn(`[CBA Hub] Handshake TIMEOUT: Missing signals from [${missing}] within ${syncBudget}ms.`);
-                this.pendingRequests.clear();
-            }
-            return false;
-        }
     }
 
     async executeCommand(msg, retry = true) {
+        const startTime = Date.now();
         try {
             // Lazy launch browser if needed
             if (!this.page) {
-                console.log('[CBA Hub] Launching browser for mission mission execution...');
+                console.log('[CBA Hub] Launching browser for mission execution...');
                 this.browser = await chromium.launch({ headless: this.headless });
                 const context = await this.browser.newContext();
                 this.page = await context.newPage();
             }
 
-            if (msg.cmd === 'goto') await this.page.goto(msg.url);
-            else if (msg.cmd === 'click') await this.page.click(msg.selector);
-            else if (msg.cmd === 'fill') await this.page.fill(msg.selector, msg.text);
-            else if (msg.cmd === 'checkpoint') {
-                console.log(`[CBA Hub] 🚩 Checkpoint reached: ${msg.name}`);
-                this.recordTrace('CHECKPOINT', 'System', {
-                    method: 'starlight.checkpoint',
-                    params: { name: msg.name }
-                });
+            if (this.config.hub?.ghostMode && msg.cmd !== 'goto' && msg.cmd !== 'checkpoint') {
+                console.log(`[CBA Hub] GHOST MODE: Timed ${msg.cmd} on ${msg.selector || 'target'}. Observation only.`);
+                await new Promise(r => setTimeout(r, 50));
+            } else {
+                if (msg.cmd === 'goto') await this.page.goto(msg.url);
+                else if (msg.cmd === 'click') await this.page.click(msg.selector);
+                else if (msg.cmd === 'fill') await this.page.fill(msg.selector, msg.text);
+                else if (msg.cmd === 'select') await this.page.selectOption(msg.selector, msg.value);
+                else if (msg.cmd === 'hover') await this.page.hover(msg.selector);
+                else if (msg.cmd === 'check') await this.page.check(msg.selector);
+                else if (msg.cmd === 'uncheck') await this.page.uncheck(msg.selector);
+                else if (msg.cmd === 'scroll') {
+                    if (msg.selector) {
+                        await this.page.locator(msg.selector).scrollIntoViewIfNeeded();
+                    } else {
+                        await this.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                    }
+                }
+                else if (msg.cmd === 'press') await this.page.keyboard.press(msg.key);
+                else if (msg.cmd === 'type') await this.page.keyboard.type(msg.text);
+                else if (msg.cmd === 'checkpoint') {
+                    console.log(`[CBA Hub] 🚩 Checkpoint reached: ${msg.name}`);
+                    this.recordTrace('CHECKPOINT', 'System', {
+                        method: 'starlight.checkpoint',
+                        params: { name: msg.name }
+                    });
+                }
             }
+
+            // Phase 17.4: Track temporal ghosting metrics
+            if (this.config.hub?.ghostMode) {
+                this.recordTemporalGhosting(msg, Date.now() - startTime);
+            }
+
             return true;
         } catch (e) {
             console.warn(`[CBA Hub] Command failure on ${msg.selector}: ${e.message}`);
@@ -1379,7 +1912,218 @@ class CBAHub {
             return snapshot;
         } catch (e) {
             console.error(`[CBA Hub] A11y snapshot failed: ${e.message}`);
-            return { elements: [], computed: [] };
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 17: Inter-Sentinel Side-Talk
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Handle side-talk messages between Sentinels.
+     * Routes messages without requiring direct Sentinel connections.
+     * Handles Sentinel availability (offline/unavailable scenarios).
+     */
+    async handleSideTalk(senderId, params, senderSentinel) {
+        const { from, to, topic, payload, replyTo, ttl = 5000 } = params;
+
+        console.log(`[CBA Hub] Side-Talk: ${from} → ${to} (topic: ${topic})`);
+
+        // Validate sender
+        if (!senderSentinel || senderSentinel.layer !== from) {
+            console.warn(`[CBA Hub] Side-Talk rejected: sender mismatch (${from})`);
+            return;
+        }
+
+        // Build the side-talk envelope
+        const envelope = {
+            jsonrpc: '2.0',
+            method: 'starlight.sidetalk',
+            params: {
+                from,
+                to,
+                topic,
+                payload,
+                replyTo,
+                timestamp: new Date().toISOString()
+            },
+            id: `sidetalk-${nanoid(8)}`
+        };
+
+        // Track delivery status
+        const deliveryStatus = {
+            sent: 0,
+            delivered: 0,
+            unavailable: []
+        };
+
+        // Broadcast or direct message
+        if (to === '*') {
+            // Broadcast to all Sentinels except sender
+            for (const [id, sentinel] of this.sentinels.entries()) {
+                if (sentinel.layer !== from) {
+                    const success = this.deliverSideTalk(sentinel, envelope);
+                    deliveryStatus.sent++;
+                    if (success) {
+                        deliveryStatus.delivered++;
+                    } else {
+                        deliveryStatus.unavailable.push(sentinel.layer);
+                    }
+                }
+            }
+            console.log(`[CBA Hub] Side-Talk broadcast: ${deliveryStatus.delivered}/${deliveryStatus.sent} delivered`);
+        } else {
+            // Direct message to specific Sentinel
+            const targetSentinel = Array.from(this.sentinels.entries())
+                .find(([id, s]) => s.layer === to)?.[1];
+
+            if (!targetSentinel) {
+                console.warn(`[CBA Hub] Side-Talk: Target Sentinel '${to}' not found/unavailable`);
+
+                // Notify sender of failed delivery
+                this.deliverSideTalk(senderSentinel, {
+                    jsonrpc: '2.0',
+                    method: 'starlight.sidetalk_ack',
+                    params: {
+                        originalId: envelope.id,
+                        status: 'undeliverable',
+                        reason: `Sentinel '${to}' is not available`,
+                        availableSentinels: Array.from(this.sentinels.values()).map(s => s.layer)
+                    },
+                    id: `sidetalk-ack-${nanoid(8)}`
+                });
+                return;
+            }
+
+            const success = this.deliverSideTalk(targetSentinel, envelope);
+            if (!success) {
+                console.warn(`[CBA Hub] Side-Talk: Failed to deliver to '${to}'`);
+            }
+        }
+
+        // Log side-talk for debugging
+        this.missionTrace.push({
+            type: 'SIDETALK',
+            from,
+            to,
+            topic,
+            deliveryStatus,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    /**
+     * Attempt to deliver a side-talk message to a Sentinel.
+     * Returns true if sent successfully, false if Sentinel is unavailable.
+     */
+    deliverSideTalk(sentinel, envelope) {
+        try {
+            if (!sentinel.ws || sentinel.ws.readyState !== WebSocket.OPEN) {
+                return false;
+            }
+            sentinel.ws.send(JSON.stringify(envelope));
+            return true;
+        } catch (e) {
+            console.error(`[CBA Hub] Side-Talk delivery error: ${e.message}`);
+            return false;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Phase 17: Starlight Warp (Context Serialization)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Capture current browser context to a .warp file.
+     * Security: All data is sanitized by default.
+     */
+    async handleWarpCapture(clientId, params) {
+        const { reason = 'manual', sanitize = true, encrypt = false } = params;
+
+        console.log(`[CBA Hub] Warp Capture requested (reason: ${reason}, sanitize: ${sanitize})`);
+
+        // Security warning for unsanitized captures
+        if (!sanitize) {
+            console.warn('[CBA Hub] ⚠️ SECURITY WARNING: Creating unsanitized warp file!');
+        }
+
+        try {
+            // Lazy-load warp module
+            if (!this.warp) {
+                const { StarlightWarp } = require('./warp');
+                this.warp = new StarlightWarp(this.page, {
+                    outputDir: this.config.warp?.outputDir || './warps',
+                    sanitize,
+                    encrypt,
+                    encryptionKey: this.config.warp?.encryptionKey
+                });
+                await this.warp.initialize();
+            }
+
+            const filepath = await this.warp.capture(reason);
+
+            this.broadcastToClient(clientId, {
+                type: 'WARP_CAPTURED',
+                success: true,
+                filepath,
+                sanitized: sanitize
+            });
+
+            // Add to mission trace
+            this.missionTrace.push({
+                type: 'WARP_CAPTURE',
+                reason,
+                filepath,
+                sanitized: sanitize,
+                timestamp: new Date().toISOString()
+            });
+
+        } catch (error) {
+            console.error(`[CBA Hub] Warp capture failed: ${error.message}`);
+            this.broadcastToClient(clientId, {
+                type: 'WARP_CAPTURED',
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * Restore browser context from a .warp file.
+     */
+    async handleWarpRestore(clientId, params) {
+        const { filepath, restoreUrl = true, restoreCookies = true, restoreStorage = true } = params;
+
+        console.log(`[CBA Hub] Warp Restore requested: ${filepath}`);
+
+        try {
+            if (!this.warp) {
+                const { StarlightWarp } = require('./warp');
+                this.warp = new StarlightWarp(this.page, {
+                    outputDir: this.config.warp?.outputDir || './warps'
+                });
+            }
+
+            const data = await this.warp.restore(filepath, {
+                restoreUrl,
+                restoreCookies,
+                restoreStorage
+            });
+
+            this.broadcastToClient(clientId, {
+                type: 'WARP_RESTORED',
+                success: true,
+                url: data.url,
+                sanitized: data._sanitized
+            });
+
+        } catch (error) {
+            console.error(`[CBA Hub] Warp restore failed: ${error.message}`);
+            this.broadcastToClient(clientId, {
+                type: 'WARP_RESTORED',
+                success: false,
+                error: error.message
+            });
         }
     }
 
@@ -1413,13 +2157,21 @@ class CBAHub {
     async generateReport() {
         console.log("[CBA Hub] Generating Hero Story Report...");
         const totalSavedMins = Math.floor(this.totalSavedTime / 60);
+
+        // Calculate overall mission success from reportData
+        const failedCommands = this.reportData.filter(i => i.type === 'COMMAND' && !i.success);
+        const hasFailure = this.reportData.some(i => i.type === 'FAILURE') || failedCommands.length > 0;
+        const statusEmoji = hasFailure ? '❌' : '✅';
+        const statusText = hasFailure ? 'Mission Failed' : 'Mission Complete';
+        const statusColor = hasFailure ? '#f43f5e' : '#10B981';
+
         const html = `
     <!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>CBA Hero Story: Navigational Proof</title>
+                <title>CBA Hero Story: ${statusText}</title>
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
                     
@@ -1588,9 +2340,10 @@ class CBAHub {
                 </style>
             </head>
             <body>
-                <div class="hero-header">
-                    <h1>🌠 Starlight Protocol: The Hero's Journey</h1>
+                <div class="hero-header" style="border-color: ${statusColor};">
+                    <h1>${statusEmoji} Starlight Protocol: ${statusText}</h1>
                     <p>Evidence-based automation for the modern web.</p>
+                    ${hasFailure ? `<p style="color: ${statusColor}; font-weight: 700; margin-top: 1rem;">⚠️ ${failedCommands.length} command(s) failed during this mission.</p>` : ''}
                 </div>
 
                 <div id="timeline">
@@ -1713,10 +2466,34 @@ class CBAHub {
         fs.writeFileSync(traceFile, JSON.stringify(this.missionTrace, null, 2));
         console.log("[CBA Hub] Mission Trace saved to mission_trace.json");
     }
+
+    // Phase 17.4: Temporal Ghosting
+    recordTemporalGhosting(msg, latency) {
+        this.temporalMetrics.push({
+            timestamp: new Date().toISOString(),
+            command: msg.cmd,
+            selector: msg.selector || null,
+            latency_ms: latency,
+            type: 'settlement_observation'
+        });
+        console.log(`[CBA Hub] 🌀 Ghost Observation: ${msg.cmd} latency = ${latency}ms`);
+    }
+
+    async saveTemporalMetrics() {
+        if (this.temporalMetrics.length === 0) return;
+        const metricsFile = path.join(process.cwd(), 'temporal_ghosting.json');
+        fs.writeFileSync(metricsFile, JSON.stringify(this.temporalMetrics, null, 2));
+        console.log(`[CBA Hub] Temporal Ghosting metrics saved to temporal_ghosting.json (${this.temporalMetrics.length} samples)`);
+    }
 }
 
-const args = process.argv.slice(2);
-const headless = args.includes('--headless');
-const port = args.find(a => a.startsWith('--port='))?.split('=')[1] || 8080;
+module.exports = { CBAHub };
 
-new CBAHub(parseInt(port), headless);
+if (require.main === module) {
+    const args = process.argv.slice(2);
+    const headless = args.includes('--headless');
+    const port = args.find(a => a.startsWith('--port='))?.split('=')[1] || 8080;
+
+    const hub = new CBAHub(parseInt(port), headless);
+    hub.init();
+}

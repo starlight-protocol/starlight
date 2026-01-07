@@ -215,7 +215,38 @@ CBA features **Time-Travel Triage**, allowing you to inspect missions with surgi
 
 ---
 
-## 10. Phase 15: Visual Sentinel Editor & Fleet Manager (NEW in v3.0.3)
+## 10. Phase 17: Deep Mesh Intelligence (NEW)
+
+### 🛸 Starlight Warp (Failure Triage)
+When a test fails, capture the **exact browser state** for instant debugging:
+
+**What's Captured:**
+- Screenshot, URL, cookies, localStorage
+- Console logs, network requests
+- Full DOM snapshot
+
+**Security:** All sensitive data (emails, tokens, passwords) is automatically redacted.
+
+**Use Case:** Share the `.warp` file with teammates—they can restore and see exactly what you saw.
+
+### 🗣️ Inter-Sentinel Side-Talk
+Sentinels can now communicate directly with each other:
+- **Stability Broadcast**: Pulse tells everyone "environment is stable"
+- **Availability Handling**: If a Sentinel is offline, sender gets notified
+
+### 🗳️ Consensus Mesh (Quorum)
+The Hub no longer waits for every single Sentinel to "handshake". If a majority (Quorum) agrees the path is clear, the mission proceeds.
+- **Fail-Fast**: Respects any Veto (WAIT) immediately.
+- **Performance**: High-speed execution even with laggy Sentinels.
+
+### 🌀 Temporal Ghosting (Speed Limit)
+Run missions in "Ghost Mode" to find the UI's performance limits.
+- **Observation**: Tracks exact settlement times for every button and input.
+- **Optimization**: Automatically adjusts mission pace based on past findings.
+
+---
+
+## 11. Phase 15: Visual Sentinel Editor & Fleet Manager (NEW in v3.0.3)
 
 ### 🛠️ Creating Custom Sentinels (No-Code)
 
@@ -282,7 +313,54 @@ Get notified on Slack, Teams, or Discord when missions complete.
 
 ---
 
-## 12. Troubleshooting
+## 12. Phase 18: Universal Protocol (NEW in v3.2)
+
+### 🧠 Learning Persistence
+The Hub now **learns and remembers** successful goal→selector mappings across sessions.
+
+**How it works:**
+1. When a semantic goal (e.g., `clickGoal('Submit')`) succeeds, the resolved selector is saved
+2. On shutdown, all learned mappings are written to `starlight_memory.json`
+3. On startup, the Hub loads this memory for instant self-healing
+
+**Example in console:**
+```
+[CBA Hub] 🧠 LEARNED: click:Submit -> button[type="submit"]
+[CBA Hub] 🧠 Memory saved: 15 learned mappings
+```
+
+### 🎛️ Extended Commands API
+The IntentRunner now supports **all common automation actions** with semantic goals:
+
+| Method | Description | Example |
+|--------|-------------|---------|
+| `fillGoal(goal, text)` | Fill input by label/placeholder | `fillGoal('Email', 'user@test.com')` |
+| `selectGoal(goal, value)` | Select dropdown option | `selectGoal('Country', 'usa')` |
+| `checkGoal(goal)` | Check a checkbox | `checkGoal('I agree')` |
+| `uncheckGoal(goal)` | Uncheck a checkbox | `uncheckGoal('Newsletter')` |
+| `hoverGoal(goal)` | Hover over element | `hoverGoal('Menu')` |
+| `scrollToGoal(goal)` | Scroll to element | `scrollToGoal('Footer')` |
+| `press(key)` | Press keyboard key | `press('Enter')` |
+| `type(text)` | Type text (keyboard) | `type('Hello World')` |
+
+**Semantic Resolution Priority:**
+1. Associated `<label>` text
+2. `placeholder` attribute
+3. `aria-label` attribute
+4. `name` attribute
+5. Historical memory (self-healing)
+
+### 🛡️ CAPTCHA Detection
+JanitorSentinel now detects CAPTCHA/robot challenges:
+- Google reCAPTCHA elements
+- "Are you a robot?" text patterns
+- Verification prompts
+
+When detected, the Sentinel signals HIJACK for human intervention.
+
+---
+
+## 13. Troubleshooting
 
 | Issue | Solution |
 |-------|----------|

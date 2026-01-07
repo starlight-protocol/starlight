@@ -101,6 +101,67 @@ class IntentRunner {
     }
 
     /**
+     * Fill a form input by semantic goal (label text, placeholder, aria-label).
+     * The Hub resolves the input selector automatically.
+     * @param {string} goal - Semantic goal (e.g., 'Search', 'Email', 'Password')
+     * @param {string} text - Text to fill
+     * @param {object} context - Optional context metadata
+     * @returns {Promise<object>} Command result
+     */
+    async fillGoal(goal, text, context = {}) {
+        return this._sendCommand({ cmd: 'fill', goal, text, context });
+    }
+
+    // === SELECT (Dropdown) ===
+    async select(selector, value) {
+        return this._sendCommand({ cmd: 'select', selector, value });
+    }
+    async selectGoal(goal, value, context = {}) {
+        return this._sendCommand({ cmd: 'select', goal, value, context });
+    }
+
+    // === HOVER ===
+    async hover(selector) {
+        return this._sendCommand({ cmd: 'hover', selector });
+    }
+    async hoverGoal(goal, context = {}) {
+        return this._sendCommand({ cmd: 'hover', goal, context });
+    }
+
+    // === CHECK/UNCHECK (Checkbox) ===
+    async check(selector) {
+        return this._sendCommand({ cmd: 'check', selector });
+    }
+    async checkGoal(goal, context = {}) {
+        return this._sendCommand({ cmd: 'check', goal, context });
+    }
+    async uncheck(selector) {
+        return this._sendCommand({ cmd: 'uncheck', selector });
+    }
+    async uncheckGoal(goal, context = {}) {
+        return this._sendCommand({ cmd: 'uncheck', goal, context });
+    }
+
+    // === SCROLL ===
+    async scrollTo(selector) {
+        return this._sendCommand({ cmd: 'scroll', selector });
+    }
+    async scrollToGoal(goal, context = {}) {
+        return this._sendCommand({ cmd: 'scroll', goal, context });
+    }
+    async scrollToBottom() {
+        return this._sendCommand({ cmd: 'scroll' });
+    }
+
+    // === KEYBOARD ===
+    async press(key) {
+        return this._sendCommand({ cmd: 'press', key });
+    }
+    async type(text) {
+        return this._sendCommand({ cmd: 'type', text });
+    }
+
+    /**
      * Record a logical checkpoint in the mission trace.
      * @param {string} name - Checkpoint name
      * @returns {Promise<object>} Command result

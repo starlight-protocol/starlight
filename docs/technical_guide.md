@@ -98,6 +98,9 @@ graph TD
 | `starlight.context_update` | Sentinel | Inject shared state |
 | `starlight.entropy_stream` | Hub | Broadcast environment jitter |
 | `starlight.finish` | Intent | End mission |
+| `starlight.sidetalk` | Sentinel | Inter-Sentinel communication (Phase 17) |
+| `starlight.warp_capture` | Client | Capture browser context to .warp file (Phase 17) |
+| `starlight.warp_restore` | Client | Restore browser context from .warp file (Phase 17) |
 
 ---
 
@@ -273,7 +276,143 @@ await self.send_hijack("reason")  # Request browser lock
 await self.send_resume()          # Release lock
 await self.send_action("click", selector)  # Execute action
 await self.update_context({...})  # Inject shared state
+
+# Phase 17: Inter-Sentinel Side-Talk
+await self.send_sidetalk("A11ySentinel", "query", {...})  # Direct message
+await self.broadcast_state(stable=True, mutation_rate=0)  # Broadcast to all
 ```
+
+---
+
+## 5.1 Phase 17: Inter-Sentinel Side-Talk
+
+Sentinels can communicate directly with each other through the Hub's routing:
+
+### Usage Examples
+```python
+# Send to specific Sentinel
+await self.send_sidetalk(
+    to="A11ySentinel",
+    topic="environment_state",
+    payload={"stable": True, "mutationRate": 0}
+)
+
+# Broadcast to all Sentinels
+await self.send_sidetalk(
+    to="*",
+    topic="action_proposal",
+    payload={"action": "clear_modal"}
+)
+```
+
+### Handling Messages
+```python
+async def on_sidetalk(self, params):
+    sender = params.get("from")
+    topic = params.get("topic")
+    payload = params.get("payload")
+    
+    if topic == "environment_state" and payload.get("stable"):
+        print(f"[{self.layer}] Environment stable per {sender}")
+```
+
+### Availability Handling
+If a target Sentinel is unavailable, the sender receives:
+```python
+async def on_sidetalk_ack(self, params):
+    if params.get("status") == "undeliverable":
+        print(f"Target unavailable: {params.get('reason')}")
+        print(f"Available: {params.get('availableSentinels')}")
+```
+
+---
+
+## 5.2 Phase 17: Starlight Warp (Context Serialization)
+
+Capture complete browser state for instant failure triage and debugging.
+
+### Warp Capture
+```javascript
+// Trigger via WebSocket message
+ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'starlight.warp_capture',
+    params: { reason: 'mission_failure', sanitize: true },
+    id: 'warp-1'
+}));
+```
+
+### Warp File Contains
+| Field | Description |
+|-------|-------------|
+| `url` | Current page URL |
+| `storage` | localStorage & sessionStorage |
+| `cookies` | All cookies |
+| `dom` | Full HTML snapshot |
+| `screenshot` | Base64 PNG image |
+| `console` | Last 100 console logs |
+| `network` | Pending/completed requests |
+
+### PII Sanitization (Enabled by Default)
+The sanitizer automatically redacts:
+- Email addresses → `[EMAIL_REDACTED]`
+- Credit cards → `[CREDITCARD_REDACTED]`
+- JWTs/Tokens → `[JWT_REDACTED]`
+- Passwords → `[REDACTED_STORAGE]`
+- Session cookies → `[REDACTED_COOKIE]`
+
+### Restore from Warp
+```javascript
+ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'starlight.warp_restore',
+    params: { filepath: 'warps/warp_mission_failure_2026-01-04.warp' },
+    id: 'warp-restore-1'
+}));
+```
+
+### Configuration
+```json
+{
+    "warp": {
+        "outputDir": "./warps",
+        "encryptionKey": null
+    }
+}
+```
+
+---
+
+## 5.3 Phase 17: Consensus Mesh (Quorum Protocol)
+
+The Hub supports decentralized decision-making through weight-based voting.
+
+### Quorum Configuration
+```json
+{
+    "hub": {
+        "quorumThreshold": 0.6,
+        "consensusTimeout": 5000
+    }
+}
+```
+
+### Voting Logic
+- **Quorum Met**: If `total_confidence >= total_sentinels * quorumThreshold`, the Hub proceeds immediately.
+- **Veto Supremacy**: Any `starlight.wait` or `starlight.hijack` signal overrides the quorum and stops execution.
+- **Confidence Scores**: Sentinels can specify `confidence` (0.0 - 1.0) in their response to weight their vote.
+
+---
+
+## 5.4 Phase 17: Temporal Ghosting
+
+Identify the environmental "speed limit" by running missions without state-changing actions.
+
+### Ghost Mode
+Enable `ghostMode` in `config.json` to perform observation-only runs. The Hub will track the time it takes for UI elements to settle and for Sentinels to clear the path.
+
+### Temporal Optimization
+Metrics are saved to `temporal_ghosting.json`. In subsequent runs, the Hub loads these observations and injects them as `stabilityHint` values to proactively slow down for known slow UI transitions.
 
 ---
 
