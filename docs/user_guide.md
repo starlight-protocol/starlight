@@ -340,6 +340,7 @@ The IntentRunner now supports **all common automation actions** with semantic go
 | `uncheckGoal(goal)` | Uncheck a checkbox | `uncheckGoal('Newsletter')` |
 | `hoverGoal(goal)` | Hover over element | `hoverGoal('Menu')` |
 | `scrollToGoal(goal)` | Scroll to element | `scrollToGoal('Footer')` |
+| `uploadGoal(goal, files)` | Upload file(s) to input | `uploadGoal('Resume', 'cv.pdf')` |
 | `press(key)` | Press keyboard key | `press('Enter')` |
 | `type(text)` | Type text (keyboard) | `type('Hello World')` |
 

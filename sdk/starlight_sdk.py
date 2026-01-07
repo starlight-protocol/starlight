@@ -1,5 +1,5 @@
 """
-Starlight Sentinel SDK (v1.2.0)
+Starlight Sentinel SDK (v1.2.2)
 Standardizes the creation of autonomous agents for the CBA ecosystem.
 
 Phase 18: Extended action methods for universal automation commands.
@@ -249,6 +249,15 @@ class SentinelBase(ABC):
     async def send_type(self, text):
         """Type text using keyboard."""
         params = {"cmd": "type", "text": text}
+        await self._send_msg("starlight.action", params)
+    
+    async def send_upload(self, selector, files):
+        """Upload file(s) to file input. Files can be single path or list of paths."""
+        params = {
+            "cmd": "upload",
+            "selector": selector,
+            "files": files
+        }
         await self._send_msg("starlight.action", params)
 
     async def update_context(self, context_data):

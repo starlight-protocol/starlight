@@ -523,6 +523,34 @@ sequenceDiagram
 4. **Configure Timeouts**: Adjust `syncBudget` for slow environments
 5. **Clean Shutdown**: Always use Ctrl+C to preserve sentinel memory
 
+
+---
+
+## 4.6 Phase 18: Universal Protocol (Extended Commands)
+
+v1.2.1 introduces the Universal Protocol, expanding the IntentRunner API to cover all standard interaction types with semantic goal resolution.
+
+### Extended Command Set
+
+| Command | Resolver | Fallback |
+|---------|----------|----------|
+| `upload(selector, files)` | Direct selector | N/A |
+| `uploadGoal(goal, files)` | `resolveFormIntent` | Historical Memory |
+| `selectGoal(goal, value)` | `resolveSelectIntent` | Historical Memory |
+| `checkGoal(goal)` | `resolveCheckboxIntent` | Historical Memory |
+| `hoverGoal(goal)` | `resolveSemanticIntent` | Historical Memory |
+| `scrollToGoal(goal)` | `resolveSemanticIntent` | Historical Memory |
+
+### Upload Implementation
+
+File uploads are handled via Playwright's `setInputFiles` API, abstracted through the Hub to support both direct selectors and semantic resolution (finding file inputs by label text).
+
+```javascript
+// Semantic Upload Example
+await runner.uploadGoal('Resume', './cv.pdf');
+// Resolves to: <input type="file" id="cv_upload"> via label "Resume"
+```
+
 ---
 
 *Starlight Protocol v3.0 — The Autonomous Era*

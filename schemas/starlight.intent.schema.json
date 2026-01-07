@@ -29,7 +29,8 @@
                         "uncheck",
                         "scroll",
                         "press",
-                        "type"
+                        "type",
+                        "upload"
                     ],
                     "description": "Command type to execute"
                 },
@@ -62,6 +63,20 @@
                     "type": "integer",
                     "minimum": 0,
                     "description": "Hint for expected stability delay in milliseconds"
+                },
+                "files": {
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    ],
+                    "description": "File path(s) for 'upload' command"
                 }
             },
             "oneOf": [

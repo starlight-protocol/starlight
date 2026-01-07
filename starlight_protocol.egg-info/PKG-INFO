@@ -1,3 +1,18 @@
+Metadata-Version: 2.4
+Name: starlight-protocol
+Version: 1.2.2
+Summary: Sovereign SDK for the Starlight Protocol
+Author-email: Dhiraj Das <dhirajdas.666@gmail.com>
+License: MIT
+Project-URL: Homepage, https://www.dhirajdas.dev
+Project-URL: Documentation, https://starlight-protocol.github.io/starlight/
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: websockets>=10.0
+Requires-Dist: httpx>=0.24.0
+Dynamic: license-file
+
 # 🛰️ Starlight Protocol
 
 <p align="center">
