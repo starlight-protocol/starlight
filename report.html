@@ -4,7 +4,7 @@
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>CBA Hero Story: Navigational Proof</title>
+                <title>CBA Hero Story: Mission Failed</title>
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
                     
@@ -110,6 +110,53 @@
                         letter-spacing: -0.03em;
                     }
 
+                    /* Phase 12: Accessibility Dashboard */
+                    .a11y-dashboard {
+                        margin-top: 3rem;
+                        padding: 2rem;
+                        background: var(--bg-secondary);
+                        border-radius: 16px;
+                        border: 1px solid var(--border);
+                    }
+                    .a11y-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 1.5rem;
+                        margin-bottom: 1.5rem;
+                    }
+                    .a11y-score {
+                        width: 80px;
+                        height: 80px;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 1.5rem;
+                        font-weight: 800;
+                        border: 4px solid;
+                    }
+                    .a11y-score.good { border-color: var(--accent); color: var(--accent); }
+                    .a11y-score.acceptable { border-color: #3b82f6; color: #3b82f6; }
+                    .a11y-score.needs-work { border-color: #f59e0b; color: #f59e0b; }
+                    .a11y-score.critical { border-color: #f43f5e; color: #f43f5e; }
+                    .a11y-info h3 { margin: 0 0 0.5rem 0; font-size: 1.2rem; }
+                    .a11y-violations {
+                        display: grid;
+                        gap: 0.5rem;
+                        margin-top: 1rem;
+                    }
+                    .a11y-violation {
+                        display: flex;
+                        align-items: center;
+                        gap: 0.75rem;
+                        padding: 0.75rem;
+                        background: rgba(255,255,255,0.03);
+                        border-radius: 8px;
+                    }
+                    .violation-rule { font-weight: 600; min-width: 120px; }
+                    .violation-wcag { color: var(--text-secondary); font-size: 0.8rem; min-width: 60px; }
+                    .violation-msg { flex: 1; color: var(--text-secondary); font-size: 0.9rem; }
+
                     .meta { color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 0.5rem; font-family: 'JetBrains Mono', monospace; }
                     .card-title { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 700; }
                     
@@ -126,133 +173,189 @@
                 </style>
             </head>
             <body>
-                <div class="hero-header">
-                    <h1>🌠 Starlight Protocol: The Hero's Journey</h1>
+                <div class="hero-header" style="border-color: #f43f5e;">
+                    <h1>❌ Starlight Protocol: Mission Failed</h1>
                     <p>Evidence-based automation for the modern web.</p>
+                    <p style="color: #f43f5e; font-weight: 700; margin-top: 1rem;">⚠️ 0 command(s) failed during this mission.</p>
                 </div>
 
                 <div id="timeline">
                     
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">10:29:10 am | ID: cmd-1</div>
+                                    <div class="meta">6:54:13 pm | ID: cmd-1</div>
                                     <div class="card-title">
-                                        <span>GOTO: https://www.dhirajdas.dev</span>
+                                        <span>GOTO: file://C:\cba\test\comprehensive_test.html</span>
                                         <span class="badge badge-success">SUCCESS</span>
                                     </div>
                                     <p>Resolved Selector: <code>N/A</code></p>
                                     
+                                    
+                                    
+                                    <div class="flex">
+                                        <div>
+                                            <div class="meta">Before State</div>
+                                            <img src="screenshots/1767792252347_BEFORE_goto.png" alt="Before State">
+                                        </div>
+                                        <div>
+                                            <div class="meta">After State</div>
+                                            <img src="screenshots/1767792252983_AFTER_goto.png" alt="After State">
+                                        </div>
+                                    </div>
+                                </div>
+                            
+                                <div class="card command">
+                                    <div class="tag tag-command">Intent</div>
+                                    <div class="meta">6:54:13 pm | ID: cmd-2</div>
+                                    <div class="card-title">
+                                        <span>CHECKPOINT: </span>
+                                        <span class="badge badge-success">SUCCESS</span>
+                                    </div>
+                                    <p>Resolved Selector: <code>N/A</code></p>
+                                    
+                                    
+                                    
+                                    <div class="flex">
+                                        <div>
+                                            <div class="meta">Before State</div>
+                                            <img src="screenshots/1767792253066_BEFORE_checkpoint.png" alt="Before State">
+                                        </div>
+                                        <div>
+                                            <div class="meta">After State</div>
+                                            <img src="screenshots/1767792253630_AFTER_checkpoint.png" alt="After State">
+                                        </div>
+                                    </div>
+                                </div>
+                            
+                                <div class="card command">
+                                    <div class="tag tag-command">Intent</div>
+                                    <div class="meta">6:54:14 pm | ID: cmd-3</div>
+                                    <div class="card-title">
+                                        <span>FILL: Username</span>
+                                        <span class="badge badge-success">SUCCESS</span>
+                                    </div>
+                                    <p>Resolved Selector: <code>#username</code></p>
+                                    
+                                    
+                                    
+                                    <div class="flex">
+                                        <div>
+                                            <div class="meta">Before State</div>
+                                            <img src="screenshots/1767792253700_BEFORE_fill.png" alt="Before State">
+                                        </div>
+                                        <div>
+                                            <div class="meta">After State</div>
+                                            <img src="screenshots/1767792254302_AFTER_fill.png" alt="After State">
+                                        </div>
+                                    </div>
+                                </div>
+                            
+                                <div class="card command">
+                                    <div class="tag tag-command">Intent</div>
+                                    <div class="meta">6:54:16 pm | ID: cmd-4</div>
+                                    <div class="card-title">
+                                        <span>SELECT: Country</span>
+                                        <span class="badge badge-success">SUCCESS</span>
+                                    </div>
+                                    <p>Resolved Selector: <code>#country</code></p>
+                                    
                                     <p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>
                                     
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/1767416349284_BEFORE_goto.png" alt="Before State">
+                                            <img src="screenshots/1767792255901_BEFORE_select.png" alt="Before State">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/1767416350276_AFTER_goto.png" alt="After State">
+                                            <img src="screenshots/1767792256476_AFTER_select.png" alt="After State">
                                         </div>
                                     </div>
                                 </div>
                             
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">10:29:27 am | ID: cmd-2</div>
+                                    <div class="meta">6:54:18 pm | ID: cmd-5</div>
                                     <div class="card-title">
-                                        <span>CLICK: View Projects</span>
-                                        <span class="badge badge-warning">FORCED</span>
+                                        <span>CHECK: Terms</span>
+                                        <span class="badge badge-success">SUCCESS</span>
                                     </div>
-                                    <p>Resolved Selector: <code>a:has-text(&quot;View Projects&quot;)</code></p>
+                                    <p>Resolved Selector: <code>#terms</code></p>
                                     
                                     <p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>
-                                    <p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>
+                                    
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/1767416366421_BEFORE_click.png" alt="Before State">
+                                            <img src="screenshots/1767792258046_BEFORE_check.png" alt="Before State">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/1767416367547_AFTER_click.png" alt="After State">
+                                            <img src="screenshots/1767792258665_AFTER_check.png" alt="After State">
                                         </div>
                                     </div>
                                 </div>
                             
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">10:29:41 am | ID: cmd-3</div>
+                                    <div class="meta">6:54:20 pm | ID: cmd-6</div>
                                     <div class="card-title">
-                                        <span>CLICK: Blog</span>
-                                        <span class="badge badge-warning">FORCED</span>
+                                        <span>UNCHECK: Newsletter</span>
+                                        <span class="badge badge-success">SUCCESS</span>
                                     </div>
-                                    <p>Resolved Selector: <code>a:has-text(&quot;Blog&quot;)</code></p>
+                                    <p>Resolved Selector: <code>#newsletter</code></p>
                                     
                                     <p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>
-                                    <p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>
+                                    
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/1767416380852_BEFORE_click.png" alt="Before State">
+                                            <img src="screenshots/1767792260245_BEFORE_uncheck.png" alt="Before State">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/1767416381541_AFTER_click.png" alt="After State">
+                                            <img src="screenshots/1767792260869_AFTER_uncheck.png" alt="After State">
                                         </div>
                                     </div>
                                 </div>
                             
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">10:29:55 am | ID: cmd-4</div>
+                                    <div class="meta">6:54:23 pm | ID: cmd-7</div>
                                     <div class="card-title">
-                                        <span>CLICK: Contact</span>
-                                        <span class="badge badge-warning">FORCED</span>
+                                        <span>HOVER: Help</span>
+                                        <span class="badge badge-success">SUCCESS</span>
                                     </div>
-                                    <p>Resolved Selector: <code>a:has-text(&quot;Contact&quot;)</code></p>
+                                    <p>Resolved Selector: <code>button:has-text(&quot;Help&quot;)</code></p>
                                     
+                                    <p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>
                                     
-                                    <p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/1767416394707_BEFORE_click.png" alt="Before State">
+                                            <img src="screenshots/1767792262461_BEFORE_hover.png" alt="Before State">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/1767416395366_AFTER_click.png" alt="After State">
+                                            <img src="screenshots/1767792263115_AFTER_hover.png" alt="After State">
                                         </div>
                                     </div>
                                 </div>
                             
-                                <div class="card command">
-                                    <div class="tag tag-command">Intent</div>
-                                    <div class="meta">10:30:07 am | ID: cmd-5</div>
-                                    <div class="card-title">
-                                        <span>CLICK: Say Hello</span>
-                                        <span class="badge badge-warning">FORCED</span>
-                                    </div>
-                                    <p>Resolved Selector: <code>a:has-text(&quot;Say Hello&quot;)</code></p>
-                                    
-                                    
-                                    <p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>
-                                    <div class="flex">
-                                        <div>
-                                            <div class="meta">Before State</div>
-                                            <img src="screenshots/1767416406978_BEFORE_click.png" alt="Before State">
-                                        </div>
-                                        <div>
-                                            <div class="meta">After State</div>
-                                            <img src="screenshots/1767416407667_AFTER_click.png" alt="After State">
-                                        </div>
-                                    </div>
+                                <div class="card command" style="border-left: 4px solid #f43f5e; background: rgba(244, 63, 94, 0.05);">
+                                    <span class="tag" style="background: #f43f5e; color: white;">Mission Failure</span>
+                                    <div class="meta">6:54:23 pm</div>
+                                    <h3 style="color: #f43f5e;">⚠️ Termination Reason</h3>
+                                    <p style="font-size: 1.1rem; font-weight: 600;">Integration test failed: Failed: Click goal &quot;Footer&quot; - Could not find element matching &quot;Footer&quot;</p>
                                 </div>
                             
                 </div>
 
+                
+
                 <div class="roi-dashboard">
                     <h2>📈 Business Value Dashboard</h2>
-                    <div class="roi-value">~3 Minutes Saved</div>
+                    <div class="roi-value">~2 Minutes Saved</div>
                     <p>By automating obstacle clearance and environment stability, Starlight prevented manual reproduction and debugging efforts for your engineering team.</p>
                     <p class="meta">ROI Calculation: 5 mins triage baseline + actual intervention duration per obstacle.</p>
                 </div>

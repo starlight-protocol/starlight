@@ -250,6 +250,15 @@ class SentinelBase(ABC):
         """Type text using keyboard."""
         params = {"cmd": "type", "text": text}
         await self._send_msg("starlight.action", params)
+    
+    async def send_upload(self, selector, files):
+        """Upload file(s) to file input. Files can be single path or list of paths."""
+        params = {
+            "cmd": "upload",
+            "selector": selector,
+            "files": files
+        }
+        await self._send_msg("starlight.action", params)
 
     async def update_context(self, context_data):
         """Inject data into the Hub's sovereign state."""

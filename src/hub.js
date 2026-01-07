@@ -1021,6 +1021,23 @@ class CBAHub {
                         return;
                     }
                 }
+                // Handle goal-based upload commands (use form resolver for file inputs)
+                if (msg.params.cmd === 'upload' && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Upload Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveFormIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve upload goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find file input matching "${msg.params.goal}"`
+                        });
+                        return;
+                    }
+                }
                 this.enqueueCommand(id, { ...msg.params, id: msg.id });
                 break;
             case 'starlight.action':
@@ -1730,6 +1747,11 @@ class CBAHub {
                 }
                 else if (msg.cmd === 'press') await this.page.keyboard.press(msg.key);
                 else if (msg.cmd === 'type') await this.page.keyboard.type(msg.text);
+                else if (msg.cmd === 'upload') {
+                    // Handle file upload - msg.files can be single path string or array of paths
+                    const files = Array.isArray(msg.files) ? msg.files : [msg.files];
+                    await this.page.setInputFiles(msg.selector, files);
+                }
                 else if (msg.cmd === 'checkpoint') {
                     console.log(`[CBA Hub] 🚩 Checkpoint reached: ${msg.name}`);
                     this.recordTrace('CHECKPOINT', 'System', {

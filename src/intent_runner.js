@@ -162,6 +162,26 @@ class IntentRunner {
     }
 
     /**
+     * Upload file(s) to a file input.
+     * @param {string} selector - Direct CSS selector for file input
+     * @param {string|string[]} files - File path(s) to upload
+     * @returns {Promise<object>} Command result
+     */
+    async upload(selector, files) {
+        return this._sendCommand({ cmd: 'upload', selector, files });
+    }
+
+    /**
+     * Upload file(s) using semantic goal resolution.
+     * @param {string} goal - Semantic goal (e.g., "Resume upload")
+     * @param {string|string[]} files - File path(s) to upload
+     * @returns {Promise<object>} Command result
+     */
+    async uploadGoal(goal, files) {
+        return this._sendCommand({ cmd: 'upload', goal, files });
+    }
+
+    /**
      * Record a logical checkpoint in the mission trace.
      * @param {string} name - Checkpoint name
      * @returns {Promise<object>} Command result
