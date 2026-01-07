@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] - 2026-01-07
+
+### Fixed
+- **PyPI Display**: README images now use absolute GitHub URLs for proper display on PyPI
+- **README Version Badge**: Updated from 3.0.3 to 1.2.1
+
+### Added
+- **Upload Command** (missing from v1.2.0):
+  - `hub.js`: Upload command using Playwright's `setInputFiles`
+  - `IntentRunner`: `upload(selector, files)` and `uploadGoal(goal, files)` methods
+  - `Python SDK`: `send_upload(selector, files)` method
+  - Goal resolution for semantic upload via `resolveFormIntent`
+  - Schema updated with `upload` command enum and `files` parameter
+  - Comprehensive test suite: `intent_upload.js` ✅ PASSED
+
+### Verified
+- All commands in schema match implementation (11 total)
+- Integration tests for all extended commands created
+- CAPTCHA detection patterns added to JanitorSentinel
+
+---
+
 ## [1.2.0] - 2026-01-07
 
 ### 🧠 Phase 18: Universal Protocol (Learning Persistence & Extended Commands)
