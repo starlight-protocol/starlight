@@ -85,6 +85,32 @@ node launcher/server.js
 # Open http://localhost:3000
 ```
 
+### Multi-Browser Support (Phase 14.1)
+```bash
+# Run with Firefox
+HUB_BROWSER_ENGINE=firefox node bin/starlight.js test/intent_portfolio_v2.js
+
+# Run with WebKit (Safari engine)
+HUB_BROWSER_ENGINE=webkit node bin/starlight.js test/intent_portfolio_v2.js
+
+# Or configure in config.json:
+{
+  "hub": {
+    "browser": { "engine": "firefox" }
+  }
+}
+```
+
+**Supported Browsers:**
+- **Chromium** (default) - Full CDP access, shadow DOM piercing
+- **Firefox** - Mozilla engine, standard DOM APIs
+- **WebKit** - Safari engine, iOS compatibility testing
+
+Install all browsers:
+```bash
+npx playwright install chromium firefox webkit
+```
+
 ---
 
 ## 🛰️ The Protocol

@@ -1,6 +1,9 @@
 {
     "hub": {
         "port": 8080,
+        "browser": {
+            "engine": "chromium"
+        },
         "syncBudget": 30000,
         "missionTimeout": 180000,
         "heartbeatTimeout": 5000,
