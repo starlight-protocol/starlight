@@ -39,6 +39,8 @@ graph TD
 ### Prerequisites
 - **Node.js** v18+ and **Python** 3.9+
 - **Playwright**: `npx playwright install chromium`
+  - For Firefox: `npx playwright install firefox`
+  - For WebKit: `npx playwright install webkit`
 - **Python deps**: `pip install -r requirements.txt`
 - **Ollama** (optional): For AI Vision Sentinel
 
@@ -76,6 +78,9 @@ CBA v2.7 introduces centralized configuration via `config.json`:
 {
     "hub": {
         "port": 8080,
+        "browser": {
+            "engine": "chromium"
+        },
         "syncBudget": 30000,
         "missionTimeout": 180000,
         "screenshotMaxAge": 86400000,
@@ -97,6 +102,7 @@ CBA v2.7 introduces centralized configuration via `config.json`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `browser.engine` | chromium | Browser engine: `chromium`, `firefox`, or `webkit` |
 | `syncBudget` | 30000 | Max wait (ms) for sentinel handshake |
 | `missionTimeout` | 180000 | Max mission duration (ms) |
 | `screenshotMaxAge` | 86400000 | Auto-delete screenshots older than 24h |

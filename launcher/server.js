@@ -177,13 +177,13 @@ function log(source, text, type = 'info') {
 function handleCommand(msg, ws) {
     switch (msg.cmd) {
         case 'start':
-            startProcess(msg.process);
+            startProcess(msg.process, msg.browser);
             break;
         case 'stop':
             stopProcess(msg.process);
             break;
         case 'startAll':
-            startProcess('hub');
+            startProcess('hub', msg.browser);
             // Start ALL discovered sentinels
             const sentinels = discoverSentinels();
             sentinels.forEach((s, i) => {
@@ -198,7 +198,7 @@ function handleCommand(msg, ws) {
             setTimeout(() => stopProcess('hub'), 500);
             break;
         case 'launch':
-            launchMission(msg.mission, msg.browser);
+            launchMission(msg.mission);
             break;
         case 'refreshMissions':
             broadcast({ type: 'missionList', missions: discoverMissions() });
@@ -226,7 +226,7 @@ function handleCommand(msg, ws) {
     }
 }
 
-function startProcess(name) {
+function startProcess(name, browserEngine = null) {
     if (processes[name]) {
         log('System', `${name} is already running`, 'info');
         return;
@@ -235,8 +235,27 @@ function startProcess(name) {
     let cmd, args;
     const cwd = path.join(__dirname, '..');
 
-    // Hub is special
+    // Hub is special - needs browser configuration
     if (name === 'hub') {
+        // Phase 14.1: Update config.json with selected browser before launching Hub
+        const configPath = path.join(cwd, 'config.json');
+        try {
+            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+            if (browserEngine) {
+                if (!config.hub) config.hub = {};
+                if (!config.hub.browser) config.hub.browser = {};
+                config.hub.browser.engine = browserEngine;
+                fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
+                log('System', `✓ Config updated: browser.engine = "${browserEngine}"`, 'success');
+            }
+
+            const selectedBrowser = config.hub?.browser?.engine || 'chromium';
+            log('System', `🚀 Starting Hub with ${selectedBrowser.toUpperCase()} browser...`, 'info');
+        } catch (e) {
+            log('System', `Warning: Could not update config: ${e.message}`, 'info');
+        }
+
         cmd = 'node';
         args = ['src/hub.js'];
     } else {
@@ -251,9 +270,9 @@ function startProcess(name) {
             log('System', `Unknown process: ${name}`, 'error');
             return;
         }
-    }
 
-    log('System', `Starting ${name}...`, 'info');
+        log('System', `Starting ${name}...`, 'info');
+    }
 
     const proc = spawn(cmd, args, {
         cwd,
@@ -309,7 +328,7 @@ function stopProcess(name) {
     broadcast({ type: 'status', status: processStatus });
 }
 
-function launchMission(missionFile, browserEngine = 'chromium') {
+function launchMission(missionFile) {
     if (!processes.hub) {
         log('System', 'Hub is not running! Start Hub first.', 'error');
         return;
@@ -323,16 +342,12 @@ function launchMission(missionFile, browserEngine = 'chromium') {
     const cwd = path.join(__dirname, '..');
     const missionPath = path.join('test', missionFile);
 
-    log('System', `Launching mission: ${missionFile} with ${browserEngine} browser`, 'success');
-
-    // Phase 14.1: Set browser engine via environment variable
-    const env = { ...process.env, HUB_BROWSER_ENGINE: browserEngine };
+    log('System', `Launching mission: ${missionFile}`, 'success');
 
     const proc = spawn('node', [missionPath], {
         cwd,
         shell: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env  // Pass environment with browser selection
+        stdio: ['pipe', 'pipe', 'pipe']
     });
 
     processes.mission = proc;

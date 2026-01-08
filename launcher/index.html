@@ -23,6 +23,13 @@
                     <h3>🔵 CBA Hub</h3>
                 </div>
                 <p class="status-desc">Orchestrator & Browser Control</p>
+                <select id="browser-select"
+                    style="width: 100%; margin-bottom: 8px; padding: 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white;"
+                    title="Select browser engine before starting Hub">
+                    <option value="chromium">🌐 Chromium (Default)</option>
+                    <option value="firefox">🦊 Firefox</option>
+                    <option value="webkit">🧭 WebKit (Safari)</option>
+                </select>
                 <button class="btn btn-start" id="hub-btn" onclick="toggleProcess('hub')">Launch Hub</button>
             </div>
 
@@ -69,11 +76,6 @@
                     <option value="intent_shadow.js">Shadow DOM Test</option>
                     <option value="intent_learning.js">Learning Demo</option>
                     <option value="intent.js">Default Intent</option>
-                </select>
-                <select id="browser-select" title="Browser Engine (Phase 14.1)">
-                    <option value="chromium">🌐 Chromium (Default)</option>
-                    <option value="firefox">🦊 Firefox</option>
-                    <option value="webkit">🧭 WebKit (Safari)</option>
                 </select>
                 <button class="btn btn-launch" id="launch-btn" onclick="launchMission()">🚀 Launch Mission</button>
             </div>

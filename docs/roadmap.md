@@ -100,7 +100,14 @@ To transform Constellation-Based Automation from a smart framework into a global
 
 ## 📱 PHASE 14: Cross-Browser & Mobile Constellation
 *Beyond Chromium.*
-- **Firefox/WebKit Sentinels**: Playwright multi-browser support. [PLANNED]
+
+### Phase 14.1: Multi-Browser Foundation (COMPLETED)
+- **Browser Adapter Pattern**: Chromium, Firefox, WebKit support via unified interface. [DONE]
+- **Mission Control Integration**: Browser selector dropdown in Hub card. [DONE]
+- **Zero Protocol Changes**: Sentinels remain 100% browser-agnostic. [DONE]
+- **Performance Benchmarks**: Chromium ~715ms, Firefox ~1099ms, WebKit ~545ms. [DONE]
+
+### Phase 14.2: Mobile Constellation (PLANNED)
 - **Mobile Device Farm**: Android/iOS real device integration. [PLANNED]
 - **Responsive Sentinel**: Viewport-aware obstacle detection. [PLANNED]
 - **Network Condition Emulation**: 3G, offline, high-latency testing. [PLANNED]
