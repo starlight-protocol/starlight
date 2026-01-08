@@ -222,7 +222,9 @@ function stopAll() {
 
 function launchMission() {
     const mission = missionSelect.value;
-    send({ cmd: 'launch', mission });
+    const browser = document.getElementById('browser-select').value;
+    send({ cmd: 'launch', mission, browser });
+    addLog('System', `Launching ${mission} with ${browser} browser...`, 'info');
 }
 
 function openReport() {

@@ -198,7 +198,7 @@ function handleCommand(msg, ws) {
             setTimeout(() => stopProcess('hub'), 500);
             break;
         case 'launch':
-            launchMission(msg.mission);
+            launchMission(msg.mission, msg.browser);
             break;
         case 'refreshMissions':
             broadcast({ type: 'missionList', missions: discoverMissions() });
@@ -309,7 +309,7 @@ function stopProcess(name) {
     broadcast({ type: 'status', status: processStatus });
 }
 
-function launchMission(missionFile) {
+function launchMission(missionFile, browserEngine = 'chromium') {
     if (!processes.hub) {
         log('System', 'Hub is not running! Start Hub first.', 'error');
         return;
@@ -323,12 +323,16 @@ function launchMission(missionFile) {
     const cwd = path.join(__dirname, '..');
     const missionPath = path.join('test', missionFile);
 
-    log('System', `Launching mission: ${missionFile}`, 'success');
+    log('System', `Launching mission: ${missionFile} with ${browserEngine} browser`, 'success');
+
+    // Phase 14.1: Set browser engine via environment variable
+    const env = { ...process.env, HUB_BROWSER_ENGINE: browserEngine };
 
     const proc = spawn('node', [missionPath], {
         cwd,
         shell: true,
-        stdio: ['pipe', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env  // Pass environment with browser selection
     });
 
     processes.mission = proc;
