@@ -12,7 +12,7 @@ License: MIT
 import asyncio
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 import sys
 import os
 
@@ -132,7 +132,7 @@ class A11ySentinel(SentinelBase):
             "params": {
                 "context": {
                     "accessibility": {
-                        "timestamp": datetime.utcnow().isoformat() + "Z",
+                        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                         "url": self.current_url,
                         "violations": violations,
                         "passes": self.passes,

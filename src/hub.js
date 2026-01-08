@@ -1,4 +1,4 @@
-const { chromium } = require('playwright');
+const { BrowserAdapter } = require('./browser_adapter');
 const { WebSocketServer, WebSocket } = require('ws');
 const { nanoid } = require('nanoid');
 const fs = require('fs');
@@ -72,6 +72,7 @@ class CBAHub {
         }
 
         this.wss = new WebSocketServer({ server: this.server });
+        this.browserAdapter = null;  // Phase 14.1: Cross-browser adapter
         this.browser = null;
         this.page = null;
         this.sentinels = new Map();
@@ -191,8 +192,17 @@ class CBAHub {
             console.log(`[CBA Hub] WebSocket/HTTP Server listening on port ${this.port}`);
         });
 
-        this.browser = await chromium.launch({ headless: this.headless });
-        this.page = await this.browser.newPage();
+        // Phase 14.1: Cross-Browser Support via Adapter Pattern
+        console.log(`[CBA Hub] Initializing browser adapter...`);
+        this.browserAdapter = await BrowserAdapter.create(this.config.hub?.browser || {});
+
+        this.browser = await this.browserAdapter.launch({ headless: this.headless });
+        this.page = await this.browserAdapter.newPage();
+
+        // Log browser capabilities for diagnostics
+        const capabilities = this.browserAdapter.getCapabilities();
+        console.log(`[CBA Hub] Browser Engine: ${this.browserAdapter.browserType}`);
+        console.log(`[CBA Hub] Capabilities:`, capabilities);
 
         // Phase 9: Traffic Sovereign - Network Interception
         await this.setupNetworkInterception();
@@ -1099,7 +1109,11 @@ class CBAHub {
             }
 
             console.log('[CBA Hub] Launching NEW browser for recording session...');
-            this.browser = await chromium.launch({ headless: false });
+            // Phase 14.1: Use adapter for recording sessions too
+            if (!this.browserAdapter) {
+                this.browserAdapter = await BrowserAdapter.create(this.config.hub?.browser || {});
+            }
+            this.browser = await this.browserAdapter.launch({ headless: false });
             const context = await this.browser.newContext();
             this.page = await context.newPage();
 

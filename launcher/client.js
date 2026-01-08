@@ -208,12 +208,21 @@ function toggleProcess(name) {
     if (state === 'running') {
         send({ cmd: 'stop', process: name });
     } else {
-        send({ cmd: 'start', process: name });
+        const params = { cmd: 'start', process: name };
+        if (name === 'hub') {
+            const browserSelect = document.getElementById('browser-select');
+            if (browserSelect) {
+                params.browser = browserSelect.value;
+            }
+        }
+        send(params);
     }
 }
 
 function startAll() {
-    send({ cmd: 'startAll' });
+    const browserSelect = document.getElementById('browser-select');
+    const browser = browserSelect ? browserSelect.value : 'chromium';
+    send({ cmd: 'startAll', browser });
 }
 
 function stopAll() {
