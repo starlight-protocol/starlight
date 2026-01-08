@@ -234,6 +234,9 @@ All settings are externalized to `config.json`:
 {
     "hub": {
         "port": 8080,
+        "browser": {
+            "engine": "chromium"  // or "firefox" or "webkit"
+        },
         "syncBudget": 30000,    // Max wait for handshake (ms)
         "missionTimeout": 180000,
         "screenshotMaxAge": 86400000,
@@ -241,6 +244,23 @@ All settings are externalized to `config.json`:
     }
 }
 ```
+
+### Cross-Browser Support (Phase 14.1)
+
+The Hub supports multiple browser engines via the **Browser Adapter Pattern**:
+
+| Browser | Shadow DOM | CDP Access | Device Emulation |
+|---------|------------|------------|------------------|
+| Chromium (Default) | ✅ Full | ✅ Full | ✅ Full |
+| Firefox | ⚠️ Limited | ❌ None | ⚠️ Limited |
+| WebKit (Safari) | ⚠️ Limited | ❌ None | ✅ Full (iOS) |
+
+**Switching Browsers:**
+1. **Via Mission Control**: Select from dropdown before launching Hub
+2. **Via Config**: Set `hub.browser.engine` in `config.json`
+3. **Via Environment**: `HUB_BROWSER_ENGINE=firefox node bin/starlight.js ...`
+
+**Important**: Sentinels are 100% browser-agnostic. They communicate via JSON-RPC and never interact with the browser directly.
 
 ---
 

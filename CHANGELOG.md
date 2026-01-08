@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [UNRELEASED] Phase 14.1 - Multi-Browser Foundation
+
+### 🌐 Cross-Browser Support (Chromium / Firefox / WebKit)
+
+#### Added
+- **BrowserAdapter Architecture**: Abstraction layer for cross-browser support
+  - `BrowserAdapter` base class defining unified interface
+  - `ChromiumAdapter` - Full CDP access, shadow DOM piercing (>>>) combinator
+  - `FirefoxAdapter` - Mozilla engine with graceful shadow DOM degradation
+  - `WebKitAdapter` - Safari/iOS compatibility testing
+- **Configuration**: New `hub.browser.engine` setting in `config.json`
+  - Supports: `"chromium"` (default), `"firefox"`, `"webkit"`
+  - Environment variable override: `HUB_BROWSER_ENGINE`
+- **Capability Reporting**: Adapters expose browser-specific capabilities
+  - `shadowDomPiercing`: Whether >>> combinator is supported
+  - `cdpAccess`: Chrome DevTools Protocol availability
+  - `touchEvents`: Mobile touch event support
+  - `deviceEmulation`: Device emulation capabilities
+- **Test Suite**: Comprehensive cross-browser validation
+  - `test/unit/test_browser_adapter.js` - Adapter interface compliance tests
+  - `test/cross_browser_test.js` - Protocol-level browser independence tests
+  - `test/intent_cross_browser_verify.js` - Real Hub verification script
+
+#### Changed
+- **Hub Launch**: Replaced direct `chromium.launch()` with adapter pattern
+  - Hub now uses `BrowserAdapter.create()` factory method
+  - All browser references abstracted through adapter interface
+- **Selector Normalization**: Browser-specific selector handling
+  - Chromium preserves >>> shadow combinator
+  - Firefox/WebKit log warnings and strip >>> for graceful degradation
+- **Recording Sessions**: Now use adapter for browser launch (cross-browser compatible)
+
+#### Documentation
+- **README.md**: Added multi-browser quick start guide
+- **User Guide**: Browser configuration examples
+- **Technical Guide**: Adapter architecture explained
+
+#### Protocol Compliance
+- **Zero Breaking Changes**: Starlight Protocol v1.0.0 unchanged
+- **Sentinel Independence**: All Sentinels remain browser-agnostic
+- **Message Format**: JSON-RPC 2.0 identical across all browsers
+
+---
+
 ## [1.2.2] - 2026-01-07
 
 ### Documentation
