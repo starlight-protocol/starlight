@@ -2,7 +2,14 @@
     "hub": {
         "port": 8080,
         "browser": {
-            "engine": "chromium"
+            "engine": "chromium",
+            "mobile": {
+                "enabled": true,
+                "device": "iPhone SE"
+            }
+        },
+        "network": {
+            "emulation": "3g"
         },
         "syncBudget": 30000,
         "missionTimeout": 180000,

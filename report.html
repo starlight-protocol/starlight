@@ -4,7 +4,7 @@
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>CBA Hero Story: Mission Complete</title>
+                <title>CBA Hero Story: Mission Failed</title>
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
                     
@@ -173,17 +173,17 @@
                 </style>
             </head>
             <body>
-                <div class="hero-header" style="border-color: #10B981;">
-                    <h1>✅ Starlight Protocol: Mission Complete</h1>
+                <div class="hero-header" style="border-color: #f43f5e;">
+                    <h1>❌ Starlight Protocol: Mission Failed</h1>
                     <p>Evidence-based automation for the modern web.</p>
-                    
+                    <p style="color: #f43f5e; font-weight: 700; margin-top: 1rem;">⚠️ 1 command(s) failed during this mission.</p>
                 </div>
 
                 <div id="timeline">
                     
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">7:10:27 pm | ID: cmd-1</div>
+                                    <div class="meta">6:11:11 am | ID: cmd-1</div>
                                     <div class="card-title">
                                         <span>GOTO: https://www.dhirajdas.dev</span>
                                         <span class="badge badge-success">SUCCESS</span>
@@ -195,18 +195,18 @@
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/1767879626074_BEFORE_goto.png" alt="Before State">
+                                            <img src="screenshots/1767919264856_BEFORE_goto.png" alt="Before State">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/1767879627435_AFTER_goto.png" alt="After State">
+                                            <img src="screenshots/1767919271561_AFTER_goto.png" alt="After State">
                                         </div>
                                     </div>
                                 </div>
                             
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">7:10:37 pm | ID: cmd-2</div>
+                                    <div class="meta">6:11:21 am | ID: cmd-2</div>
                                     <div class="card-title">
                                         <span>CLICK: View Projects</span>
                                         <span class="badge badge-warning">FORCED</span>
@@ -218,80 +218,41 @@
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/1767879635799_BEFORE_click.png" alt="Before State">
+                                            <img src="screenshots/1767919280432_BEFORE_click.png" alt="Before State">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/1767879637065_AFTER_click.png" alt="After State">
+                                            <img src="screenshots/1767919281151_AFTER_click.png" alt="After State">
                                         </div>
                                     </div>
                                 </div>
                             
+                                <div class="card command" style="border-left: 4px solid #f43f5e; background: rgba(244, 63, 94, 0.05);">
+                                    <span class="tag" style="background: #f43f5e; color: white;">Mission Failure</span>
+                                    <div class="meta">6:11:51 am</div>
+                                    <h3 style="color: #f43f5e;">⚠️ Termination Reason</h3>
+                                    <p style="font-size: 1.1rem; font-weight: 600;">Mission failed: Timeout: Click goal &quot;Blog&quot; did not complete within 30s</p>
+                                </div>
+                            
                                 <div class="card command">
                                     <div class="tag tag-command">Intent</div>
-                                    <div class="meta">7:10:46 pm | ID: cmd-3</div>
+                                    <div class="meta">6:11:51 am | ID: cmd-3</div>
                                     <div class="card-title">
                                         <span>CLICK: Blog</span>
-                                        <span class="badge badge-warning">FORCED</span>
+                                        <span class="badge badge-danger">FAILED</span>
                                     </div>
                                     <p>Resolved Selector: <code>a:has-text(&quot;Blog&quot;)</code></p>
                                     
-                                    <p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>
-                                    <p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>
+                                    
+                                    
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/1767879645397_BEFORE_click.png" alt="Before State">
+                                            <img src="screenshots/1767919311357_INTERRUPTED_STATE.png" alt="Before State">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/1767879646134_AFTER_click.png" alt="After State">
-                                        </div>
-                                    </div>
-                                </div>
-                            
-                                <div class="card command">
-                                    <div class="tag tag-command">Intent</div>
-                                    <div class="meta">7:10:55 pm | ID: cmd-4</div>
-                                    <div class="card-title">
-                                        <span>CLICK: Contact</span>
-                                        <span class="badge badge-warning">FORCED</span>
-                                    </div>
-                                    <p>Resolved Selector: <code>a:has-text(&quot;Contact&quot;)</code></p>
-                                    
-                                    <p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>
-                                    <p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>
-                                    <div class="flex">
-                                        <div>
-                                            <div class="meta">Before State</div>
-                                            <img src="screenshots/1767879654442_BEFORE_click.png" alt="Before State">
-                                        </div>
-                                        <div>
-                                            <div class="meta">After State</div>
-                                            <img src="screenshots/1767879655146_AFTER_click.png" alt="After State">
-                                        </div>
-                                    </div>
-                                </div>
-                            
-                                <div class="card command">
-                                    <div class="tag tag-command">Intent</div>
-                                    <div class="meta">7:11:01 pm | ID: cmd-5</div>
-                                    <div class="card-title">
-                                        <span>CLICK: Say Hello</span>
-                                        <span class="badge badge-warning">FORCED</span>
-                                    </div>
-                                    <p>Resolved Selector: <code>a:has-text(&quot;Say Hello&quot;)</code></p>
-                                    
-                                    
-                                    <p>⚠️ <i>Forced Proceed: Handshake timed out or vetoed, proceeding anyway.</i></p>
-                                    <div class="flex">
-                                        <div>
-                                            <div class="meta">Before State</div>
-                                            <img src="screenshots/1767879660656_BEFORE_click.png" alt="Before State">
-                                        </div>
-                                        <div>
-                                            <div class="meta">After State</div>
-                                            <img src="screenshots/1767879661463_AFTER_click.png" alt="After State">
+                                            <img src="screenshots/1767919311357_INTERRUPTED_STATE.png" alt="After State">
                                         </div>
                                     </div>
                                 </div>
@@ -299,10 +260,56 @@
                 </div>
 
                 
+                <div class="a11y-dashboard">
+                    <h2>♿ Accessibility Audit</h2>
+                    <div class="a11y-header">
+                        <div class="a11y-score critical">
+                            0%
+                        </div>
+                        <div class="a11y-info">
+                            <h3>D (Critical Issues)</h3>
+                            <p>308 violations found | 108 checks passed</p>
+                        </div>
+                    </div>
+                    
+                    
+                    <h4 style="margin-top: 1.5rem; margin-bottom: 1rem;">Violations by Category</h4>
+                    <div class="a11y-violations">
+                        
+                            <div class="a11y-violation" style="flex-direction: column; align-items: flex-start;">
+                                <div style="display: flex; gap: 0.75rem; align-items: center; width: 100%;">
+                                    <span class="badge badge-warning">serious</span>
+                                    <span class="violation-rule">color-contrast</span>
+                                    <span class="violation-wcag">1.4.3</span>
+                                    <span style="margin-left: auto; font-weight: 700; color: var(--accent);">307 issues</span>
+                                </div>
+                                <div style="margin-top: 0.5rem; padding-left: 0.5rem; border-left: 2px solid var(--border);">
+                                    <div class="violation-msg" style="font-size: 0.85rem;">Contrast ratio 1.8:1 is below 4.5:1 minimum</div><div class="violation-msg" style="font-size: 0.85rem;">Contrast ratio 1.8:1 is below 4.5:1 minimum</div><div class="violation-msg" style="font-size: 0.85rem;">Contrast ratio 1.8:1 is below 4.5:1 minimum</div>
+                                    <div class="meta" style="margin-top: 0.25rem;">...and 304 more</div>
+                                </div>
+                            </div>
+                        
+                            <div class="a11y-violation" style="flex-direction: column; align-items: flex-start;">
+                                <div style="display: flex; gap: 0.75rem; align-items: center; width: 100%;">
+                                    <span class="badge badge-info">moderate</span>
+                                    <span class="violation-rule">heading-order</span>
+                                    <span class="violation-wcag">1.3.1</span>
+                                    <span style="margin-left: auto; font-weight: 700; color: var(--accent);">1 issues</span>
+                                </div>
+                                <div style="margin-top: 0.5rem; padding-left: 0.5rem; border-left: 2px solid var(--border);">
+                                    <div class="violation-msg" style="font-size: 0.85rem;">First heading should be h1, found h2</div>
+                                    
+                                </div>
+                            </div>
+                        
+                    </div>
+                    
+                </div>
+                
 
                 <div class="roi-dashboard">
                     <h2>📈 Business Value Dashboard</h2>
-                    <div class="roi-value">~5 Minutes Saved</div>
+                    <div class="roi-value">~2 Minutes Saved</div>
                     <p>By automating obstacle clearance and environment stability, Starlight prevented manual reproduction and debugging efforts for your engineering team.</p>
                     <p class="meta">ROI Calculation: 5 mins triage baseline + actual intervention duration per obstacle.</p>
                 </div>

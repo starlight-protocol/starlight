@@ -1,16 +1,11 @@
 {
-  "totalMissions": 142,
+  "totalMissions": 143,
   "successfulMissions": 126,
-  "totalSavedSeconds": 22290,
+  "totalSavedSeconds": 22440,
   "totalInterventions": 44,
   "avgRecoveryTimeMs": 913.0920838614835,
-  "lastMissionTimestamp": "2026-01-08T13:41:02.149Z",
+  "lastMissionTimestamp": "2026-01-09T00:41:57.031Z",
   "missionHistory": [
-    {
-      "timestamp": "2026-01-08T12:27:12.204Z",
-      "success": false,
-      "savedSeconds": 0
-    },
     {
       "timestamp": "2026-01-08T12:28:49.123Z",
       "success": false,
@@ -55,6 +50,11 @@
       "timestamp": "2026-01-08T13:41:02.149Z",
       "success": true,
       "savedSeconds": 300
+    },
+    {
+      "timestamp": "2026-01-09T00:41:57.031Z",
+      "success": false,
+      "savedSeconds": 150
     }
   ]
 }

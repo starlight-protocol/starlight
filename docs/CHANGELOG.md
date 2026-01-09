@@ -2,6 +2,28 @@
 
 All notable changes to the Starlight Protocol.
 
+## [1.4.0] - 2026-01-09
+
+### 📱 Phase 14.2: Mobile Device Emulation
+
+**New Feature: Mobile Device & Network Emulation**
+- **Device Profiles**: Emulate iPhone, Pixel, Galaxy, iPad devices from Mission Control
+- **Network Throttling**: 4G, 3G, Slow 3G, Offline network conditions (Chromium only)
+- **ResponsiveSentinel**: New Sentinel for mobile viewport-aware obstacle detection
+- **Config Schema**: `hub.browser.mobile` and `hub.network.emulation` settings
+
+**Mission Control Updates:**
+- Device selector dropdown (iPhone 14, Pixel 7, iPad Pro, etc.)
+- Network condition dropdown (Online, 4G, 3G, Offline)
+- Settings saved to config.json automatically
+
+**Browser Capabilities:**
+| Feature | Chromium | Firefox | WebKit |
+|---------|----------|---------|--------|
+| Device Emulation | ✅ Full | ⚠️ Limited | ✅ Full |
+| Network Throttling | ✅ CDP | ❌ None | ❌ None |
+| Touch Events | ✅ Full | ⚠️ Limited | ✅ Full |
+
 ## [1.3.0] - 2026-01-08
 
 ### 🌐 Phase 14.1: Multi-Browser Foundation

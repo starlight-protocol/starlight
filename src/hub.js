@@ -192,12 +192,30 @@ class CBAHub {
             console.log(`[CBA Hub] WebSocket/HTTP Server listening on port ${this.port}`);
         });
 
-        // Phase 14.1: Cross-Browser Support via Adapter Pattern
+        // Phase 14.1/14.2: Cross-Browser & Mobile Support via Adapter Pattern
         console.log(`[CBA Hub] Initializing browser adapter...`);
-        this.browserAdapter = await BrowserAdapter.create(this.config.hub?.browser || {});
+        const browserConfig = this.config.hub?.browser || {};
+        this.browserAdapter = await BrowserAdapter.create(browserConfig);
 
         this.browser = await this.browserAdapter.launch({ headless: this.headless });
+
+        // Phase 14.2: Create context with mobile device emulation if configured
+        const contextOptions = {};
+        if (browserConfig.mobile?.enabled && browserConfig.mobile?.device) {
+            contextOptions.mobile = browserConfig.mobile;
+            console.log(`[CBA Hub] 📱 Mobile emulation enabled: ${browserConfig.mobile.device}`);
+        }
+        await this.browserAdapter.newContext(contextOptions);
         this.page = await this.browserAdapter.newPage();
+
+        // Phase 14.2: Apply network emulation if configured (Chromium only)
+        const networkEmulation = this.config.hub?.network?.emulation;
+        if (networkEmulation && networkEmulation !== 'online') {
+            const success = await this.browserAdapter.setNetworkConditions(networkEmulation);
+            if (success) {
+                console.log(`[CBA Hub] 📡 Network emulation: ${networkEmulation.toUpperCase()}`);
+            }
+        }
 
         // Log browser capabilities for diagnostics
         const capabilities = this.browserAdapter.getCapabilities();

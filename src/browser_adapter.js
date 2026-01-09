@@ -116,6 +116,45 @@ class BrowserAdapter {
     }
 
     /**
+     * Network emulation presets for mobile testing.
+     * @static
+     */
+    static NETWORK_PRESETS = {
+        'online': { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 },
+        '4g': { offline: false, latency: 20, downloadThroughput: 4 * 1024 * 1024 / 8, uploadThroughput: 3 * 1024 * 1024 / 8 },
+        '3g': { offline: false, latency: 100, downloadThroughput: 750 * 1024 / 8, uploadThroughput: 250 * 1024 / 8 },
+        '3g-slow': { offline: false, latency: 400, downloadThroughput: 400 * 1024 / 8, uploadThroughput: 150 * 1024 / 8 },
+        'offline': { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 }
+    };
+
+    /**
+     * Get list of available mobile devices for emulation.
+     * 
+     * @returns {string[]} Array of device names
+     */
+    static getDeviceList() {
+        return Object.keys(devices).filter(d =>
+            d.includes('iPhone') ||
+            d.includes('Pixel') ||
+            d.includes('Galaxy') ||
+            d.includes('iPad') ||
+            d.includes('Nexus')
+        ).sort();
+    }
+
+    /**
+     * Set network conditions for mobile testing.
+     * Only supported on Chromium (requires CDP).
+     * 
+     * @param {string} preset - Network preset name
+     * @returns {Promise<boolean>} True if applied, false if not supported
+     */
+    async setNetworkConditions(preset) {
+        console.warn(`[${this.browserType}] Network emulation not supported on this browser`);
+        return false;
+    }
+
+    /**
      * Close the browser gracefully.
      */
     async close() {
@@ -224,6 +263,36 @@ class ChromiumAdapter extends BrowserAdapter {
         }
 
         return await this.page.context().newCDPSession(this.page);
+    }
+
+    /**
+     * Set network conditions using CDP.
+     * Chromium-only feature for mobile network simulation.
+     * 
+     * @param {string} preset - Network preset name (online, 4g, 3g, 3g-slow, offline)
+     * @returns {Promise<boolean>} True if applied successfully
+     */
+    async setNetworkConditions(preset) {
+        if (!this.page) {
+            console.warn('[ChromiumAdapter] Cannot set network conditions: no page created');
+            return false;
+        }
+
+        const conditions = BrowserAdapter.NETWORK_PRESETS[preset];
+        if (!conditions) {
+            console.warn(`[ChromiumAdapter] Unknown network preset: ${preset}`);
+            return false;
+        }
+
+        try {
+            const cdpSession = await this.getCDPSession();
+            await cdpSession.send('Network.emulateNetworkConditions', conditions);
+            console.log(`[ChromiumAdapter] ✓ Network emulation set to: ${preset.toUpperCase()}`);
+            return true;
+        } catch (error) {
+            console.error(`[ChromiumAdapter] Failed to set network conditions: ${error.message}`);
+            return false;
+        }
     }
 }
 
