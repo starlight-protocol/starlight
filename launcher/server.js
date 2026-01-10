@@ -177,13 +177,13 @@ function log(source, text, type = 'info') {
 function handleCommand(msg, ws) {
     switch (msg.cmd) {
         case 'start':
-            startProcess(msg.process, msg.browser);
+            startProcess(msg.process, msg.browser, msg.device, msg.network);
             break;
         case 'stop':
             stopProcess(msg.process);
             break;
         case 'startAll':
-            startProcess('hub', msg.browser);
+            startProcess('hub', msg.browser, msg.device, msg.network);
             // Start ALL discovered sentinels
             const sentinels = discoverSentinels();
             sentinels.forEach((s, i) => {
@@ -226,32 +226,58 @@ function handleCommand(msg, ws) {
     }
 }
 
-function startProcess(name, browserEngine = null) {
+function startProcess(name, browserEngine = null, device = null, network = 'online') {
     if (processes[name]) {
-        log('System', `${name} is already running`, 'info');
+        log('System', `${name} already running`, 'info');
         return;
     }
 
     let cmd, args;
     const cwd = path.join(__dirname, '..');
 
-    // Hub is special - needs browser configuration
+    // Hub is special - needs browser/mobile/network configuration
     if (name === 'hub') {
-        // Phase 14.1: Update config.json with selected browser before launching Hub
+        // Phase 14.2: Update config.json with browser, mobile, and network settings
         const configPath = path.join(cwd, 'config.json');
         try {
             const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
+            if (!config.hub) config.hub = {};
+            if (!config.hub.browser) config.hub.browser = {};
+
+            // Browser engine
             if (browserEngine) {
-                if (!config.hub) config.hub = {};
-                if (!config.hub.browser) config.hub.browser = {};
                 config.hub.browser.engine = browserEngine;
-                fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
                 log('System', `✓ Config updated: browser.engine = "${browserEngine}"`, 'success');
             }
 
+            // Mobile device emulation
+            if (device) {
+                config.hub.browser.mobile = {
+                    enabled: true,
+                    device: device
+                };
+                log('System', `✓ Config updated: mobile.device = "${device}"`, 'success');
+            } else {
+                config.hub.browser.mobile = {
+                    enabled: false,
+                    device: null
+                };
+            }
+
+            // Network emulation
+            if (!config.hub.network) config.hub.network = {};
+            config.hub.network.emulation = network || 'online';
+            if (network && network !== 'online') {
+                log('System', `✓ Config updated: network.emulation = "${network}"`, 'success');
+            }
+
+            fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
+
             const selectedBrowser = config.hub?.browser?.engine || 'chromium';
-            log('System', `🚀 Starting Hub with ${selectedBrowser.toUpperCase()} browser...`, 'info');
+            const mobileInfo = device ? ` with ${device} emulation` : '';
+            const networkInfo = network !== 'online' ? ` (${network} network)` : '';
+            log('System', `🚀 Starting Hub with ${selectedBrowser.toUpperCase()}${mobileInfo}${networkInfo}...`, 'info');
         } catch (e) {
             log('System', `Warning: Could not update config: ${e.message}`, 'info');
         }

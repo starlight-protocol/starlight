@@ -4,7 +4,9 @@
  * Replaces fragile setTimeout-based patterns with response-driven flow.
  */
 
-const WebSocket = require('ws');
+const ws = require('ws');
+// Use ws if global.WebSocket doesn't look like our mock (Node 24 global WebSocket is NOT an EventEmitter)
+const WebSocket = (typeof global !== 'undefined' && global.WebSocket && (global.WebSocket.isMock || global.WebSocket.name === 'MockWebSocket')) ? global.WebSocket : ws;
 
 class IntentRunner {
     constructor(hubUrl = 'ws://localhost:8080') {
@@ -21,29 +23,41 @@ class IntentRunner {
      */
     connect() {
         return new Promise((resolve, reject) => {
-            this.ws = new WebSocket(this.hubUrl);
+            try {
+                this.ws = new WebSocket(this.hubUrl);
 
-            this.ws.on('open', () => {
-                console.log('[IntentRunner] Connected to Starlight Hub');
-                resolve();
-            });
+                // Use addEventListener for cross-environment compatibility (Node 24 built-in vs ws package)
+                this.ws.addEventListener('open', () => {
+                    console.log('[IntentRunner] Connected to Starlight Hub');
+                    resolve();
+                });
 
-            this.ws.on('message', (data) => {
-                const msg = JSON.parse(data);
-                if (this.onMessage) {
-                    this.onMessage(msg);
-                }
-                this._handleMessage(msg);
-            });
+                this.ws.addEventListener('message', (event) => {
+                    try {
+                        const data = typeof event.data === 'string' ? event.data : event.data.toString();
+                        const msg = JSON.parse(data);
+                        if (this.onMessage) {
+                            this.onMessage(msg);
+                        }
+                        this._handleMessage(msg);
+                    } catch (e) {
+                        console.error('[IntentRunner] Failed to parse message:', e.message);
+                    }
+                });
 
-            this.ws.on('error', (err) => {
-                console.error('[IntentRunner] WebSocket error:', err.message);
+                this.ws.addEventListener('error', (event) => {
+                    const error = event.error || { message: 'WebSocket connection failed' };
+                    console.error('[IntentRunner] WebSocket error:', error.message);
+                    reject(error);
+                });
+
+                this.ws.addEventListener('close', () => {
+                    console.log('[IntentRunner] Connection closed');
+                });
+            } catch (err) {
+                console.error('[IntentRunner] Failed to initialize WebSocket:', err.message);
                 reject(err);
-            });
-
-            this.ws.on('close', () => {
-                console.log('[IntentRunner] Connection closed');
-            });
+            }
         });
     }
 
@@ -265,15 +279,18 @@ class IntentRunner {
      * @param {string} reason - Completion reason
      */
     async finish(reason = 'Mission complete') {
-        this.ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'starlight.finish',
-            params: { reason },
-            id: 'shutdown-1'
-        }));
-
-        // Give Hub time to process
-        await new Promise(r => setTimeout(r, 500));
+        if (this.ws && (this.ws.readyState === 1 || this.ws.readyState === 'OPEN' || (typeof this.ws.readyState === 'number' && this.ws.readyState === 1))) {
+            this.ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'starlight.finish',
+                params: { reason },
+                id: 'shutdown-1'
+            }));
+            // Give Hub time to process
+            await new Promise(r => setTimeout(r, 500));
+        } else {
+            console.warn('[IntentRunner] Skipping finish send: WebSocket not open');
+        }
         this.close();
     }
 
