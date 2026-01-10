@@ -126,6 +126,25 @@
             </div>
         </section>
 
+        <!-- Phase 13: Natural Language Intent -->
+        <section class="mission-control" style="margin-top: 20px;">
+            <h2>🗣️ Natural Language (Phase 13)</h2>
+            <div class="mission-row">
+                <input type="text" id="nli-input"
+                    placeholder="Type a command: 'Go to saucedemo.com and fill Username with standard_user and click Login'"
+                    style="flex: 1; padding: 10px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white; font-size: 14px;">
+                <button class="btn btn-launch" id="nli-btn" onclick="executeNLI()" style="margin-left: 10px;">🚀 Execute
+                    NL</button>
+            </div>
+            <div class="quick-actions" style="margin-top: 10px;">
+                <button class="btn btn-secondary" onclick="loadNLIExample('login')">📝 Login Example</button>
+                <button class="btn btn-secondary" onclick="loadNLIExample('checkout')">📝 Checkout Example</button>
+                <button class="btn btn-secondary" onclick="loadNLIExample('search')">📝 Search Example</button>
+                <button class="btn btn-secondary" onclick="checkNLIStatus()">🔍 NLI Status</button>
+                <button class="btn btn-start" id="ollama-btn" onclick="toggleOllama()">🦙 Launch Ollama</button>
+            </div>
+        </section>
+
         <section class="log-console">
             <h2>📋 Live Logs</h2>
             <div class="log-output" id="log-output">

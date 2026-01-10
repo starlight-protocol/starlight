@@ -31,6 +31,12 @@ class NLIParser {
 
     /**
      * Parse natural language instruction into Starlight commands.
+     * 
+     * Strategy:
+     * 1. Try fallback (regex) first - fast and accurate for simple commands
+     * 2. If fallback returns single ambiguous "click goal", try LLM
+     * 3. This gives best of both: instant for simple, smart for complex
+     * 
      * @param {string} text - Natural language instruction
      * @returns {Promise<object[]>} - Array of Starlight intent objects
      */
@@ -42,29 +48,74 @@ class NLIParser {
         const trimmed = text.trim();
         console.log(`[NLI] Parsing: "${trimmed.substring(0, 50)}${trimmed.length > 50 ? '...' : ''}"`);
 
-        // Check if Ollama is available
+        // STEP 1: Try fallback parser first (fast, accurate for structured commands)
+        const fallbackResult = this.fallback.parse(trimmed);
+
+        // Check if fallback understood the command well
+        const isFallbackConfident = this._isFallbackConfident(fallbackResult, trimmed);
+
+        if (isFallbackConfident) {
+            console.log(`[NLI] Fallback parsed ${fallbackResult.length} step(s) [instant]`);
+            return fallbackResult;
+        }
+
+        // STEP 2: Fallback wasn't confident, try LLM if available
         const ollamaAvailable = await this.ollama.isAvailable();
 
         if (ollamaAvailable) {
             try {
+                console.log(`[NLI] Fallback uncertain, trying LLM...`);
                 const result = await this._parseWithLLM(trimmed);
                 console.log(`[NLI] LLM parsed ${result.length} step(s)`);
                 return result;
             } catch (error) {
                 console.warn(`[NLI] LLM parsing failed: ${error.message}`);
-                if (this.fallbackEnabled) {
-                    console.log(`[NLI] Falling back to pattern parser`);
-                    return this._parseWithFallback(trimmed);
-                }
-                throw error;
+                // Fall through to return fallback result
             }
         } else {
-            if (this.fallbackEnabled) {
-                console.log(`[NLI] Ollama not available, using fallback parser`);
-                return this._parseWithFallback(trimmed);
-            }
-            throw new Error('Ollama not available and fallback disabled');
+            console.log(`[NLI] Ollama not available, using fallback result`);
         }
+
+        // Return fallback result as last resort
+        return fallbackResult;
+    }
+
+    /**
+     * Check if fallback parser understood the command confidently.
+     * 
+     * Fallback is "confident" if:
+     * - It produced multiple steps (understood compound command)
+     * - It produced a specific command type (not just "click goal")
+     * - The matched commands have specific properties (url, text, etc.)
+     * 
+     * @private
+     */
+    _isFallbackConfident(result, originalText) {
+        if (!result || result.length === 0) return false;
+
+        // Multiple steps = fallback understood the structure
+        if (result.length > 1) return true;
+
+        // Single step - check if it's a specific command or just a fallthrough
+        const step = result[0];
+
+        // Goto with URL = specific match
+        if (step.cmd === 'goto' && step.url) return true;
+
+        // Fill with goal and text = specific match
+        if (step.cmd === 'fill' && step.goal && step.text) return true;
+
+        // Click with exact button text (not the entire input) = specific match
+        if (step.cmd === 'click' && step.goal && step.goal !== originalText) return true;
+
+        // Select, check, screenshot, etc. = specific match
+        if (['select', 'check', 'uncheck', 'screenshot', 'press', 'scroll', 'hover'].includes(step.cmd)) {
+            return true;
+        }
+
+        // Single "click goal" where goal == original text = fallback didn't understand
+        // This is when we should try LLM
+        return false;
     }
 
     /**

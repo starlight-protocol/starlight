@@ -352,7 +352,100 @@ function getDescription(id) {
     return descriptions[id] || 'Custom Sentinel';
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Phase 13: Natural Language Intent (NLI)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Execute a natural language instruction via the Hub
+ */
+function executeNLI() {
+    const input = document.getElementById('nli-input');
+    const instruction = input.value.trim();
+
+    if (!instruction) {
+        addLog('NLI', 'Please enter a natural language instruction', 'error');
+        return;
+    }
+
+    addLog('NLI', `🗣️ Executing: "${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`, 'info');
+
+    // Send NLI command to launcher server
+    send({
+        cmd: 'executeNLI',
+        instruction: instruction
+    });
+
+    // Update button state
+    const btn = document.getElementById('nli-btn');
+    btn.textContent = '⏳ Running...';
+    btn.disabled = true;
+
+    // Reset button after timeout (will be reset by server response in real implementation)
+    setTimeout(() => {
+        btn.textContent = '🚀 Execute NL';
+        btn.disabled = false;
+    }, 30000);
+}
+
+/**
+ * Load example NLI instructions
+ */
+function loadNLIExample(type) {
+    const input = document.getElementById('nli-input');
+
+    const examples = {
+        login: 'Go to https://www.saucedemo.com and fill Username with standard_user and fill Password with secret_sauce and click Login',
+        checkout: 'Click Add to cart and click shopping cart and click Checkout and fill First Name with Test and fill Last Name with User and fill Zip/Postal Code with 12345 and click Continue',
+        search: 'Go to https://www.google.com and fill search with Starlight Protocol and click Search'
+    };
+
+    input.value = examples[type] || '';
+    addLog('NLI', `📝 Loaded ${type} example`, 'info');
+}
+
+/**
+ * Check NLI parser status (Ollama availability, model, etc.)
+ */
+function checkNLIStatus() {
+    send({ cmd: 'getNLIStatus' });
+    addLog('NLI', '🔍 Checking NLI status...', 'info');
+}
+
+/**
+ * Toggle Ollama server (start/stop)
+ */
+let ollamaRunning = false;
+
+function toggleOllama() {
+    const btn = document.getElementById('ollama-btn');
+
+    if (ollamaRunning) {
+        send({ cmd: 'stopOllama' });
+        btn.textContent = '🦙 Launch Ollama';
+        btn.className = 'btn btn-start';
+        ollamaRunning = false;
+        addLog('NLI', '⏹️ Stopping Ollama...', 'info');
+    } else {
+        send({ cmd: 'startOllama' });
+        btn.textContent = '⏹️ Stop Ollama';
+        btn.className = 'btn btn-stop';
+        ollamaRunning = true;
+        addLog('NLI', '🦙 Launching Ollama server...', 'info');
+    }
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     connect();
+
+    // Add keyboard shortcut for NLI input (Enter to execute)
+    const nliInput = document.getElementById('nli-input');
+    if (nliInput) {
+        nliInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                executeNLI();
+            }
+        });
+    }
 });
