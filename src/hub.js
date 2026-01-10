@@ -330,7 +330,9 @@ class CBAHub {
         const shadowEnabled = this.config.hub?.shadowDom?.enabled !== false;
         const maxDepth = this.config.hub?.shadowDom?.maxDepth || 5;
 
+        const resolveStart = Date.now();
         const target = await this.page.evaluate(({ goalText, shadowEnabled, maxDepth }) => {
+
             const normalizedGoal = goalText.toLowerCase();
 
             // Helper: Recursively collect elements from shadow roots
@@ -377,25 +379,167 @@ class CBAHub {
                 return path.join(' ');
             }
 
-            const buttons = collectElements(document, 'button, a, input[type="button"]');
+            // ═══════════════════════════════════════════════════════════════════════════
+            // UNIVERSAL SEMANTIC RESOLVER - Works on ANY website
+            // ═══════════════════════════════════════════════════════════════════════════
 
-            // 1. Exact text match
-            let match = buttons.find(b => (b.innerText || b.textContent || '').toLowerCase().includes(normalizedGoal));
+            // Phase 1: EXHAUSTIVE element discovery - scan EVERYTHING that could be interactive
+            const INTERACTIVE_SELECTORS = [
+                // Standard interactive elements
+                'button', 'a', 'input', 'select', 'textarea', 'summary',
+                // ARIA roles
+                '[role="button"]', '[role="link"]', '[role="menuitem"]', '[role="tab"]',
+                '[role="checkbox"]', '[role="radio"]', '[role="switch"]', '[role="option"]',
+                // Event handlers (only valid CSS selectors)
+                '[onclick]', '[onmousedown]', '[onmouseup]', '[ontouchstart]',
+                // Accessibility markers
+                '[tabindex]', '[aria-haspopup]', '[aria-expanded]',
+                // Common class patterns
+                '[class*="btn"]', '[class*="button"]', '[class*="link"]',
+                '[class*="cart"]', '[class*="menu"]', '[class*="nav"]', '[class*="action"]',
+                // Icons (simplified - no compound selectors that might fail)
+                'svg', '[class*="icon"]',
+                // Custom data attributes
+                '[data-action]', '[data-toggle]', '[data-target]', '[data-testid]'
+            ].join(', ');
 
-            // 2. data-goal attribute match (for semantic goals)
-            if (!match) {
-                match = buttons.find(b =>
-                    (b.getAttribute('data-goal') || '').toLowerCase() === normalizedGoal
-                );
+
+            const allInteractive = collectElements(document, INTERACTIVE_SELECTORS);
+
+            // Phase 2: MULTI-STRATEGY text extraction - get text from EVERY possible source
+            function extractAllText(el) {
+                const texts = [];
+
+                // Direct element text
+                const innerText = (el.innerText || '').trim();
+                const textContent = (el.textContent || '').trim();
+                if (innerText) texts.push(innerText);
+                else if (textContent && textContent.length < 100) texts.push(textContent);
+
+                // Input value
+                if (el.value) texts.push(el.value);
+
+                // Standard accessibility attributes
+                ['aria-label', 'aria-labelledby', 'aria-describedby', 'title', 'alt', 'placeholder',
+                    'data-tooltip', 'data-title', 'data-label', 'data-testid', 'data-cy', 'data-test'].forEach(attr => {
+                        const val = el.getAttribute(attr);
+                        if (val) {
+                            // For aria-labelledby/describedby, get referenced element's text
+                            if (attr === 'aria-labelledby' || attr === 'aria-describedby') {
+                                const ref = document.getElementById(val);
+                                if (ref) texts.push((ref.innerText || ref.textContent || '').trim());
+                            } else {
+                                texts.push(val);
+                            }
+                        }
+                    });
+
+                // Parent element's aria-label (for icons inside buttons)
+                const parent = el.parentElement;
+                if (parent) {
+                    const parentAriaLabel = parent.getAttribute('aria-label');
+                    if (parentAriaLabel) texts.push(parentAriaLabel);
+                    // Parent's title
+                    const parentTitle = parent.getAttribute('title');
+                    if (parentTitle) texts.push(parentTitle);
+                }
+
+                // Screen-reader-only text (common accessibility pattern)
+                const srText = el.querySelector('.sr-only, .visually-hidden, .screen-reader-text, .screenreader');
+                if (srText) texts.push((srText.innerText || srText.textContent || '').trim());
+
+                // SVG title element
+                const svgTitle = el.querySelector('title');
+                if (svgTitle) texts.push((svgTitle.textContent || '').trim());
+
+                // SVG use href (sprite reference like "#cart-icon")
+                const useEl = el.querySelector('use');
+                if (useEl) {
+                    const href = useEl.getAttribute('xlink:href') || useEl.getAttribute('href');
+                    if (href) texts.push(href.replace(/^#/, '').replace(/[-_]/g, ' '));
+                }
+
+                // Check child elements for text (for buttons with icon + text)
+                const children = el.querySelectorAll('span, div, p');
+                children.forEach(child => {
+                    const childText = (child.innerText || '').trim();
+                    if (childText && childText.length < 50) texts.push(childText);
+                });
+
+                return texts.map(t => t.toLowerCase()).filter(t => t.length > 0);
             }
 
-            // 3. Fuzzy ARIA match
-            if (!match) {
-                match = buttons.find(b =>
-                    (b.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal) ||
-                    (b.id || '').toLowerCase().includes(normalizedGoal)
-                );
+            // Phase 3: FUZZY MATCHING with scoring
+            function fuzzyMatch(goal, texts) {
+                const goalWords = goal.split(/\s+/).filter(w => w.length > 2);
+
+                for (const text of texts) {
+                    // Exact match (highest priority)
+                    if (text === goal) return { score: 100, type: 'exact' };
+
+                    // Contains goal as substring
+                    if (text.includes(goal)) return { score: 95, type: 'contains' };
+
+                    // Goal contains text (for short labels like "Cart")
+                    if (goal.includes(text) && text.length > 2) return { score: 90, type: 'reverse-contains' };
+                }
+
+                // Word-based matching
+                for (const text of texts) {
+                    const textWords = text.split(/\s+/);
+
+                    // All goal words present
+                    if (goalWords.every(w => text.includes(w))) return { score: 85, type: 'all-words' };
+
+                    // Primary word match (longest word in goal)
+                    const primary = goalWords.reduce((a, b) => a.length > b.length ? a : b, '');
+                    if (primary.length > 2 && text.includes(primary)) return { score: 70, type: 'primary-word' };
+
+                    // Any word match
+                    const matchedWords = goalWords.filter(w => text.includes(w));
+                    if (matchedWords.length > 0) {
+                        return { score: 50 + (30 * matchedWords.length / goalWords.length), type: 'partial-words' };
+                    }
+                }
+
+                return { score: 0, type: 'none' };
             }
+
+            // Find best match across all interactive elements
+            // Prioritize primary interactive elements (button, input, a) over containers
+            const PRIMARY_TAGS = ['BUTTON', 'INPUT', 'A', 'SELECT'];
+            let bestMatch = null;
+            let bestScore = 0;
+
+            for (const el of allInteractive) {
+                const texts = extractAllText(el);
+                const result = fuzzyMatch(normalizedGoal, texts);
+
+                // Boost score for primary interactive elements with high matches
+                let adjustedScore = result.score;
+                if (PRIMARY_TAGS.includes(el.tagName) && result.score >= 70) {
+                    adjustedScore += 10; // Prefer buttons/links over divs
+                }
+
+                // Extra boost for visible text match on button/link
+                const visibleText = (el.innerText || el.value || '').toLowerCase().trim();
+                if (PRIMARY_TAGS.includes(el.tagName) && visibleText === normalizedGoal) {
+                    adjustedScore = 110; // Guaranteed best match
+                }
+
+                if (adjustedScore > bestScore) {
+                    bestScore = adjustedScore;
+                    bestMatch = el;
+
+                    // If we found an exact text match on a button/link, stop
+                    if (adjustedScore >= 110) break;
+                }
+            }
+
+
+            const match = bestMatch;
+
+
 
             if (match) {
                 // Check if element is inside shadow DOM
@@ -406,9 +550,16 @@ class CBAHub {
                     return { selector: generateShadowSelector(match), inShadow: true };
                 }
 
+                const tagName = match.tagName.toLowerCase();
+
+                // For input elements, use value attribute if present
+                if (tagName === 'input' && match.value) {
+                    const inputType = match.type || 'text';
+                    return { selector: `input[type="${inputType}"][value="${match.value}"]`, inShadow: false, valueMatch: true };
+                }
+
                 // Generate a unique selector - prefer text-based for links/buttons
                 const textContent = (match.innerText || match.textContent || '').trim();
-                const tagName = match.tagName.toLowerCase();
 
                 // For links and buttons with text, use text-based selector for precision
                 if ((tagName === 'a' || tagName === 'button') && textContent && textContent.length < 50) {
@@ -424,10 +575,14 @@ class CBAHub {
                 }
                 return { selector: match.tagName.toLowerCase(), inShadow: false };
             }
+
             return null;
         }, { goalText: goal, shadowEnabled, maxDepth });
 
+        console.log(`[CBA Hub] Semantic resolution for "${goal}" took ${Date.now() - resolveStart}ms`);
+
         if (target) {
+
             if (target.inShadow) {
                 console.log(`[CBA Hub] Phase 9: Shadow DOM element resolved for "${goal}" -> ${target.selector}`);
             }
@@ -471,44 +626,89 @@ class CBAHub {
 
             const inputs = collectInputs(document);
 
-            // 1. Match by associated <label> text
-            let match = inputs.find(input => {
+            // ═══════════════════════════════════════════════════════════════════════════
+            // UNIVERSAL FORM RESOLVER - Works on ANY form structure
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Extract ALL possible text associations for an input
+            function extractFormText(input) {
+                const texts = [];
+
+                // 1. Associated <label> by for attribute
                 if (input.id) {
                     const label = document.querySelector(`label[for="${input.id}"]`);
-                    if (label && (label.innerText || label.textContent || '').toLowerCase().includes(normalizedGoal)) {
-                        return true;
-                    }
+                    if (label) texts.push((label.innerText || label.textContent || '').trim());
                 }
-                return false;
-            });
 
-            // 2. Match by placeholder attribute
-            if (!match) {
-                match = inputs.find(input =>
-                    (input.getAttribute('placeholder') || '').toLowerCase().includes(normalizedGoal)
-                );
+                // 2. Wrapping <label> element
+                const parentLabel = input.closest('label');
+                if (parentLabel) texts.push((parentLabel.innerText || parentLabel.textContent || '').trim());
+
+                // 3. Preceding sibling text (common pattern: "Email: [input]")
+                const prevSibling = input.previousElementSibling;
+                if (prevSibling && (prevSibling.tagName === 'LABEL' || prevSibling.tagName === 'SPAN')) {
+                    texts.push((prevSibling.innerText || prevSibling.textContent || '').trim());
+                }
+
+                // 4. Standard attributes
+                ['placeholder', 'aria-label', 'name', 'title', 'id', 'data-label', 'data-placeholder', 'autocomplete'].forEach(attr => {
+                    const val = input.getAttribute(attr);
+                    if (val) texts.push(val.replace(/[-_]/g, ' '));
+                });
+
+                // 5. aria-labelledby reference
+                const labelledBy = input.getAttribute('aria-labelledby');
+                if (labelledBy) {
+                    const ref = document.getElementById(labelledBy);
+                    if (ref) texts.push((ref.innerText || ref.textContent || '').trim());
+                }
+
+                // 6. Parent fieldset legend
+                const fieldset = input.closest('fieldset');
+                if (fieldset) {
+                    const legend = fieldset.querySelector('legend');
+                    if (legend) texts.push((legend.innerText || '').trim());
+                }
+
+                return texts.map(t => t.toLowerCase()).filter(t => t.length > 0);
             }
 
-            // 3. Match by aria-label
-            if (!match) {
-                match = inputs.find(input =>
-                    (input.getAttribute('aria-label') || '').toLowerCase().includes(normalizedGoal)
-                );
+            // Fuzzy matching with scoring
+            function fuzzyMatchForm(goal, texts) {
+                const goalWords = goal.split(/[\s\/]+/).filter(w => w.length > 1);
+
+                for (const text of texts) {
+                    if (text === goal) return { score: 100 };
+                    if (text.includes(goal)) return { score: 95 };
+                    if (goal.includes(text) && text.length > 2) return { score: 90 };
+                }
+
+                for (const text of texts) {
+                    if (goalWords.every(w => text.includes(w))) return { score: 85 };
+                    const matched = goalWords.filter(w => text.includes(w));
+                    if (matched.length > 0) return { score: 50 + (30 * matched.length / goalWords.length) };
+                }
+
+                return { score: 0 };
             }
 
-            // 4. Match by name attribute
-            if (!match) {
-                match = inputs.find(input =>
-                    (input.getAttribute('name') || '').toLowerCase().includes(normalizedGoal)
-                );
+            // Find best matching input
+            let bestMatch = null;
+            let bestScore = 0;
+
+            for (const input of inputs) {
+                const texts = extractFormText(input);
+                const result = fuzzyMatchForm(normalizedGoal, texts);
+
+                if (result.score > bestScore) {
+                    bestScore = result.score;
+                    bestMatch = input;
+                    if (result.score >= 95) break;
+                }
             }
 
-            // 5. Match by title attribute
-            if (!match) {
-                match = inputs.find(input =>
-                    (input.getAttribute('title') || '').toLowerCase().includes(normalizedGoal)
-                );
-            }
+            const match = bestMatch;
+
 
             if (match) {
                 // Generate selector
@@ -526,7 +726,10 @@ class CBAHub {
         if (target) {
             console.log(`[CBA Hub] Form input resolved for "${goal}" -> ${target.selector}`);
             return { selector: target.selector, selfHealed: false };
+        } else {
+            console.log(`[CBA Hub] Form resolution FAILED for "${goal}" - no matching input found`);
         }
+
 
         // Fallback: Check historical memory for form fills
         const formKey = `fill:${goal}`;
@@ -929,9 +1132,11 @@ class CBAHub {
                     console.log(`[CBA Hub] Resolving Click Goal: "${msg.params.goal}"`);
                     const result = await this.resolveSemanticIntent(msg.params.goal);
                     if (result) {
+                        console.log(`[CBA Hub] ✓ Click Goal "${msg.params.goal}" resolved to: ${result.selector}`);
                         msg.params.selector = result.selector;
                         msg.params.selfHealed = result.selfHealed;
                         msg.params.cmd = 'click'; // Default semantic action
+
 
                         // Propagate hint from semantic context if available
                         if (result.stabilityHint) {
