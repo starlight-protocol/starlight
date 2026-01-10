@@ -72,5 +72,23 @@
             "failure",
             "success"
         ]
+    },
+    "nli": {
+        "enabled": true,
+        "provider": "ollama",
+        "model": "llama3.2:1b",
+        "endpoint": "http://localhost:11434",
+        "timeout": 30000,
+        "fallback": {
+            "enabled": true,
+            "mode": "pattern"
+        },
+        "voice": {
+            "enabled": false,
+            "model": "whisper-base"
+        },
+        "gherkin": {
+            "stepDefinitionsPath": "./step_definitions"
+        }
     }
 }

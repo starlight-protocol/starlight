@@ -302,6 +302,139 @@ class IntentRunner {
             this.ws.close();
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase 13: Natural Language Intent (NLI) Methods
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Execute a natural language instruction.
+     * Parses the text into structured commands and executes each.
+     * 
+     * @param {string} instruction - Plain English instruction
+     * @returns {Promise<object[]>} Results from all executed steps
+     * 
+     * @example
+     * await runner.executeNL('Login with username test and password secret123');
+     * await runner.executeNL('Go to saucedemo.com and add first item to cart');
+     */
+    async executeNL(instruction) {
+        // Lazy load NLI parser to avoid import issues if not used
+        if (!this._nliParser) {
+            const config = this._loadConfig();
+            const { NLIParser } = require('./nli/parser');
+            this._nliParser = new NLIParser(config.nli || {});
+        }
+
+        console.log(`[IntentRunner] 🗣️ NLI: "${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`);
+
+        const steps = await this._nliParser.parse(instruction);
+        const results = [];
+
+        for (let i = 0; i < steps.length; i++) {
+            const step = steps[i];
+            console.log(`[IntentRunner] 📝 Step ${i + 1}/${steps.length}: ${step.cmd} ${step.goal || step.url || ''}`);
+
+            try {
+                const result = await this._sendCommand(step);
+                results.push({ step, success: true, result });
+            } catch (error) {
+                results.push({ step, success: false, error: error.message });
+                throw error; // Re-throw to stop execution on failure
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Execute a Gherkin .feature file.
+     * 
+     * @param {string} featurePath - Path to .feature file
+     * @param {string} scenarioName - Optional: run only this scenario
+     * @returns {Promise<object[]>} Results from all steps
+     * 
+     * @example
+     * await runner.executeFeature('./test/features/checkout.feature');
+     */
+    async executeFeature(featurePath, scenarioName = null) {
+        const { GherkinBridge } = require('./nli/gherkin');
+        const bridge = new GherkinBridge();
+
+        console.log(`[IntentRunner] 📄 Loading feature: ${featurePath}`);
+        const parsed = bridge.parseFile(featurePath);
+
+        console.log(`[IntentRunner] Feature: ${parsed.feature}`);
+        console.log(`[IntentRunner] Scenarios: ${parsed.scenarios.map(s => s.name).join(', ')}`);
+
+        const results = [];
+
+        for (const scenario of parsed.scenarios) {
+            // Skip if specific scenario requested and this isn't it
+            if (scenarioName && scenario.name !== scenarioName) {
+                continue;
+            }
+
+            console.log(`[IntentRunner] 🎬 Scenario: ${scenario.name}`);
+
+            for (const step of scenario.steps) {
+                try {
+                    const result = await this._sendCommand(step);
+                    results.push({ scenario: scenario.name, step, success: true, result });
+                } catch (error) {
+                    results.push({ scenario: scenario.name, step, success: false, error: error.message });
+                    throw error;
+                }
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Generate a .feature file from completed mission trace.
+     * 
+     * @param {string} tracePath - Path to mission_trace.json
+     * @param {string} outputName - Output filename (without .feature)
+     * @returns {string} Path to generated feature file
+     */
+    documentMission(tracePath, outputName = 'generated') {
+        const { MissionDocumenter } = require('./nli/documenter');
+        const documenter = new MissionDocumenter();
+
+        const content = documenter.generateFromTrace(tracePath, outputName);
+        return documenter.save(content, outputName);
+    }
+
+    /**
+     * Get NLI parser status for diagnostics.
+     * @returns {Promise<object>} NLI status
+     */
+    async getNLIStatus() {
+        if (!this._nliParser) {
+            const config = this._loadConfig();
+            const { NLIParser } = require('./nli/parser');
+            this._nliParser = new NLIParser(config.nli || {});
+        }
+        return this._nliParser.getStatus();
+    }
+
+    /**
+     * Load config.json for NLI settings.
+     * @private
+     */
+    _loadConfig() {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const configPath = path.join(__dirname, '..', 'config.json');
+            if (fs.existsSync(configPath)) {
+                return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            }
+        } catch { }
+        return {};
+    }
 }
+
 
 module.exports = IntentRunner;
