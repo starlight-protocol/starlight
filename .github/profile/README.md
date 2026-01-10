@@ -97,4 +97,4 @@ sentinel.run()
 
 ## License
 
-MIT - Created by [Dhiraj Das](https://www.dhirajdas.dev)
+MIT - Created by [Dhiraj Das](https://dhirajdas.dev)

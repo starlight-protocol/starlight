@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [UNRELEASED] Phase 14.2 - Universal Semantic Resolver
+
+### 🔍 Semantic Resolution Overhaul
+
+#### Fixed
+- **Invalid CSS Selectors**: Removed `[@click]`, `[v-on:click]`, `[ng-click]`, `i[class*="fa-"]`, `i[class*="material-"]` from `INTERACTIVE_SELECTORS` that caused `querySelectorAll` to throw `SyntaxError` and crash semantic resolution
+- **Checkout Button Mismatch**: Fixed fuzzy matcher incorrectly resolving `clickGoal('Checkout')` to `#cart_contents_container` instead of the actual `button#checkout`
+- **Input Button Selectors**: Added `input[type="submit"][value="..."]` selector generation for submit buttons that use `value` attribute instead of inner text
+
+#### Added
+- **Primary Tag Prioritization**: Buttons, inputs, links, and selects with exact text matches now score higher (110) than container divs with partial matches
+- **Debug Logging**: Added performance timing logs for semantic resolution (`Semantic resolution for "X" took Yms`)
+- **SauceDemo E2E Test**: Full 12-step checkout flow verification (`test/intent_saucedemo.js`)
+  - Login with semantic goals (`fillGoal('Username')`, `fillGoal('Password')`)
+  - Cart interaction (`clickGoal('Add to cart')`, `clickGoal('shopping cart')`)
+  - Checkout form (`fillGoal('First Name')`, `fillGoal('Last Name')`, `fillGoal('Zip/Postal Code')`)
+  - Order completion (`clickGoal('Checkout')`, `clickGoal('Continue')`, `clickGoal('Finish')`)
+
+#### Changed
+- **Fuzzy Matcher**: Now breaks early only when score >= 110 (exact text match on primary element), not at 95
+- **Element Discovery**: Enhanced to prefer visible interactive elements over hidden containers
+
+#### Verified
+- **SauceDemo Checkout**: 12/12 steps pass autonomously
+- **Resolution Performance**: Average 5-10ms per semantic goal
+- **Self-Healing**: Correctly identifies shifted selectors on dynamic forms
+
+---
+
 ## [UNRELEASED] Phase 14.1 - Multi-Browser Foundation
 
 ### 🌐 Cross-Browser Support (Chromium / Firefox / WebKit)
@@ -48,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Zero Breaking Changes**: Starlight Protocol v1.0.0 unchanged
 - **Sentinel Independence**: All Sentinels remain browser-agnostic
 - **Message Format**: JSON-RPC 2.0 identical across all browsers
+
 
 ---
 

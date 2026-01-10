@@ -297,17 +297,21 @@ class SentinelBase(ABC):
     async def _send_msg(self, method, params):
         if self._websocket:
             try:
-                msg = {
-                    "jsonrpc": "2.0",
-                    "method": method,
-                    "params": params,
-                    "id": str(int(time.time() * 1000))
-                }
+                msg = self._format_message(method, params, str(int(time.time() * 1000)))
                 await self._websocket.send(json.dumps(msg))
             except websockets.exceptions.ConnectionClosed:
                 print(f"[{self.layer}] Cannot send {method}: connection closed")
             except Exception as e:
                 print(f"[{self.layer}] Failed to send {method}: {e}")
+
+    def _format_message(self, method, params, msg_id):
+        """Phase 16.1: Extracted formatting for structural testability."""
+        return {
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": msg_id
+        }
 
     # --- Lifecycle Hooks (Override These) ---
 

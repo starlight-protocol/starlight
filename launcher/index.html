@@ -30,6 +30,36 @@
                     <option value="firefox">🦊 Firefox</option>
                     <option value="webkit">🧭 WebKit (Safari)</option>
                 </select>
+                <select id="device-select"
+                    style="width: 100%; margin-bottom: 8px; padding: 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white;"
+                    title="Select mobile device emulation (optional)">
+                    <option value="">🖥️ Desktop (Default)</option>
+                    <optgroup label="iPhone">
+                        <option value="iPhone 14">📱 iPhone 14</option>
+                        <option value="iPhone 14 Pro Max">📱 iPhone 14 Pro Max</option>
+                        <option value="iPhone 13">📱 iPhone 13</option>
+                        <option value="iPhone 12">📱 iPhone 12</option>
+                        <option value="iPhone SE">📱 iPhone SE</option>
+                    </optgroup>
+                    <optgroup label="Android">
+                        <option value="Pixel 7">📱 Pixel 7</option>
+                        <option value="Pixel 5">📱 Pixel 5</option>
+                        <option value="Galaxy S9+">📱 Galaxy S9+</option>
+                    </optgroup>
+                    <optgroup label="Tablet">
+                        <option value="iPad Pro 11">📱 iPad Pro 11</option>
+                        <option value="iPad Mini">📱 iPad Mini</option>
+                    </optgroup>
+                </select>
+                <select id="network-select"
+                    style="width: 100%; margin-bottom: 8px; padding: 6px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: white;"
+                    title="Network condition emulation (Chromium only)">
+                    <option value="online">🌐 Online (Default)</option>
+                    <option value="4g">📶 4G Fast</option>
+                    <option value="3g">📶 3G</option>
+                    <option value="3g-slow">📶 Slow 3G</option>
+                    <option value="offline">📴 Offline</option>
+                </select>
                 <button class="btn btn-start" id="hub-btn" onclick="toggleProcess('hub')">Launch Hub</button>
             </div>
 

@@ -1,108 +1,58 @@
 /**
  * Phase 9: Security Test Mission
  * Tests PII detection, Shadow DOM, and network interception
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ * STARLIGHT PROTOCOL COMPLIANT
+ * - Uses IntentRunner (event-driven, no setTimeout)
+ * - Pure intent: only goals, no timing
+ * - PII Sentinel handles privacy checks
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
-const WebSocket = require('ws');
+const IntentRunner = require('../src/intent_runner');
 const path = require('path');
 
-const ws = new WebSocket('ws://localhost:8080');
-let step = 0;
+async function main() {
+    const runner = new IntentRunner();
 
-ws.on('open', () => {
-    console.log("[Intent] Connected to Hub. Starting Security Test...");
+    try {
+        await runner.connect();
+        console.log('[Intent] 🌌 Connected to Hub');
+        console.log('[Intent] Security Test Mission\n');
 
-    // Register as intent layer
-    ws.send(JSON.stringify({
-        jsonrpc: "2.0",
-        method: "starlight.registration",
-        params: { layer: "SecurityTestIntent", priority: 100 },
-        id: "reg-1"
-    }));
+        // Goal 1: Navigate to security test page
+        const testPage = 'file:///' + path.join(__dirname, 'security_test.html').replace(/\\/g, '/');
+        console.log('[Intent] Goal 1: Navigate to security test page');
+        await runner.goto(testPage);
+        console.log('[Intent] ✓ Navigation complete\n');
 
-    // Wait for sentinels to connect
-    setTimeout(() => sendNext(), 3000);
-});
+        // Goal 2: Click the PII submit button - PII Sentinel should alert
+        console.log('[Intent] Goal 2: Click PII submit button');
+        console.log('[Intent] (PII Sentinel will detect and alert if privacy data present)');
+        await runner.click('#pii-submit');
+        console.log('[Intent] ✓ PII submit clicked\n');
 
-function send(msg) {
-    console.log(`[Intent] Sending: ${msg.method}`);
-    ws.send(JSON.stringify(msg));
-}
+        // Goal 3: Click Shadow DOM button using pierce selector
+        console.log('[Intent] Goal 3: Click Shadow DOM button');
+        await runner.click('#shadow-host >>> #shadow-button');
+        console.log('[Intent] ✓ Shadow button clicked\n');
 
-function sendNext() {
-    step++;
-    switch (step) {
-        case 1:
-            // Navigate to security test page
-            const testPage = 'file:///' + path.join(__dirname, 'security_test.html').replace(/\\/g, '/');
-            send({
-                jsonrpc: "2.0",
-                method: "starlight.intent",
-                params: { cmd: "goto", url: testPage },
-                id: "step-1"
-            });
-            break;
+        // Goal 4: Test network request
+        console.log('[Intent] Goal 4: Trigger fetch API call');
+        await runner.click('#fetch-api');
+        console.log('[Intent] ✓ Fetch triggered\n');
 
-        case 2:
-            // Click the PII submit button - PII Sentinel should alert
-            send({
-                jsonrpc: "2.0",
-                method: "starlight.intent",
-                params: { cmd: "click", selector: "#pii-submit" },
-                id: "step-2"
-            });
-            break;
+        // Complete
+        console.log('[Intent] ═══════════════════════════════════════');
+        console.log('[Intent] 🎯 Security test COMPLETE');
+        await runner.finish('Security test complete');
 
-        case 3:
-            // Try to click Shadow DOM button using pierce selector
-            send({
-                jsonrpc: "2.0",
-                method: "starlight.intent",
-                params: { cmd: "click", selector: "#shadow-host >>> #shadow-button" },
-                id: "step-3"
-            });
-            break;
-
-        case 4:
-            // Test network request
-            send({
-                jsonrpc: "2.0",
-                method: "starlight.intent",
-                params: { cmd: "click", selector: "#fetch-api" },
-                id: "step-4"
-            });
-            break;
-
-        case 5:
-            // Finish mission
-            send({
-                jsonrpc: "2.0",
-                method: "starlight.finish",
-                params: {},
-                id: "finish"
-            });
-            break;
+    } catch (error) {
+        console.error('[Intent] ❌ Test failed:', error.message);
+        await runner.finish('Security test failed: ' + error.message);
+        process.exit(1);
     }
 }
 
-ws.on('message', (data) => {
-    const msg = JSON.parse(data);
-
-    if (msg.type === 'COMMAND_COMPLETE') {
-        console.log(`[Intent] Command ${msg.id} completed: ${msg.success ? 'SUCCESS' : 'FAILED'}`);
-
-        // Check for PII warnings in context
-        if (msg.context?.security?.pii_detected) {
-            console.log(`[Intent] ⚠️  PII WARNING: ${msg.context.security.pii_count} instances detected`);
-            console.log(`[Intent]    Types: ${msg.context.security.pii_types.join(', ')}`);
-        }
-
-        setTimeout(sendNext, 1500);
-    }
-});
-
-ws.on('error', (e) => console.log("[Intent] WS Error:", e.message));
-ws.on('close', () => {
-    console.log("[Intent] Connection closed.");
-    process.exit(0);
-});
+main();

@@ -211,8 +211,16 @@ function toggleProcess(name) {
         const params = { cmd: 'start', process: name };
         if (name === 'hub') {
             const browserSelect = document.getElementById('browser-select');
+            const deviceSelect = document.getElementById('device-select');
+            const networkSelect = document.getElementById('network-select');
             if (browserSelect) {
                 params.browser = browserSelect.value;
+            }
+            if (deviceSelect && deviceSelect.value) {
+                params.device = deviceSelect.value;
+            }
+            if (networkSelect) {
+                params.network = networkSelect.value;
             }
         }
         send(params);
@@ -221,8 +229,12 @@ function toggleProcess(name) {
 
 function startAll() {
     const browserSelect = document.getElementById('browser-select');
+    const deviceSelect = document.getElementById('device-select');
+    const networkSelect = document.getElementById('network-select');
     const browser = browserSelect ? browserSelect.value : 'chromium';
-    send({ cmd: 'startAll', browser });
+    const device = deviceSelect ? deviceSelect.value : null;
+    const network = networkSelect ? networkSelect.value : 'online';
+    send({ cmd: 'startAll', browser, device, network });
 }
 
 function stopAll() {
