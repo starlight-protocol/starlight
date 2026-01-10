@@ -111,6 +111,24 @@ Install all browsers:
 npx playwright install chromium firefox webkit
 ```
 
+### Mobile Emulation (Phase 14.2)
+```bash
+# Run on iPhone 14 Pro Max
+HUB_DEVICE="iPhone 14 Pro Max" node bin/starlight.js test/intent_saucedemo.js
+
+# Run on Pixel 7
+HUB_DEVICE="Pixel 7" node bin/starlight.js test/intent_saucedemo.js
+
+# Or configure in config.json:
+{
+  "hub": {
+    "device": "iPhone 14 Pro Max"
+  }
+}
+```
+
+**Verified:** Full 12-step SauceDemo checkout flow passes autonomously. See [test/intent_saucedemo.js](test/intent_saucedemo.js).
+
 ---
 
 ## 🛰️ The Protocol
@@ -175,7 +193,8 @@ Install community Sentinels or create your own:
 python cli/main.py list --available
 
 # Install from registry or GitHub
-python cli/main.py install janitor-google
+python cli/main.py install cookie-consent
+python cli/main.py install captcha-detector
 python cli/main.py install https://github.com/user/my-sentinel
 
 # Create new Sentinel
@@ -184,6 +203,13 @@ python cli/main.py create "Cookie Blocker"
 # Use Visual Editor (no-code)
 # Open Mission Control → Click "Create Sentinel"
 ```
+
+**Available Plugins:**
+| Plugin | Description |
+|--------|-------------|
+| `cookie-consent` | Auto-dismiss cookie banners and GDPR popups |
+| `captcha-detector` | Detect CAPTCHA and pause for manual intervention |
+| `login-session` | Persist login sessions across test runs |
 
 ---
 
