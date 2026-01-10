@@ -4,12 +4,12 @@
         "browser": {
             "engine": "chromium",
             "mobile": {
-                "enabled": true,
-                "device": "iPhone SE"
+                "enabled": false,
+                "device": null
             }
         },
         "network": {
-            "emulation": "3g"
+            "emulation": "online"
         },
         "syncBudget": 30000,
         "missionTimeout": 180000,

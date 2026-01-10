@@ -1,70 +1,48 @@
 /**
  * Shadow DOM Intent Script - Phase 9 Test
  * Tests CBA's ability to pierce Shadow DOM boundaries
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ * STARLIGHT PROTOCOL COMPLIANT
+ * - Uses IntentRunner (event-driven, no setTimeout)
+ * - Pure intent: only goals, no timing
+ * - PulseSentinel handles stability, JanitorSentinel handles obstacles
+ * ═══════════════════════════════════════════════════════════════════════════
  */
 
-const WebSocket = require('ws');
+const IntentRunner = require('../src/intent_runner');
 const path = require('path');
 
-const ws = new WebSocket('ws://localhost:8080');
+async function main() {
+    const runner = new IntentRunner();
 
-ws.on('open', () => {
-    console.log('[Intent] Connected to Starlight Hub');
+    try {
+        await runner.connect();
+        console.log('[Intent] 🌌 Connected to Starlight Hub');
+        console.log('[Intent] Shadow DOM Piercing Test\n');
 
-    // Step 1: Navigate to shadow test page
-    const testPage = `file://${path.resolve(__dirname, 'shadow_test.html')}`;
-    console.log(`[Intent] Navigating to: ${testPage}`);
+        // Goal 1: Navigate to shadow test page
+        const testPage = `file://${path.resolve(__dirname, 'shadow_test.html')}`;
+        console.log(`[Intent] Goal 1: Navigate to ${testPage}`);
+        await runner.goto(testPage);
+        console.log('[Intent] ✓ Navigation complete\n');
 
-    ws.send(JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'starlight.intent',
-        params: { cmd: 'goto', url: testPage },
-        id: 'nav-1'
-    }));
+        // Goal 2: Click the mission button (Hub will pierce Shadow DOM)
+        console.log('[Intent] Goal 2: Click "ENTER THE VOID"');
+        console.log('[Intent] (Shadow modal may be blocking - JanitorSentinel will handle it)');
+        await runner.clickGoal('ENTER THE VOID', { missionType: 'shadow-penetration' });
+        console.log('[Intent] ✓ Shadow DOM button clicked\n');
 
-    // Step 2: Wait for page load, then click the mission button
-    setTimeout(() => {
-        console.log('[Intent] Issuing semantic goal: ENTER THE VOID');
-        console.log('[Intent] Shadow modal should be blocking - Janitor must pierce shadow root');
+        // Complete mission
+        console.log('[Intent] ═══════════════════════════════════════');
+        console.log('[Intent] 🎯 Shadow DOM mission COMPLETE');
+        await runner.finish('Shadow DOM test complete');
 
-        ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'starlight.intent',
-            params: {
-                cmd: 'click',
-                goal: 'ENTER THE VOID',
-                context: { missionType: 'shadow-penetration' }
-            },
-            id: 'goal-1'
-        }));
-    }, 3000);
-
-    // Step 3: Close after mission
-    setTimeout(() => {
-        console.log('[Intent] Shadow DOM mission complete. Generating report...');
-        ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'starlight.shutdown',
-            params: { reason: 'Mission complete' },
-            id: 'shutdown-1'
-        }));
-    }, 8000);
-});
-
-ws.on('message', (data) => {
-    const msg = JSON.parse(data);
-    if (msg.method === 'starlight.sovereign_update') {
-        console.log('[Intent] Context Update:', JSON.stringify(msg.params.context, null, 2));
-    } else if (msg.result) {
-        console.log(`[Intent] Response: ${msg.result.status || 'OK'}`);
+    } catch (error) {
+        console.error('[Intent] ❌ Mission failed:', error.message);
+        await runner.finish('Shadow DOM test failed: ' + error.message);
+        process.exit(1);
     }
-});
+}
 
-ws.on('error', (err) => {
-    console.error('[Intent] WebSocket error:', err.message);
-});
-
-ws.on('close', () => {
-    console.log('[Intent] Connection closed');
-    process.exit(0);
-});
+main();

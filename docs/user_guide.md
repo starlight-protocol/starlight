@@ -298,7 +298,73 @@ Mission Control now dynamically discovers ALL sentinels in the `sentinels/` dire
 
 ---
 
-## 11. Webhook Alerting (Phase 10)
+## 11. Sentinel Store & Visual Editor (Phase 15)
+
+CBA includes a complete ecosystem for creating, installing, and managing Sentinels.
+
+### 🛒 Sentinel Store CLI
+
+**List Installed Sentinels:**
+```bash
+python cli/main.py list
+python cli/main.py list --available  # Also shows registry plugins
+```
+
+**Install from Registry or GitHub:**
+```bash
+# From the plugin registry
+python cli/main.py install janitor-google
+
+# From GitHub
+python cli/main.py install https://github.com/user/my-sentinel
+```
+
+**Create New Sentinel:**
+```bash
+python cli/main.py create "Cookie Blocker"
+# Creates: sentinels/cookie_blocker_sentinel.py
+```
+
+**Remove a Plugin:**
+```bash
+python cli/main.py remove janitor-google
+```
+
+### 🎨 Visual Sentinel Editor (No-Code)
+
+The **Sentinel Editor** allows you to create Sentinels without writing code:
+
+1. Open Mission Control: `http://localhost:3000`
+2. Click the **"Create Sentinel"** card
+3. Use the visual builder:
+
+| Feature | Description |
+|---------|-------------|
+| **Template Gallery** | Blank, Cookie Banner, Modal, Login Wall, Rate Limiter |
+| **CSS Selector Builder** | Add/remove patterns with live preview |
+| **Capability Selection** | Popup Detection, Stability, AI Vision, Form Filling |
+| **Response Actions** | Click, Hide, or Wait |
+| **Code Preview** | See generated Python code in real-time |
+| **Export** | Save directly to `sentinels/` directory |
+
+### 📦 Creating a Plugin Package
+
+To share your Sentinel with the community, create a `plugin.json`:
+
+```json
+{
+  "name": "my-sentinel",
+  "version": "1.0.0",
+  "main": "my_sentinel.py",
+  "description": "Handles specific obstacles"
+}
+```
+
+Then push to GitHub and share the URL for others to install.
+
+---
+
+## 12. Webhook Alerting (Phase 10)
 
 Get notified on Slack, Teams, or Discord when missions complete.
 

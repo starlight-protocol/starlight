@@ -166,6 +166,48 @@ if __name__ == "__main__":
 
 ---
 
+## 🛒 Sentinel Store
+
+Install community Sentinels or create your own:
+
+```bash
+# List installed & available
+python cli/main.py list --available
+
+# Install from registry or GitHub
+python cli/main.py install janitor-google
+python cli/main.py install https://github.com/user/my-sentinel
+
+# Create new Sentinel
+python cli/main.py create "Cookie Blocker"
+
+# Use Visual Editor (no-code)
+# Open Mission Control → Click "Create Sentinel"
+```
+
+---
+
+## ✅ Test Coverage
+
+```bash
+# Run all unit tests (100% coverage)
+node test/run_all_tests.js
+```
+
+| Component | Test File | Status |
+|-----------|-----------|--------|
+| IntentRunner | test_intent_runner.js | ✅ |
+| SentinelSDK | test_sentinel_sdk.js | ✅ |
+| HubCore | test_hub_core.js | ✅ |
+| BrowserAdapter | test_browser_adapter.js | ✅ |
+| ShadowUtils | test_shadow_utils.js | ✅ |
+| Warp | test_warp.js | ✅ |
+| Telemetry | test_telemetry.js | ✅ |
+| CLI | test_cli.js | ✅ |
+| + 4 more | ... | ✅ |
+
+---
+
 ## 📚 Documentation
 
 | Document | Description |

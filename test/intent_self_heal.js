@@ -1,42 +1,46 @@
-const WebSocket = require('ws');
-const ws = new WebSocket('ws://localhost:8080');
+/**
+ * Self-Healing Intent Script
+ * Tests CBA's semantic goal resolution with historical memory
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ * STARLIGHT PROTOCOL COMPLIANT
+ * - Uses IntentRunner (event-driven, no setTimeout)
+ * - Pure intent: only goals, no timing
+ * - Hub's historical memory handles self-healing
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
 
-ws.on('open', () => {
-    console.log("[Intent] Connected to Hub. Starting Self-Healing Test...");
+const IntentRunner = require('../src/intent_runner');
 
-    // 1. Navigate to test page
-    ws.send(JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'starlight.intent',
-        params: {
-            cmd: 'goto',
-            url: 'file:///c:/cba/test/self_heal_test.html'
-        },
-        id: '1'
-    }));
+async function main() {
+    const runner = new IntentRunner();
 
-    // 2. Issuing a goal that doesn't match the current text but has historical memory
-    setTimeout(() => {
-        console.log("[Intent] Issuing 'INITIATE MISSION' goal...");
-        ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'starlight.intent',
-            params: {
-                goal: 'INITIATE MISSION'
-            },
-            id: '2'
-        }));
-    }, 2000);
+    try {
+        await runner.connect();
+        console.log('[Intent] 🌌 Connected to Hub');
+        console.log('[Intent] Self-Healing Test\n');
 
-    // 3. Finish
-    setTimeout(() => {
-        console.log("[Intent] Mission complete. Signaling Hub to shutdown...");
-        ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'starlight.finish',
-            params: {},
-            id: '3'
-        }));
-        process.exit(0);
-    }, 5000);
-});
+        // Goal 1: Navigate to test page
+        console.log('[Intent] Goal 1: Navigate to self-heal test page');
+        await runner.goto('file:///c:/cba/test/self_heal_test.html');
+        console.log('[Intent] ✓ Navigation complete\n');
+
+        // Goal 2: Issue semantic goal - Hub uses historical memory
+        console.log('[Intent] Goal 2: Click "INITIATE MISSION"');
+        console.log('[Intent] (If selector changed, Hub will use memory to self-heal)');
+        await runner.clickGoal('INITIATE MISSION');
+        console.log('[Intent] ✓ Mission initiated\n');
+
+        // Complete
+        console.log('[Intent] ═══════════════════════════════════════');
+        console.log('[Intent] 🎯 Self-Healing test COMPLETE');
+        await runner.finish('Self-healing test complete');
+
+    } catch (error) {
+        console.error('[Intent] ❌ Test failed:', error.message);
+        await runner.finish('Self-heal test failed: ' + error.message);
+        process.exit(1);
+    }
+}
+
+main();
