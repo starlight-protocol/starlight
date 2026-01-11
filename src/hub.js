@@ -9,6 +9,13 @@ const WebhookNotifier = require('./webhook');
 const http = require('http');
 const https = require('https');
 
+// Phase 1 Security: Import security modules
+const { JWTHandler } = require('./auth/jwt_handler');
+const { SchemaValidator } = require('./validation/schema_validator');
+const { PIIRedactor, redact } = require('./utils/pii_redactor');
+const { AtomicLock } = require('./sync/atomic_lock');
+const { InteractiveElementCache } = require('./cache/element_cache');
+
 // Security: HTML escaping to prevent XSS
 function escapeHtml(str) {
     if (str == null) return '';
@@ -18,6 +25,30 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+// Phase 1 Security: Selector sanitization to prevent CSS injection
+function sanitizeSelector(input) {
+    if (typeof input !== 'string') return '';
+    // Remove characters that could be used for CSS injection
+    // Allow alphanumeric, spaces, hyphens, underscores (common in button text)
+    // Block: # . [ ] : \ / ( ) ' " < > { } @ $ % ^ & * + = | ` ~
+    return input
+        .replace(/[#\.\[\]:;\\\/\(\)'"<>{}\@\$%\^&\*\+=\|`~]/g, '')
+        .trim()
+        .substring(0, 200); // Limit length
+}
+
+// CRITICAL Security: Escape CSS attribute values to prevent injection
+function escapeCssString(str) {
+    if (typeof str !== 'string') return '';
+    return str
+        .replace(/\\/g, '\\\\')     // Escape backslashes first
+        .replace(/"/g, '\\"')       // Escape quotes
+        .replace(/'/g, "\\'")       // Escape single quotes
+        .replace(/\n/g, '\\n')      // Escape newlines
+        .replace(/\r/g, '\\r')      // Escape carriage returns
+        .replace(/\t/g, '\\t');     // Escape tabs
 }
 class CBAHub {
     constructor(port = 8080, headless = false) {
@@ -97,6 +128,18 @@ class CBAHub {
         this.isShuttingDown = false;
         this.recorder = new ActionRecorder();  // Phase 13.5: Test Recorder
 
+        // Phase 8.5: Performance & Safety
+        this.memoryLock = new AtomicLock({ ttl: 5000 });
+        this.elementCache = new InteractiveElementCache();
+
+        // Phase 1 Security: Initialize security handlers
+        this.jwtHandler = new JWTHandler({
+            secret: this.config.hub?.security?.jwtSecret || process.env.STARLIGHT_JWT_SECRET,
+            expiresIn: this.config.hub?.security?.tokenExpiry || 3600
+        });
+        this.schemaValidator = new SchemaValidator();
+        this.piiRedactor = new PIIRedactor({ enabled: this.config.hub?.security?.piiRedaction !== false });
+
         if (!fs.existsSync(this.screenshotsDir)) fs.mkdirSync(this.screenshotsDir);
 
         this.cleanupScreenshots();
@@ -111,7 +154,25 @@ class CBAHub {
         const configPath = path.join(process.cwd(), 'config.json');
         try {
             if (fs.existsSync(configPath)) {
-                return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+                // Phase 8.5: Config Schema Validation (Issue 9)
+                try {
+                    const { validateConfig } = require('./validation/config_schema');
+                    const validation = validateConfig(config);
+                    if (!validation.valid) {
+                        console.error('[CBA Hub] ❌ Configuration Error(s):');
+                        validation.errors.forEach(err => console.error(`  - ${err}`));
+                        console.warn('[CBA Hub] ⚠️ Proceeding with potentially invalid configuration (Check config.json)');
+                        // Alternative: throw new Error('Invalid Configuration');
+                    } else {
+                        console.log('[CBA Hub] ✓ Configuration validated successfully');
+                    }
+                } catch (e) {
+                    // Ignore if validation module missing during dev
+                }
+
+                return config;
             }
         } catch (e) {
             console.warn('[CBA Hub] Warning: Could not load config.json:', e.message);
@@ -307,7 +368,8 @@ class CBAHub {
 
     broadcastEntropy() {
         const now = Date.now();
-        const throttle = this.config.hub?.entropyThrottle || 100;
+        // Phase 8.5: Increased throttle to 500ms (Issue 12)
+        const throttle = this.config.hub?.entropyThrottle || 500;
         if (now - this.lastEntropyBroadcast < throttle) return;
         this.lastEntropyBroadcast = now;
 
@@ -415,6 +477,24 @@ class CBAHub {
                 const textContent = (el.textContent || '').trim();
                 if (innerText) texts.push(innerText);
                 else if (textContent && textContent.length < 100) texts.push(textContent);
+
+                // Phase 14: Generic Semantic Class Extraction
+                // Check for semantic meaning in class names regardless of text content
+                // e.g. "shopping_cart_link" -> "shopping cart link"
+                if (el.classList && el.classList.length > 0) {
+                    const semanticKeywords = ['cart', 'menu', 'login', 'signin', 'sign-in', 'search', 'user', 'profile', 'account', 'home'];
+                    const classes = Array.from(el.classList);
+
+                    const semanticClass = classes.find(c => semanticKeywords.some(k => c.toLowerCase().includes(k)));
+                    if (semanticClass) {
+                        // Convert snake_case or kebab-case to space-separated text
+                        const extracted = semanticClass.replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+                        // Only add if not already present/similar
+                        if (extracted && !texts.some(t => t.toLowerCase() === extracted.toLowerCase())) {
+                            texts.push(extracted);
+                        }
+                    }
+                }
 
                 // Input value
                 if (el.value) texts.push(el.value);
@@ -552,14 +632,21 @@ class CBAHub {
 
                 const tagName = match.tagName.toLowerCase();
 
+                // SECURITY: Escape CSS special characters in attribute values
+                function escapeCssText(text) {
+                    if (!text) return '';
+                    return text.replace(/["\\]/g, '\\$&').replace(/\n/g, ' ').trim();
+                }
+
                 // For input elements, use value attribute if present
                 if (tagName === 'input' && match.value) {
                     const inputType = match.type || 'text';
-                    return { selector: `input[type="${inputType}"][value="${match.value}"]`, inShadow: false, valueMatch: true };
+                    const safeValue = escapeCssText(match.value);
+                    return { selector: `input[type="${inputType}"][value="${safeValue}"]`, inShadow: false, valueMatch: true };
                 }
 
                 // Generate a unique selector - prefer text-based for links/buttons
-                const textContent = (match.innerText || match.textContent || '').trim();
+                const textContent = escapeCssText((match.innerText || match.textContent || '').trim());
 
                 // For links and buttons with text, use text-based selector for precision
                 if ((tagName === 'a' || tagName === 'button') && textContent && textContent.length < 50) {
@@ -920,40 +1007,52 @@ class CBAHub {
      */
     async saveHistoricalMemory() {
         if (this.historicalMemory.size === 0) {
-            console.log('[CBA Hub] No learned mappings to save.');
-            return;
+            return; // Nothing new to merge
         }
 
         const memoryFile = path.join(process.cwd(), 'starlight_memory.json');
 
-        // Load existing memory and merge with current session
-        let existingMemory = {};
-        if (fs.existsSync(memoryFile)) {
-            try {
-                existingMemory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
-            } catch (e) {
-                console.warn('[CBA Hub] Could not load existing memory file:', e.message);
-            }
-        }
-
-        // Merge: current session overwrites existing (newer mappings win)
-        const allMappings = { ...existingMemory };
-        this.historicalMemory.forEach((selector, goal) => {
-            // Skip ghost metrics (they're saved separately)
-            if (!goal.startsWith('ghost:')) {
-                allMappings[goal] = selector;
-            }
-        });
-
-        // Atomic write
-        const tempFile = memoryFile + '.tmp';
+        // Phase 8.5: Atomic Locking (Issue 13)
+        // Ensure we don't write concurrently
+        let acquired = false;
         try {
+            acquired = await this.memoryLock.acquire('memory', 'hub');
+            if (!acquired) {
+                console.warn('[CBA Hub] Failed to acquire lock for memory save. Skipping.');
+                return;
+            }
+
+            // Load existing memory from disk to merge (in case other tools updated it)
+            let existingMemory = {};
+            if (fs.existsSync(memoryFile)) {
+                try {
+                    existingMemory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+                } catch (e) {
+                    console.warn('[CBA Hub] Start fresh: Could not parse starlight_memory.json');
+                }
+            }
+
+            // Merge: current session's memory overrides disk if keys conflict
+            const allMappings = { ...existingMemory };
+            this.historicalMemory.forEach((selector, goal) => {
+                // Skip ghost metrics (they're saved separately)
+                if (!goal.startsWith('ghost:')) {
+                    allMappings[goal] = selector;
+                }
+            });
+
+            // Atomic write using temp file
+            const tempFile = memoryFile + '.tmp';
             fs.writeFileSync(tempFile, JSON.stringify(allMappings, null, 2));
             fs.renameSync(tempFile, memoryFile);
-            console.log(`[CBA Hub] 🧠 Memory saved: ${Object.keys(allMappings).length} learned mappings`);
+            console.log(`[CBA Hub] 🧠 Memory saved: ${Object.keys(allMappings).length} mappings`);
+
         } catch (e) {
             console.error('[CBA Hub] Failed to save memory:', e.message);
-            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        } finally {
+            if (acquired) {
+                this.memoryLock.release('memory', 'hub');
+            }
         }
     }
 
@@ -988,12 +1087,62 @@ class CBAHub {
             this.historicalAuras.has(bucket - 1);
     }
 
+    /**
+     * Broadcast to all connected clients (browsers/debuggers)
+     */
     broadcastToClients(msg) {
         const payload = JSON.stringify(msg);
         for (const client of this.wss.clients) {
             if (client.readyState === WebSocket.OPEN) {
+                // Determine if client is a sentinel to avoid double-broadcast if managing separately
+                // But wss.clients includes everyone.
                 client.send(payload);
             }
+        }
+    }
+
+    /**
+     * Broadcast to Sentinels with PRIORITY sorting.
+     * Higher priority sentinels receive message first.
+     */
+    broadcastToSentinels(msg) {
+        const payload = JSON.stringify(msg);
+
+        // Convert map to array and sort by priority (descending)
+        const sortedSentinels = Array.from(this.sentinels.values())
+            .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+        for (const s of sortedSentinels) {
+            if (s.ws.readyState === WebSocket.OPEN) {
+                s.ws.send(payload);
+            }
+        }
+    }
+
+    /**
+     * Periodic system health check & Heartbeat
+     */
+    checkSystemHealth() {
+        const now = Date.now();
+
+        // 1. Heartbeat - Ping Sentinels
+        for (const [id, s] of this.sentinels) {
+            if (now - s.lastSeen > (this.config.hub?.heartbeatTimeout || 30000)) {
+                console.warn(`[CBA Hub] Sentinel ${s.layer} timed out (${Math.round((now - s.lastSeen) / 1000)}s silent). Terminating.`);
+                s.ws.terminate();
+                this.handleDisconnect(id);
+            } else {
+                // Send Ping
+                if (s.ws.readyState === WebSocket.OPEN) {
+                    s.ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'starlight.ping', params: { timestamp: now } }));
+                }
+            }
+        }
+
+        // 2. Lock TTL Check
+        if (this.isLocked && this.lockTimeout && now > this.lockTimeout) {
+            console.warn('[CBA Hub] Lock TTL expired. Forcing release.');
+            this.releaseLock('TTL Expired');
         }
     }
 
@@ -1048,6 +1197,149 @@ class CBAHub {
         } catch (e) { return null; }
     }
 
+    /**
+     * Phase 13: NLI - Extract page context for context-aware command generation.
+     * 
+     * Uses UNIVERSAL HTML selectors to work on ANY website.
+     * Returns buttons, inputs, links, products (best-effort), and headings.
+     * 
+     * @returns {Promise<object>} Page context object
+     */
+    async getPageContext() {
+        if (!this.page || this.page.isClosed()) {
+            return { error: 'No page available', buttons: [], inputs: [], links: [], products: [], headings: [] };
+        }
+
+        try {
+            const context = await this.page.evaluate(() => {
+                const MAX_ITEMS = 20; // Limit items to avoid overwhelming LLM
+                const result = {
+                    url: window.location.href,
+                    title: document.title,
+                    buttons: [],
+                    inputs: [],
+                    links: [],
+                    products: [],
+                    headings: []
+                };
+
+                // Helper: Find label for an input element
+                function findLabelFor(input) {
+                    // Try aria-label first
+                    if (input.getAttribute('aria-label')) return input.getAttribute('aria-label');
+
+                    // Try explicit label
+                    if (input.id) {
+                        const label = document.querySelector(`label[for="${input.id}"]`);
+                        if (label) return label.textContent.trim();
+                    }
+
+                    // Try parent label
+                    const parentLabel = input.closest('label');
+                    if (parentLabel) {
+                        const labelText = parentLabel.textContent.replace(input.value || '', '').trim();
+                        if (labelText) return labelText;
+                    }
+
+                    // Try placeholder
+                    if (input.placeholder) return input.placeholder;
+
+                    // Try name or id as last resort
+                    return input.name || input.id || null;
+                }
+
+                // Helper: Generate a readable selector (not for execution, just for LLM context)
+                function getReadableSelector(el) {
+                    if (el.id) return `#${el.id}`;
+                    if (el.getAttribute('data-testid')) return `[data-testid="${el.getAttribute('data-testid')}"]`;
+                    if (el.name) return `[name="${el.name}"]`;
+                    if (el.className && typeof el.className === 'string') {
+                        const firstClass = el.className.split(' ')[0];
+                        if (firstClass) return `.${firstClass}`;
+                    }
+                    return el.tagName.toLowerCase();
+                }
+
+                // 1. BUTTONS - Universal detection
+                const buttonSelectors = 'button, [role="button"], input[type="submit"], input[type="button"], .btn, [class*="button"], [class*="Button"]';
+                document.querySelectorAll(buttonSelectors).forEach(el => {
+                    if (result.buttons.length >= MAX_ITEMS) return;
+                    const text = (el.textContent?.trim() || el.value || el.getAttribute('aria-label') || '').substring(0, 50);
+                    if (text && text.length > 0 && !text.includes('\n')) {
+                        result.buttons.push({ text, selector: getReadableSelector(el) });
+                    }
+                });
+
+                // 2. INPUTS - Universal detection
+                document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea, select').forEach(el => {
+                    if (result.inputs.length >= MAX_ITEMS) return;
+                    const label = findLabelFor(el);
+                    if (label) {
+                        result.inputs.push({
+                            label: label.substring(0, 50),
+                            type: el.type || el.tagName.toLowerCase(),
+                            selector: getReadableSelector(el)
+                        });
+                    }
+                });
+
+                // 3. LINKS - Universal detection (visible, meaningful text)
+                document.querySelectorAll('a[href]').forEach(el => {
+                    if (result.links.length >= MAX_ITEMS) return;
+                    const text = el.textContent?.trim();
+                    if (text && text.length > 1 && text.length < 80 && !text.includes('\n')) {
+                        result.links.push({
+                            text: text.substring(0, 50),
+                            href: el.href,
+                            selector: getReadableSelector(el)
+                        });
+                    }
+                });
+
+                // 4. PRODUCTS - Best-effort heuristic detection for e-commerce sites
+                // Look for common e-commerce patterns
+                const productSelectors = '[class*="product"], [class*="item"], [data-product], [data-item], .card, .product-card, article';
+                document.querySelectorAll(productSelectors).forEach(el => {
+                    if (result.products.length >= MAX_ITEMS) return;
+
+                    // Look for price
+                    const priceEl = el.querySelector('[class*="price"], .price, [data-price], span:contains("$"), span:contains("€"), span:contains("£")');
+                    const priceText = priceEl ? priceEl.textContent.trim() : null;
+
+                    // Look for product name
+                    const nameEl = el.querySelector('[class*="name"], [class*="title"], h1, h2, h3, h4, .product-name, .item-name');
+                    const nameText = nameEl ? nameEl.textContent.trim() : null;
+
+                    // Only add if we found at least a name
+                    if (nameText && nameText.length < 100) {
+                        result.products.push({
+                            name: nameText.substring(0, 60),
+                            price: priceText ? priceText.substring(0, 20) : null
+                        });
+                    }
+                });
+
+                // 5. HEADINGS - For understanding page structure
+                document.querySelectorAll('h1, h2').forEach(el => {
+                    if (result.headings.length >= 5) return;
+                    const text = el.textContent?.trim();
+                    if (text && text.length < 100) {
+                        result.headings.push(text.substring(0, 60));
+                    }
+                });
+
+                return result;
+            });
+
+            console.log(`[CBA Hub] Page context extracted: ${context.buttons.length} buttons, ${context.inputs.length} inputs, ${context.links.length} links, ${context.products.length} products`);
+            return context;
+
+        } catch (e) {
+            console.error('[CBA Hub] Error extracting page context:', e.message);
+            return { error: e.message, buttons: [], inputs: [], links: [], products: [], headings: [] };
+        }
+    }
+
     validateProtocol(msg) {
         // Starlight v2.0: JSON-RPC 2.0 Validation
         return msg.jsonrpc === '2.0' && msg.method && msg.method.startsWith('starlight.') && msg.params;
@@ -1058,11 +1350,31 @@ class CBAHub {
         if (s) {
             console.log(`[CBA Hub] Sentinel Disconnected: ${s.layer}`);
             this.sentinels.delete(id);
+
+            // Notify others
+            this.broadcastToSentinels({
+                jsonrpc: '2.0',
+                method: 'starlight.sentinel_left',
+                params: { layer: s.layer, id }
+            });
+
             if (this.lockOwner === id) this.releaseLock('Sentinel disconnected');
         }
     }
 
     async handleMessage(id, ws, msg) {
+        // Phase 1 Security: Validate message against schema
+        const validation = this.schemaValidator.validate(msg);
+        if (!validation.valid) {
+            console.warn(`[CBA Hub] Rejected invalid message: ${validation.errors.join(', ')}`);
+            ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                error: { code: -32600, message: 'Invalid Request', data: validation.errors },
+                id: msg.id || null
+            }));
+            return;
+        }
+
         const sentinel = this.sentinels.get(id);
         const params = msg.params;
 
@@ -1091,6 +1403,12 @@ class CBAHub {
                     sentinel.currentAura = params.data?.currentAura || [];
                 }
                 break;
+            case 'starlight.pong':
+                if (sentinel) {
+                    sentinel.lastSeen = Date.now();
+                    // console.log(`[CBA Hub] Pong from ${sentinel.layer}`);
+                }
+                break;
             case 'starlight.context_update':
                 // Phase 4: Context Injection from Sentinels
                 // Phase 12: Also handles A11y Sentinel accessibility reports
@@ -1104,7 +1422,13 @@ class CBAHub {
                         this.a11yReport = params.context.accessibility;
                     }
 
-                    this.broadcastContextUpdate();
+                    // Use prioritized broadcast
+                    this.broadcastToSentinels({
+                        jsonrpc: '2.0',
+                        method: 'starlight.sovereign_update',
+                        params: { context: this.sovereignState },
+                        id: nanoid()
+                    });
                 }
                 break;
             case 'starlight.clear':
@@ -1310,6 +1634,40 @@ class CBAHub {
                 break;
             case 'starlight.warp_restore':
                 await this.handleWarpRestore(id, params);
+                break;
+
+            // Phase 13: NLI Page Context Extraction
+            case 'starlight.getPageContext':
+                const pageContext = await this.getPageContext();
+                ws.send(JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: msg.id,
+                    result: pageContext
+                }));
+                break;
+
+            // Phase 8.5: Sentinel Error Protocol (Issue 16)
+            case 'starlight.error':
+                console.error(`[CBA Hub] 🚨 Error from Sentinel ${sentinel?.layer || 'Unknown'}:`, params.error);
+                if (params.stack) {
+                    console.error(`[CBA Hub] Sentinel Stack Trace:\n${params.stack}`);
+                }
+
+                // Add to report
+                this.reportData.push({
+                    type: 'SENTINEL_ERROR',
+                    layer: sentinel?.layer || 'Unknown',
+                    error: params.error,
+                    stack: params.stack,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+
+                // Notify UI via broadcast
+                this.broadcastToClients({
+                    type: 'SENTINEL_ERROR',
+                    layer: sentinel?.layer || 'Unknown',
+                    error: params.error
+                });
                 break;
         }
     }
@@ -1877,7 +2235,8 @@ class CBAHub {
         }
 
         // Standardize broadcast
-        this.broadcast({
+        // Standardize broadcast
+        this.broadcastToSentinels({
             jsonrpc: '2.0',
             method: 'starlight.pre_check',
             params: {
@@ -1977,12 +2336,27 @@ class CBAHub {
     async executeCommand(msg, retry = true) {
         const startTime = Date.now();
         try {
-            // Lazy launch browser if needed
-            if (!this.page) {
-                console.log('[CBA Hub] Launching browser for mission execution...');
-                this.browser = await chromium.launch({ headless: this.headless });
+            // Ensure browser is launched
+            if (!this.browser) {
+                console.log('[CBA Hub] Launching browser for execution...');
+
+                // Phase 15: Use BrowserAdapter for Polymorphism
+                if (!this.browserAdapter) {
+                    this.browserAdapter = await BrowserAdapter.create(this.config.hub?.browser || {});
+                }
+                this.browser = await this.browserAdapter.launch({ headless: this.headless });
+
                 const context = await this.browser.newContext();
                 this.page = await context.newPage();
+            }
+
+            // Phase 15: Normalize Selectors (e.g. remove >>> for Firefox)
+            if (this.browserAdapter && msg.selector && typeof msg.selector === 'string') {
+                const originalSelector = msg.selector;
+                msg.selector = this.browserAdapter.normalizeSelector(msg.selector);
+                if (msg.selector !== originalSelector) {
+                    console.log(`[CBA Hub] Normalized selector for ${this.browserAdapter.engine}: "${originalSelector}" -> "${msg.selector}"`);
+                }
             }
 
             if (this.config.hub?.ghostMode && msg.cmd !== 'goto' && msg.cmd !== 'checkpoint') {
@@ -2108,6 +2482,124 @@ class CBAHub {
                 }
                 hideObstacles(document);
             });
+        }
+    }
+
+    /**
+     * Phase 13: Get page context for NLI parsing.
+     * Extracts semantic elements (buttons, inputs, products) to guide the LLM.
+     */
+    async getPageContext() {
+        if (!this.page) return { error: 'No active page' };
+
+        try {
+            const context = await this.page.evaluate(() => {
+                const data = {
+                    url: window.location.href,
+                    title: document.title,
+                    headings: [],
+                    buttons: [],
+                    inputs: [],
+                    links: [],
+                    products: []
+                };
+
+                // Helper to get visible text
+                const isVisible = (el) => {
+                    const style = window.getComputedStyle(el);
+                    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                };
+
+                // Headings
+                document.querySelectorAll('h1, h2, h3').forEach(h => {
+                    if (isVisible(h) && h.innerText.trim()) data.headings.push(h.innerText.trim());
+                });
+
+                // Buttons (and inputs that act as buttons)
+                document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"]').forEach(b => {
+                    if (isVisible(b)) {
+                        const text = b.innerText || b.value || b.getAttribute('aria-label') || '';
+                        if (text.trim()) data.buttons.push({ text: text.trim().slice(0, 50) });
+                    }
+                });
+
+                // Inputs
+                document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach(i => {
+                    if (isVisible(i) && !['button', 'submit', 'image'].includes(i.type)) {
+                        let label = '';
+                        if (i.labels && i.labels.length > 0) label = i.labels[0].innerText;
+                        else if (i.placeholder) label = i.placeholder;
+                        else if (i.getAttribute('aria-label')) label = i.getAttribute('aria-label');
+                        else if (i.id) label = i.id;
+
+                        data.inputs.push({
+                            label: (label || 'unknown').trim().slice(0, 50),
+                            type: i.type || 'text',
+                            value: i.value
+                        });
+                    }
+                });
+
+                // Links (Navigation) - Enhanced with Generic Semantic Extraction
+                document.querySelectorAll('a').forEach(a => {
+                    if (isVisible(a)) {
+                        let text = a.innerText.trim();
+
+                        // Fallback to accessibility attributes
+                        if (!text) text = a.getAttribute('aria-label') || a.getAttribute('data-test') || a.title;
+
+                        // Phase 14: Generic Semantic Class Extraction
+                        // If text is empty OR short/numeric (like a badge "1"), scan classes
+                        if ((!text || text.length < 3 || !isNaN(text)) && a.classList && a.classList.length > 0) {
+                            const semanticKeywords = ['cart', 'menu', 'login', 'signin', 'sign-in', 'search', 'user', 'profile', 'account', 'home'];
+                            const classes = Array.from(a.classList);
+                            const semanticClass = classes.find(c => semanticKeywords.some(k => c.toLowerCase().includes(k)));
+
+                            if (semanticClass) {
+                                // Convert snake_case or kebab-case
+                                const extracted = semanticClass.replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+                                if (extracted) {
+                                    // Append or replace
+                                    text = text ? `${text} (${extracted})` : extracted;
+                                }
+                            }
+                        }
+
+                        if (text) {
+                            data.links.push({ text: text.trim().slice(0, 50), href: a.href });
+                        }
+                    }
+                });
+
+                // Product Detection Heuristic (Price patterns)
+                // Looks for elements containing "$" or "€" or "£" + digits
+                const priceRegex = /[$€£]\s*\d+(?:\.\d{2})?/;
+                const priceElements = Array.from(document.querySelectorAll('*')).filter(el =>
+                    el.children.length === 0 && el.innerText && priceRegex.test(el.innerText) && isVisible(el)
+                );
+
+                priceElements.forEach(el => {
+                    // Try to find a container for this product
+                    const container = el.closest('.inventory_item, .product, .item, .card, div');
+                    if (container) {
+                        const nameEl = container.querySelector('.inventory_item_name, .product-name, h3, h4, .title');
+                        const name = nameEl ? nameEl.innerText.trim() : 'Unknown Product';
+                        const price = el.innerText.trim();
+                        // Deduplicate
+                        if (!data.products.some(p => p.name === name)) {
+                            data.products.push({ name, price });
+                        }
+                    }
+                });
+
+                return data;
+            });
+
+            console.log(`[CBA Hub] Page Context extracted: ${context.buttons.length} buttons, ${context.inputs.length} inputs, ${context.products.length} products`);
+            return context;
+        } catch (e) {
+            console.error(`[CBA Hub] Failed to extract page context: ${e.message}`);
+            return { error: e.message };
         }
     }
 

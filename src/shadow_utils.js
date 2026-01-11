@@ -102,6 +102,7 @@ function getInjectableHelpers() {
 
 /**
  * Build page.evaluate code for semantic resolution
+ * SECURITY: No eval() - functions are defined inline.
  * @param {string} goal - The semantic goal text
  * @param {boolean} shadowEnabled - Whether shadow DOM is enabled
  * @param {number} maxDepth - Max shadow traversal depth
@@ -109,9 +110,54 @@ function getInjectableHelpers() {
  */
 function buildSemanticResolver(goal, shadowEnabled, maxDepth) {
     return ({ goalText, shadowEnabled, maxDepth }) => {
-        // Helpers are injected as strings and evaluated
-        eval(collectElementsCode);
-        eval(generateShadowSelectorCode);
+        // SECURITY FIX: Inline function definitions instead of eval()
+        function collectElements(root, selector, shadowEnabled, maxDepth, depth = 0) {
+            if (depth > maxDepth) return [];
+            let elements = [];
+            try {
+                elements = Array.from(root.querySelectorAll(selector));
+            } catch (e) { /* invalid selector */ }
+
+            if (shadowEnabled) {
+                const allElements = root.querySelectorAll('*');
+                for (const el of allElements) {
+                    if (el.shadowRoot) {
+                        elements = elements.concat(collectElements(el.shadowRoot, selector, shadowEnabled, maxDepth, depth + 1));
+                    }
+                }
+            }
+            return elements;
+        }
+
+        function generateShadowSelector(element) {
+            const path = [];
+            let current = element;
+
+            while (current && current !== document.body) {
+                if (current.id) {
+                    path.unshift('#' + current.id);
+                    break;
+                } else if (current.className && typeof current.className === 'string') {
+                    path.unshift('.' + current.className.split(' ').filter(c => c).join('.'));
+                } else {
+                    path.unshift(current.tagName?.toLowerCase() || '*');
+                }
+
+                if (current.getRootNode() instanceof ShadowRoot) {
+                    const shadowHost = current.getRootNode().host;
+                    path.unshift('>>>');
+                    current = shadowHost;
+                } else {
+                    current = current.parentElement;
+                }
+            }
+            return path.join(' ');
+        }
+
+        // SECURITY: Escape CSS special characters in text content
+        function escapeCssText(text) {
+            return text.replace(/["\\]/g, '\\$&').replace(/\n/g, ' ').trim();
+        }
 
         const normalizedGoal = goalText.toLowerCase();
         const buttons = collectElements(document, 'button, a, input[type="button"]', shadowEnabled, maxDepth);
@@ -132,8 +178,8 @@ function buildSemanticResolver(goal, shadowEnabled, maxDepth) {
             if (isInShadow && shadowEnabled) {
                 return { selector: generateShadowSelector(match), inShadow: true };
             }
-            // Text-based selector for precision
-            const textContent = (match.innerText || match.textContent || '').trim();
+            // Text-based selector for precision - SECURITY: escaped text
+            const textContent = escapeCssText((match.innerText || match.textContent || '').trim());
             const tagName = match.tagName.toLowerCase();
             if ((tagName === 'a' || tagName === 'button') && textContent && textContent.length < 50) {
                 return { selector: `${tagName}:has-text("${textContent}")`, inShadow: false, textMatch: true };

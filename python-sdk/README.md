@@ -13,6 +13,11 @@ pip install starlight-protocol
 
 ## Quick Start
 
+### 🚀 New in v1.3.0: Protocol Resilience & Extended Actions
+- **Protocol Resilience**: Support for Phase 14 Hub features (Generic Perception, Self-Healing).
+- **Extended Commands**: Native support for scroll, hover, check/uncheck, select, press, type.
+- **Enterprise Security**: JWT-ready Sentinel base class.
+
 Create a custom Sentinel in just a few lines:
 
 ```python

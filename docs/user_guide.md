@@ -72,7 +72,7 @@ node src/intent.js
 
 ## 4. Configuration
 
-CBA v2.7 introduces centralized configuration via `config.json`:
+CBA v3.0 introduces centralized configuration with enterprise security via `config.json`:
 
 ```json
 {
@@ -85,6 +85,22 @@ CBA v2.7 introduces centralized configuration via `config.json`:
         "missionTimeout": 180000,
         "screenshotMaxAge": 86400000,
         "traceMaxEvents": 500
+    },
+    "security": {
+        "jwtSecret": "your-256-bit-secret-key",
+        "tokenExpiry": 3600,
+        "piiRedaction": true,
+        "inputValidation": true,
+        "ssl": {
+            "enabled": false,
+            "keyPath": null,
+            "certPath": null
+        },
+        "rateLimiting": {
+            "enabled": true,
+            "maxRequests": 100,
+            "windowMs": 60000
+        }
     },
     "aura": {
         "predictiveWaitMs": 1500
@@ -108,6 +124,48 @@ CBA v2.7 introduces centralized configuration via `config.json`:
 | `screenshotMaxAge` | 86400000 | Auto-delete screenshots older than 24h |
 | `traceMaxEvents` | 500 | Max events in mission trace |
 | `settlementWindow` | 1.0 | Seconds of silence required for stability |
+
+### Security Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `jwtSecret` | null | JWT signing secret (256-bit minimum) |
+| `tokenExpiry` | 3600 | JWT token expiration (seconds) |
+| `piiRedaction` | true | Enable PII detection and redaction |
+| `inputValidation` | true | Enable message schema validation |
+| `ssl.enabled` | false | Enable SSL/TLS encryption |
+| `rateLimiting.enabled` | true | Enable rate limiting protection |
+
+#### Quick Security Setup
+
+1. **Generate JWT Secret:**
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+2. **Update config.json:**
+```json
+{
+    "security": {
+        "jwtSecret": "generated-256-bit-secret",
+        "tokenExpiry": 3600,
+        "piiRedaction": true
+    }
+}
+```
+
+3. **Enable SSL (Production):**
+```json
+{
+    "security": {
+        "ssl": {
+            "enabled": true,
+            "keyPath": "./certs/server.key",
+            "certPath": "./certs/server.crt"
+        }
+    }
+}
+```
 
 ---
 
@@ -433,8 +491,47 @@ When detected, the Sentinel signals HIJACK for human intervention.
 
 ---
 
-## 13. Troubleshooting
+## 13. Security Setup & Troubleshooting
 
+### 🔒 Security Configuration
+
+#### Authentication Setup
+```bash
+# 1. Generate secure JWT secret
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# 2. Update config.json with security settings
+```
+
+#### Sentinel Authentication
+Sentinels automatically include JWT tokens in registration:
+```python
+# Sentinel SDK handles authentication automatically
+sentinel = MySentinel()
+# Token generated and included in registration
+```
+
+#### PII Protection
+All sensitive data is automatically redacted:
+- Emails → `[EMAIL_REDACTED]`
+- Passwords → `[REDACTED]`
+- Credit cards → `[CREDITCARD_REDACTED]`
+- JWT tokens → `[JWT_REDACTED]`
+
+---
+
+## 14. Troubleshooting
+
+### Security Issues
+| Issue | Solution |
+|-------|----------|
+| Authentication Failed | Check JWT secret matches in Hub and Sentinel config |
+| Token Expired | Increase `tokenExpiry` or implement token refresh |
+| PII Leaking in Logs | Verify `piiRedaction: true` in config |
+| SSL Certificate Error | Ensure valid cert/key paths in SSL config |
+| Rate Limited | Adjust `rateLimiting.maxRequests` or whitelist IPs |
+
+### General Issues
 | Issue | Solution |
 |-------|----------|
 | AI Analysis Timed Out | Ensure Ollama is running with `moondream` |
@@ -444,6 +541,23 @@ When detected, the Sentinel signals HIJACK for human intervention.
 | Memory Not Saved | Ensure graceful shutdown (Ctrl+C, not kill) |
 | Start All not working | Ensure sentinel filenames end in `.py` |
 | Custom Sentinel not appearing | Check it's in `sentinels/` directory |
+
+### Security Debug Mode
+Enable security logging:
+```json
+{
+    "logging": {
+        "level": "debug",
+        "security": true
+    }
+}
+```
+
+This will show:
+- Authentication attempts and failures
+- Input validation errors
+- PII redaction events
+- Rate limiting triggers
 
 ---
 
