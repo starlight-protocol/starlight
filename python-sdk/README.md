@@ -1,6 +1,6 @@
 # Starlight Protocol Python SDK
 
-[![PyPI version](https://img.shields.io/pypi/v/starlight-protocol.svg)](https://pypi.org/project/starlight-protocol/)
+[![PyPI version](https://img.shields.io/pypi/v/starlight-protocol.svg?color=green)](https://pypi.org/project/starlight-protocol/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 Python SDK for building **Sentinels** that connect to the Starlight Protocol Hub.
