@@ -1,47 +1,44 @@
 /**
  * Starlight NLI End-to-End Test
  * 
- * Phase 13: Natural Language Intent
+ * Phase 13: Natural Language Intent with Context-Awareness
  * 
  * Demonstrates:
- * 1. Fallback parser for simple structured commands (fast)
- * 2. LLM parser for complex/ambiguous commands (when available)
- * 3. Automatic selection based on command complexity
+ * 1. Fallback parser for simple structured commands (fast, instant)
+ * 2. Context-aware LLM parsing for complex/ambiguous commands
+ * 3. Automatic parser selection based on command complexity
  * 4. Full integration with Hub and Sentinels
  */
 
 const IntentRunner = require('../src/intent_runner');
 
-// Test cases demonstrating when each parser is used
+// Test cases - NO expectedParser field, tests must actually pass
 const TEST_CASES = [
     // Simple commands - Fallback parser handles these instantly
     {
-        description: 'Simple: Navigate to URL',
-        instruction: 'Go to https://www.saucedemo.com',
-        expectedParser: 'fallback'
+        description: 'Navigate to SauceDemo',
+        instruction: 'Go to https://www.saucedemo.com'
     },
     {
-        description: 'Simple: Fill and click',
-        instruction: 'Fill Username with standard_user and fill Password with secret_sauce and click Login',
-        expectedParser: 'fallback'
+        description: 'Login with credentials',
+        instruction: 'Fill Username with standard_user and fill Password with secret_sauce and click Login'
     },
     {
-        description: 'Simple: Click button',
-        instruction: 'Click Add to cart',
-        expectedParser: 'fallback'
+        description: 'Add item to cart',
+        instruction: 'Click Add to cart'
     },
-    // Complex command - LLM handles this (fallback is uncertain)
+    // Context-aware command - LLM with page context
+    // This test MUST succeed now with context-aware NLI
     {
-        description: 'Complex: Ambiguous intent (LLM)',
+        description: 'Context-aware: Buy something (LLM with page context)',
         instruction: 'I want to buy something',
-        expectedParser: 'llm',
-        isLLMTest: true  // Will be skipped if test fails (LLM output varies)
+        isContextTest: true
     }
 ];
 
 async function runNLITest() {
     console.log('\n' + '═'.repeat(60));
-    console.log('  STARLIGHT NLI - END-TO-END TEST');
+    console.log('  STARLIGHT NLI - CONTEXT-AWARE E2E TEST');
     console.log('  Phase 13: Natural Language Intent');
     console.log('═'.repeat(60) + '\n');
 
@@ -57,7 +54,7 @@ async function runNLITest() {
         console.log('[Test] Checking NLI status...');
         const status = await runner.getNLIStatus();
         console.log('[Test] NLI Configuration:');
-        console.log(`  - Ollama Available: ${status.ollamaAvailable ? '✅ Yes' : '❌ No (using fallback)'}`);
+        console.log(`  - Ollama Available: ${status.ollamaAvailable ? '✅ Yes' : '❌ No'}`);
         console.log(`  - Model: ${status.model}`);
         console.log(`  - Fallback: ${status.fallbackEnabled ? 'Enabled' : 'Disabled'} (${status.fallbackMode})`);
         console.log();
@@ -71,6 +68,9 @@ async function runNLITest() {
             console.log(`\n${'─'.repeat(60)}`);
             console.log(`[Test ${i + 1}/${TEST_CASES.length}] ${test.description}`);
             console.log(`[Instruction] "${test.instruction}"`);
+            if (test.isContextTest) {
+                console.log(`[Mode] Context-aware LLM (using page elements)`);
+            }
             console.log(`${'─'.repeat(60)}`);
 
             try {
@@ -87,15 +87,11 @@ async function runNLITest() {
 
                 passed++;
             } catch (error) {
-                if (test.isLLMTest) {
-                    // LLM tests are informational - execution may fail because LLM output varies
-                    console.log(`\n[Result] ⚠️ LLM test failed (expected): ${error.message}`);
-                    console.log(`[Info] LLM was triggered! This confirms Ollama is working.`);
-                    passed++; // Count as pass - we're testing LLM is used, not that it succeeds
-                } else {
-                    console.log(`\n[Result] ❌ Failed: ${error.message}`);
-                    failed++;
+                console.log(`\n[Result] ❌ Failed: ${error.message}`);
+                if (test.isContextTest && !status.ollamaAvailable) {
+                    console.log(`[Note] Context test failed - Ollama not available`);
                 }
+                failed++;
             }
 
             // Small delay between tests for Sentinel stability
@@ -108,7 +104,7 @@ async function runNLITest() {
         console.log('═'.repeat(60));
         console.log(`  Passed: ${passed}/${TEST_CASES.length}`);
         console.log(`  Failed: ${failed}/${TEST_CASES.length}`);
-        console.log(`  Parser Mode: ${status.ollamaAvailable ? 'LLM (Ollama)' : 'Fallback (Regex)'}`);
+        console.log(`  Context-Aware: ${status.ollamaAvailable ? '✅ Enabled' : '❌ Disabled'}`);
         console.log('═'.repeat(60) + '\n');
 
         // Finish mission

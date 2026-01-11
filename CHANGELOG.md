@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.4] - 2026-01-11
+
+### 🚑 Critical Hotfixes
+
+#### Fixed
+- **Navigation Delay (Handshake Timeout)**: Fixed a critical bug where `broadcastPreCheck` called a missing method, causing a 30s timeout on every mission start. Navigation is now instantaneous.
+- **Vision Sentinel Blocking**: Reduced `vision.timeout` from 25s to 3s. Prevents AI latency or outages from hanging the entire Hub.
+- **WebSocket Stability**: Added comprehensive Heartbeat (Ping/Pong) system to detect and reap dead Sentinels.
+- **Sentinel Priority**: Restored proper priority-based broadcasting (`broadcastToSentinels`) to ensure high-priority security sentinels run first.
+- **Schema Validation**: Fixed `schema_validator.js` to properly handle optional fields and allow camelCase methods.
+
+#### Security
+- **Eval Removal**: Replaced dangerous `eval()` calls in `shadow_utils.js` with safer inline functions.
+- **Selector Hardening**: Added auto-escaping for CSS selectors (`escapeCssString`) to prevent injection attacks.
+
+---
+
+## [UNRELEASED] Phase 14.3 - Enterprise Security Hardening
+
+### 🔒 Comprehensive Security Infrastructure
+
+#### Added
+- **JWT Authentication System** (`src/auth/jwt_handler.js`)
+  - Industry-standard JWT token generation and verification
+  - HMAC-SHA256 signing with timing-safe comparison
+  - Configurable token expiration (default: 3600s)
+  - Token refresh capability for long-running sessions
+  - Secure random secret generation
+
+- **Input Validation Pipeline** (`src/validation/schema_validator.js`)
+  - Comprehensive JSON schema validation for all message types
+  - Method-specific validation with strict patterns
+  - Field type checking, length limits, and pattern matching
+  - Prevention of malformed or malicious payloads
+
+- **PII Protection System** (`src/utils/pii_redactor.js`)
+  - Automatic detection and redaction of sensitive data
+  - Email addresses, phone numbers, credit cards, SSNs
+  - JWT tokens and API keys
+  - Recursive object sanitization
+  - Compliance modes: alert, block, or redact
+
+- **Encryption Layer** (`src/warp_sanitizer.js`)
+  - AES-256-GCM encryption for sensitive data
+  - Secure key generation and management
+  - Optional encryption for warp files
+  - Key rotation support
+
+#### Security Documentation
+- **SECURITY_GUIDE.md**: Comprehensive security architecture documentation
+  - JWT authentication flow and configuration
+  - Input validation pipeline details
+  - PII protection and compliance features
+  - Threat model and mitigation strategies
+  - Incident response procedures
+
+- **SECURITY_CONFIGURATION.md**: Complete configuration reference
+  - Authentication settings (JWT, token expiration)
+  - Input validation parameters
+  - PII redaction configuration
+  - SSL/TLS setup
+  - Rate limiting settings
+  - Environment-specific configurations
+
+- **COMPLIANCE_GUIDE.md**: Regulatory compliance documentation
+  - GDPR compliance (DSARs, right to erasure)
+  - HIPAA compliance (PHI protection, audit logging)
+  - PCI-DSS considerations (credit card redaction)
+  - SOC 2 controls (TSC criteria support)
+
+- **SECURITY_TESTING.md**: Testing procedures and best practices
+  - Authentication testing (JWT, brute force)
+  - Input validation testing (injection prevention)
+  - PII protection testing (detection, redaction)
+  - Network security testing (SSL/TLS, rate limiting)
+  - Penetration testing procedures
+  - Automated security test suite
+
+#### Protocol Specification Updates
+- **Security Considerations Section** (`spec/STARLIGHT_PROTOCOL_SPEC_v1.0.0.md`)
+  - JWT authentication requirements (Section 8.2)
+  - Input validation requirements (Section 8.3)
+  - Data protection requirements (Section 8.4)
+  - Authorization and RBAC (Section 8.5)
+  - Compliance considerations (Section 8.6)
+  - Security configuration options (Section 8.7)
+  - Security monitoring (Section 8.8)
+  - Threat model (Section 8.9)
+
+#### Hub Security Enhancements
+- Token validation on registration
+- Message schema validation before processing
+- CSS selector injection prevention
+- XSS protection with HTML escaping
+- Rate limiting per client
+- Resource limits (memory, screenshots, traces)
+
+#### Documentation Updates
+- **README.md**: Security features section, updated version to 3.0.3
+- **Technical Guide**: Security architecture chapter, configuration tables
+- **User Guide**: Security setup and troubleshooting section
+- **CHANGELOG.md**: Security improvements documented
+
+---
+
 ## [UNRELEASED] Phase 14.2 - Universal Semantic Resolver
 
 ### 🔍 Semantic Resolution Overhaul

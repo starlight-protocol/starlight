@@ -1,6 +1,6 @@
 # ✨ Starlight Protocol
 
-**Resilient browser automation through autonomous Sentinel coordination.**
+**Resilient, secure browser automation through autonomous Sentinel coordination.**
 
 ---
 
@@ -12,12 +12,14 @@ Starlight is an open protocol for building **self-healing browser automation** s
 - 🔴 Flaky tests fail randomly due to popups, spinners, network delays
 - 🔴 Hardcoded waits slow down execution and still fail
 - 🔴 Selector changes break entire test suites
+- 🔴 Security vulnerabilities in automation frameworks
 
 ### The Solution
 - ✅ **Autonomous Sentinels** handle popups, cookies, modals automatically
 - ✅ **Entropy-based stability** waits only as long as needed
 - ✅ **Self-healing** and **Semantic Resolution** find elements by goal, not just selectors
 - ✅ **Sentinel Store** and **Visual Editor** for no-code agent creation
+- ✅ **Enterprise Security** with JWT authentication, input validation, and PII protection
 
 ---
 
@@ -30,6 +32,11 @@ Starlight is an open protocol for building **self-healing browser automation** s
 | **Visual Editor** | Create and export custom Sentinels with a no-code visual builder. |
 | **Mobile Emulation** | Built-in support for responsive testing and mobile device emulation. |
 | **Time-Travel Triage** | Debug failures with full state snapshots and rewind capabilities. |
+| **JWT Authentication** | Secure token-based authentication with timing-safe verification. |
+| **Input Validation** | Comprehensive JSON schema validation for all protocol messages. |
+| **PII Protection** | Automatic detection and redaction of sensitive data (emails, passwords, credit cards). |
+| **GDPR/HIPAA Compliance** | Built-in support for data subject rights and healthcare data protection. |
+| **SSL/TLS Encryption** | Optional encryption for secure WebSocket communication. |
 
 ---
 
@@ -65,6 +72,10 @@ sentinel.run()
 ## Resources
 
 - 📖 [Protocol Specification v1.0.0](https://github.com/starlight-protocol/starlight/blob/main/spec/STARLIGHT_PROTOCOL_SPEC_v1.0.0.md)
+- 🔒 [Security Guide](https://github.com/starlight-protocol/starlight/blob/main/docs/SECURITY_GUIDE.md) - Comprehensive security documentation
+- ⚙️ [Security Configuration](https://github.com/starlight-protocol/starlight/blob/main/docs/SECURITY_CONFIGURATION.md) - Security settings reference
+- 📊 [Compliance Guide](https://github.com/starlight-protocol/starlight/blob/main/docs/COMPLIANCE_GUIDE.md) - GDPR/HIPAA compliance
+- 🧪 [Security Testing](https://github.com/starlight-protocol/starlight/blob/main/docs/SECURITY_TESTING.md) - Testing procedures
 - 📦 [Python SDK on PyPI](https://pypi.org/project/starlight-protocol/)
 - 🏆 [TCK Validator](https://github.com/starlight-protocol/starlight/tree/main/validator)
 - 📋 [Governance](https://github.com/starlight-protocol/starlight/blob/main/GOVERNANCE.md)
@@ -78,19 +89,23 @@ sentinel.run()
 │                        INTENT LAYER                             │
 │                   (Your Test Script)                            │
 └─────────────────────────────────────────────────────────────────┘
-                              │ starlight.intent
-                              ▼
+                               │ starlight.intent
+                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                          HUB                                    │
 │              (Orchestrator + Browser Control)                   │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
+│  │ JWT Handler │  │Schema Validator│  │   PII Redactor      │  │
+│  │  (Auth)     │  │  (Security)   │  │   (Privacy)          │  │
+│  └─────────────┘  └──────────────┘  └───────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
-        ▲                     ▲                     ▲
-        │                     │                     │
-┌───────────────┐     ┌─────────────┐     ┌─────────────┐
-│    Pulse      │     │   Janitor   │     │   Vision    │
-│  (Stability)  │     │ (Obstacles) │     │    (AI)     │
-│  Priority: 1  │     │ Priority: 5 │     │ Priority: 7 │
-└───────────────┘     └─────────────┘     └─────────────┘
+         ▲                     ▲                     ▲
+         │                     │                     │
+ ┌───────────────┐     ┌─────────────┐     ┌─────────────┐
+ │    Pulse      │     │   Janitor   │     │   Vision    │
+ │  (Stability)  │     │ (Obstacles) │     │    (AI)     │
+ │  Priority: 1  │     │ Priority: 5 │     │ Priority: 7 │
+ └───────────────┘     └─────────────┘     └─────────────┘
 ```
 
 ---

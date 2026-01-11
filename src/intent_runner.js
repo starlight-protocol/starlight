@@ -311,6 +311,8 @@ class IntentRunner {
      * Execute a natural language instruction.
      * Parses the text into structured commands and executes each.
      * 
+     * Phase 13: Now requests page context from Hub for context-aware parsing.
+     * 
      * @param {string} instruction - Plain English instruction
      * @returns {Promise<object[]>} Results from all executed steps
      * 
@@ -328,7 +330,16 @@ class IntentRunner {
 
         console.log(`[IntentRunner] 🗣️ NLI: "${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`);
 
-        const steps = await this._nliParser.parse(instruction);
+        // Request page context from Hub for context-aware parsing
+        let pageContext = null;
+        try {
+            pageContext = await this.requestPageContext();
+        } catch (e) {
+            console.warn(`[IntentRunner] Could not get page context: ${e.message}`);
+        }
+
+        // Parse with page context (parser will use it if fallback is uncertain)
+        const steps = await this._nliParser.parse(instruction, pageContext);
         const results = [];
 
         for (let i = 0; i < steps.length; i++) {
@@ -345,6 +356,62 @@ class IntentRunner {
         }
 
         return results;
+    }
+
+    /**
+     * Request page context from Hub.
+     * Returns buttons, inputs, links, products, and headings on the current page.
+     * 
+     * @returns {Promise<object>} Page context
+     */
+    async requestPageContext() {
+        // Check if WebSocket is connected
+        if (!this.ws || this.ws.readyState !== 1) {
+            return { error: 'WebSocket not connected' };
+        }
+
+        return new Promise((resolve, reject) => {
+            const id = `context-${Date.now()}`;
+            const timeout = setTimeout(() => {
+                this.ws.removeListener('message', handler);
+                // Return empty context instead of rejecting - this allows tests to continue
+                resolve({ error: 'Page context request timed out', buttons: [], inputs: [], links: [], products: [], headings: [] });
+            }, 10000); // Increased timeout to 10s
+
+            // Set up one-time message handler for this specific response
+            const handler = (data) => {
+                try {
+                    // Handle both Buffer and string data
+                    const dataStr = typeof data === 'string' ? data : data.toString('utf8');
+                    const msg = JSON.parse(dataStr);
+
+                    // Check if this response matches our request
+                    if (msg.id === id) {
+                        clearTimeout(timeout);
+                        this.ws.removeListener('message', handler);
+
+                        if (msg.error) {
+                            resolve({ error: msg.error.message || 'Unknown error', buttons: [], inputs: [], links: [], products: [], headings: [] });
+                        } else {
+                            resolve(msg.result || {});
+                        }
+                    }
+                } catch (e) {
+                    // Ignore parse errors - message may not be for us
+                }
+            };
+
+            // Add listener
+            this.ws.on('message', handler);
+
+            // Send request
+            this.ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'starlight.getPageContext',
+                params: {},
+                id
+            }));
+        });
     }
 
     /**

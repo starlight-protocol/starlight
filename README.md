@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.2.0-blue.svg" alt="Version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-3.0.3-blue.svg" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
   <a href="https://github.com/starlight-protocol/starlight/actions/workflows/starlight_ci.yml"><img src="https://github.com/starlight-protocol/starlight/actions/workflows/starlight_ci.yml/badge.svg" alt="CI"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node"></a>
@@ -51,6 +51,9 @@ await hub.send({ goal: 'Submit Form' });
 | Component | Role |
 |-----------|------|
 | **Hub** | Central orchestrator, manages Playwright browser |
+| **JWT Handler** | Authentication & authorization system |
+| **Schema Validator** | Input validation & message verification |
+| **PII Redactor** | Data protection & privacy compliance |
 | **Pulse Sentinel** | Monitors DOM/Network stability |
 | **Janitor Sentinel** | Clears popups, modals, banners |
 | **Vision Sentinel** | AI-powered obstacle detection (Moondream) |
@@ -152,6 +155,9 @@ All communication uses JSON-RPC 2.0:
 
 | Feature | Description |
 |---------|-------------|
+| **JWT Authentication** | Secure token-based authentication with timing-safe verification |
+| **Input Validation** | Comprehensive JSON schema validation for all protocol messages |
+| **PII Protection** | Automatic detection and redaction of sensitive data (emails, passwords, credit cards) |
 | **Self-Healing Selectors** | Learns alternatives when selectors fail |
 | **Animation Tolerance** | Handles CSS animations without blocking |
 | **No-Code Recorder** | Record tests by clicking through your site |
@@ -238,12 +244,58 @@ node test/run_all_tests.js
 
 | Document | Description |
 |----------|-------------|
+| [🔒 Security Guide](docs/SECURITY_GUIDE.md) | Security architecture & best practices |
 | [📖 Book](docs/book/THE_STARLIGHT_PROTOCOL_BOOK.md) | Comprehensive guide |
 | [📄 Specification](spec/STARLIGHT_PROTOCOL_SPEC_v1.0.0.md) | Formal protocol standard |
 | [📋 User Guide](docs/user_guide.md) | Getting started |
 | [⚙️ Technical Guide](docs/technical_guide.md) | SDK & configuration |
+| [🛡️ Security Configuration](docs/SECURITY_CONFIGURATION.md) | Security settings reference |
+| [📊 Compliance Guide](docs/COMPLIANCE_GUIDE.md) | GDPR/HIPAA compliance |
+| [🧪 Security Testing](docs/SECURITY_TESTING.md) | Security testing procedures |
 | [🗺️ Roadmap](docs/roadmap.md) | Future plans |
 | [📝 Changelog](CHANGELOG.md) | Version history |
+
+---
+
+## 🔒 Security Features
+
+Starlight Protocol includes enterprise-grade security features:
+
+### **Authentication & Authorization**
+- ✅ JWT-based authentication with HS256 signing
+- ✅ Configurable token expiration (default: 3600s)
+- ✅ Timing-safe signature verification
+- ✅ Token refresh mechanism
+
+### **Input Validation & Protection**
+- ✅ Comprehensive JSON schema validation for all protocol messages
+- ✅ Field type checking, pattern matching, and length limits
+- ✅ CSS selector injection prevention
+- ✅ XSS protection with HTML escaping
+
+### **Data Protection & Privacy**
+- ✅ Automatic PII detection and redaction
+- ✅ AES-256-GCM encryption for sensitive data
+- ✅ Secure logging with automatic PII redaction
+- ✅ Compliance modes: alert, block, or redact
+
+### **Security Configuration**
+```json
+{
+    "security": {
+        "jwtSecret": "your-secret-key",
+        "tokenExpiry": 3600,
+        "piiRedaction": true,
+        "ssl": {
+            "enabled": false,
+            "keyPath": null,
+            "certPath": null
+        }
+    }
+}
+```
+
+📄 **[Security Guide](docs/SECURITY_GUIDE.md)** - Complete security documentation
 
 ---
 

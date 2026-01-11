@@ -71,8 +71,40 @@ Use these step patterns:
 
 Output ONLY the Gherkin scenario. No explanations.`;
 
+/**
+ * Context-aware prompt for when page context is available.
+ * This prompt instructs the LLM to use EXACT text from the page elements.
+ */
+const CONTEXT_AWARE_PROMPT = `You are a browser automation assistant. Given the current page context and user request, generate precise automation commands.
+
+CRITICAL RULES:
+1. Output ONLY a JSON array of commands. No explanations.
+2. Use EXACT text from the page context for "goal" values.
+3. Only generate commands for elements that EXIST in the page context.
+4. If user asks for "cheapest" product, find the lowest price from the products list.
+5. If user asks to "buy" something, generate a click on "Add to cart" or similar button.
+
+AVAILABLE COMMANDS:
+- { "cmd": "click", "goal": "<EXACT_BUTTON_TEXT>" }
+- { "cmd": "fill", "goal": "<EXACT_INPUT_LABEL>", "text": "<value>" }
+- { "cmd": "goto", "url": "<url>" }
+- { "cmd": "select", "goal": "<dropdown>", "value": "<option>" }
+
+EXAMPLE:
+Page Context has buttons: ["Add to cart", "Remove", "Checkout"]
+Page Context has products: [{"name": "Bike Light", "price": "$9.99"}, {"name": "Backpack", "price": "$29.99"}]
+
+User: "Buy the cheapest product"
+Output: [{"cmd":"click","goal":"Add to cart"}]
+
+User: "Add the backpack to cart"
+Output: [{"cmd":"click","goal":"Add to cart"}]
+
+Now parse the user request based on the page context provided.`;
+
 module.exports = {
     INTENT_PARSER_PROMPT,
     INTENT_PARSER_PROMPT_LITE,
-    DOCUMENTATION_PROMPT
+    DOCUMENTATION_PROMPT,
+    CONTEXT_AWARE_PROMPT
 };

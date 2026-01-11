@@ -34,13 +34,14 @@ class NLIParser {
      * 
      * Strategy:
      * 1. Try fallback (regex) first - fast and accurate for simple commands
-     * 2. If fallback returns single ambiguous "click goal", try LLM
+     * 2. If fallback returns single ambiguous "click goal", try LLM WITH PAGE CONTEXT
      * 3. This gives best of both: instant for simple, smart for complex
      * 
      * @param {string} text - Natural language instruction
+     * @param {object} pageContext - Optional page context from Hub (buttons, inputs, etc.)
      * @returns {Promise<object[]>} - Array of Starlight intent objects
      */
-    async parse(text) {
+    async parse(text, pageContext = null) {
         if (!text || typeof text !== 'string') {
             return [];
         }
@@ -64,8 +65,8 @@ class NLIParser {
 
         if (ollamaAvailable) {
             try {
-                console.log(`[NLI] Fallback uncertain, trying LLM...`);
-                const result = await this._parseWithLLM(trimmed);
+                console.log(`[NLI] Fallback uncertain, trying LLM${pageContext ? ' with page context' : ''}...`);
+                const result = await this._parseWithLLM(trimmed, pageContext);
                 console.log(`[NLI] LLM parsed ${result.length} step(s)`);
                 return result;
             } catch (error) {
@@ -120,15 +121,33 @@ class NLIParser {
 
     /**
      * Parse using Ollama LLM.
+     * @param {string} text - User instruction
+     * @param {object} pageContext - Optional page context (buttons, inputs, etc.)
      * @private
      */
-    async _parseWithLLM(text) {
-        const systemPrompt = this.useCompactPrompt
-            ? INTENT_PARSER_PROMPT_LITE
-            : INTENT_PARSER_PROMPT;
+    async _parseWithLLM(text, pageContext = null) {
+        let systemPrompt;
+        let userMessage = text;
+
+        // If we have page context, use context-aware prompt
+        if (pageContext && !pageContext.error) {
+            const { CONTEXT_AWARE_PROMPT } = require('./prompts');
+            systemPrompt = CONTEXT_AWARE_PROMPT;
+
+            // Format page context into a readable string for the LLM
+            const contextStr = this._formatPageContext(pageContext);
+            userMessage = `PAGE CONTEXT:\n${contextStr}\n\nUSER REQUEST: ${text}`;
+
+            console.log(`[NLI] Using context-aware prompt with ${pageContext.buttons?.length || 0} buttons, ${pageContext.inputs?.length || 0} inputs`);
+        } else {
+            // No context - use standard prompt
+            systemPrompt = this.useCompactPrompt
+                ? INTENT_PARSER_PROMPT_LITE
+                : INTENT_PARSER_PROMPT;
+        }
 
         const startTime = Date.now();
-        const response = await this.ollama.generate(text, systemPrompt);
+        const response = await this.ollama.generate(userMessage, systemPrompt);
         const elapsed = Date.now() - startTime;
 
         console.log(`[NLI] LLM response (${elapsed}ms): ${response.substring(0, 100)}...`);
@@ -138,6 +157,51 @@ class NLIParser {
 
         // Validate commands
         return this._validateCommands(commands);
+    }
+
+    /**
+     * Format page context into readable string for LLM.
+     * @private
+     */
+    _formatPageContext(context) {
+        const parts = [];
+
+        parts.push(`URL: ${context.url || 'Unknown'}`);
+        parts.push(`Title: ${context.title || 'Unknown'}`);
+
+        if (context.headings?.length > 0) {
+            parts.push(`\nPage Sections: ${context.headings.join(', ')}`);
+        }
+
+        if (context.buttons?.length > 0) {
+            parts.push(`\nAvailable Buttons:`);
+            context.buttons.slice(0, 10).forEach(b => {
+                parts.push(`  - "${b.text}"`);
+            });
+        }
+
+        if (context.inputs?.length > 0) {
+            parts.push(`\nInput Fields:`);
+            context.inputs.slice(0, 10).forEach(i => {
+                parts.push(`  - ${i.label} (${i.type})`);
+            });
+        }
+
+        if (context.links?.length > 0) {
+            parts.push(`\nLinks:`);
+            context.links.slice(0, 10).forEach(l => {
+                parts.push(`  - "${l.text}"`);
+            });
+        }
+
+        if (context.products?.length > 0) {
+            parts.push(`\nProducts on Page:`);
+            context.products.slice(0, 10).forEach(p => {
+                parts.push(`  - ${p.name}${p.price ? ` - ${p.price}` : ''}`);
+            });
+        }
+
+        return parts.join('\n');
     }
 
     /**

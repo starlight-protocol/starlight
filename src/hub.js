@@ -9,6 +9,11 @@ const WebhookNotifier = require('./webhook');
 const http = require('http');
 const https = require('https');
 
+// Phase 1 Security: Import security modules
+const { JWTHandler } = require('./auth/jwt_handler');
+const { SchemaValidator } = require('./validation/schema_validator');
+const { PIIRedactor, redact } = require('./utils/pii_redactor');
+
 // Security: HTML escaping to prevent XSS
 function escapeHtml(str) {
     if (str == null) return '';
@@ -18,6 +23,30 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+// Phase 1 Security: Selector sanitization to prevent CSS injection
+function sanitizeSelector(input) {
+    if (typeof input !== 'string') return '';
+    // Remove characters that could be used for CSS injection
+    // Allow alphanumeric, spaces, hyphens, underscores (common in button text)
+    // Block: # . [ ] : \ / ( ) ' " < > { } @ $ % ^ & * + = | ` ~
+    return input
+        .replace(/[#\.\[\]:;\\\/\(\)'"<>{}\@\$%\^&\*\+=\|`~]/g, '')
+        .trim()
+        .substring(0, 200); // Limit length
+}
+
+// CRITICAL Security: Escape CSS attribute values to prevent injection
+function escapeCssString(str) {
+    if (typeof str !== 'string') return '';
+    return str
+        .replace(/\\/g, '\\\\')     // Escape backslashes first
+        .replace(/"/g, '\\"')       // Escape quotes
+        .replace(/'/g, "\\'")       // Escape single quotes
+        .replace(/\n/g, '\\n')      // Escape newlines
+        .replace(/\r/g, '\\r')      // Escape carriage returns
+        .replace(/\t/g, '\\t');     // Escape tabs
 }
 class CBAHub {
     constructor(port = 8080, headless = false) {
@@ -96,6 +125,14 @@ class CBAHub {
         this.isProcessing = false;
         this.isShuttingDown = false;
         this.recorder = new ActionRecorder();  // Phase 13.5: Test Recorder
+
+        // Phase 1 Security: Initialize security handlers
+        this.jwtHandler = new JWTHandler({
+            secret: this.config.hub?.security?.jwtSecret || process.env.STARLIGHT_JWT_SECRET,
+            expiresIn: this.config.hub?.security?.tokenExpiry || 3600
+        });
+        this.schemaValidator = new SchemaValidator();
+        this.piiRedactor = new PIIRedactor({ enabled: this.config.hub?.security?.piiRedaction !== false });
 
         if (!fs.existsSync(this.screenshotsDir)) fs.mkdirSync(this.screenshotsDir);
 
@@ -552,14 +589,21 @@ class CBAHub {
 
                 const tagName = match.tagName.toLowerCase();
 
+                // SECURITY: Escape CSS special characters in attribute values
+                function escapeCssText(text) {
+                    if (!text) return '';
+                    return text.replace(/["\\]/g, '\\$&').replace(/\n/g, ' ').trim();
+                }
+
                 // For input elements, use value attribute if present
                 if (tagName === 'input' && match.value) {
                     const inputType = match.type || 'text';
-                    return { selector: `input[type="${inputType}"][value="${match.value}"]`, inShadow: false, valueMatch: true };
+                    const safeValue = escapeCssText(match.value);
+                    return { selector: `input[type="${inputType}"][value="${safeValue}"]`, inShadow: false, valueMatch: true };
                 }
 
                 // Generate a unique selector - prefer text-based for links/buttons
-                const textContent = (match.innerText || match.textContent || '').trim();
+                const textContent = escapeCssText((match.innerText || match.textContent || '').trim());
 
                 // For links and buttons with text, use text-based selector for precision
                 if ((tagName === 'a' || tagName === 'button') && textContent && textContent.length < 50) {
@@ -988,12 +1032,62 @@ class CBAHub {
             this.historicalAuras.has(bucket - 1);
     }
 
+    /**
+     * Broadcast to all connected clients (browsers/debuggers)
+     */
     broadcastToClients(msg) {
         const payload = JSON.stringify(msg);
         for (const client of this.wss.clients) {
             if (client.readyState === WebSocket.OPEN) {
+                // Determine if client is a sentinel to avoid double-broadcast if managing separately
+                // But wss.clients includes everyone.
                 client.send(payload);
             }
+        }
+    }
+
+    /**
+     * Broadcast to Sentinels with PRIORITY sorting.
+     * Higher priority sentinels receive message first.
+     */
+    broadcastToSentinels(msg) {
+        const payload = JSON.stringify(msg);
+
+        // Convert map to array and sort by priority (descending)
+        const sortedSentinels = Array.from(this.sentinels.values())
+            .sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+        for (const s of sortedSentinels) {
+            if (s.ws.readyState === WebSocket.OPEN) {
+                s.ws.send(payload);
+            }
+        }
+    }
+
+    /**
+     * Periodic system health check & Heartbeat
+     */
+    checkSystemHealth() {
+        const now = Date.now();
+
+        // 1. Heartbeat - Ping Sentinels
+        for (const [id, s] of this.sentinels) {
+            if (now - s.lastSeen > (this.config.hub?.heartbeatTimeout || 30000)) {
+                console.warn(`[CBA Hub] Sentinel ${s.layer} timed out (${Math.round((now - s.lastSeen) / 1000)}s silent). Terminating.`);
+                s.ws.terminate();
+                this.handleDisconnect(id);
+            } else {
+                // Send Ping
+                if (s.ws.readyState === WebSocket.OPEN) {
+                    s.ws.send(JSON.stringify({ jsonrpc: '2.0', method: 'starlight.ping', params: { timestamp: now } }));
+                }
+            }
+        }
+
+        // 2. Lock TTL Check
+        if (this.isLocked && this.lockTimeout && now > this.lockTimeout) {
+            console.warn('[CBA Hub] Lock TTL expired. Forcing release.');
+            this.releaseLock('TTL Expired');
         }
     }
 
@@ -1048,6 +1142,149 @@ class CBAHub {
         } catch (e) { return null; }
     }
 
+    /**
+     * Phase 13: NLI - Extract page context for context-aware command generation.
+     * 
+     * Uses UNIVERSAL HTML selectors to work on ANY website.
+     * Returns buttons, inputs, links, products (best-effort), and headings.
+     * 
+     * @returns {Promise<object>} Page context object
+     */
+    async getPageContext() {
+        if (!this.page || this.page.isClosed()) {
+            return { error: 'No page available', buttons: [], inputs: [], links: [], products: [], headings: [] };
+        }
+
+        try {
+            const context = await this.page.evaluate(() => {
+                const MAX_ITEMS = 20; // Limit items to avoid overwhelming LLM
+                const result = {
+                    url: window.location.href,
+                    title: document.title,
+                    buttons: [],
+                    inputs: [],
+                    links: [],
+                    products: [],
+                    headings: []
+                };
+
+                // Helper: Find label for an input element
+                function findLabelFor(input) {
+                    // Try aria-label first
+                    if (input.getAttribute('aria-label')) return input.getAttribute('aria-label');
+
+                    // Try explicit label
+                    if (input.id) {
+                        const label = document.querySelector(`label[for="${input.id}"]`);
+                        if (label) return label.textContent.trim();
+                    }
+
+                    // Try parent label
+                    const parentLabel = input.closest('label');
+                    if (parentLabel) {
+                        const labelText = parentLabel.textContent.replace(input.value || '', '').trim();
+                        if (labelText) return labelText;
+                    }
+
+                    // Try placeholder
+                    if (input.placeholder) return input.placeholder;
+
+                    // Try name or id as last resort
+                    return input.name || input.id || null;
+                }
+
+                // Helper: Generate a readable selector (not for execution, just for LLM context)
+                function getReadableSelector(el) {
+                    if (el.id) return `#${el.id}`;
+                    if (el.getAttribute('data-testid')) return `[data-testid="${el.getAttribute('data-testid')}"]`;
+                    if (el.name) return `[name="${el.name}"]`;
+                    if (el.className && typeof el.className === 'string') {
+                        const firstClass = el.className.split(' ')[0];
+                        if (firstClass) return `.${firstClass}`;
+                    }
+                    return el.tagName.toLowerCase();
+                }
+
+                // 1. BUTTONS - Universal detection
+                const buttonSelectors = 'button, [role="button"], input[type="submit"], input[type="button"], .btn, [class*="button"], [class*="Button"]';
+                document.querySelectorAll(buttonSelectors).forEach(el => {
+                    if (result.buttons.length >= MAX_ITEMS) return;
+                    const text = (el.textContent?.trim() || el.value || el.getAttribute('aria-label') || '').substring(0, 50);
+                    if (text && text.length > 0 && !text.includes('\n')) {
+                        result.buttons.push({ text, selector: getReadableSelector(el) });
+                    }
+                });
+
+                // 2. INPUTS - Universal detection
+                document.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea, select').forEach(el => {
+                    if (result.inputs.length >= MAX_ITEMS) return;
+                    const label = findLabelFor(el);
+                    if (label) {
+                        result.inputs.push({
+                            label: label.substring(0, 50),
+                            type: el.type || el.tagName.toLowerCase(),
+                            selector: getReadableSelector(el)
+                        });
+                    }
+                });
+
+                // 3. LINKS - Universal detection (visible, meaningful text)
+                document.querySelectorAll('a[href]').forEach(el => {
+                    if (result.links.length >= MAX_ITEMS) return;
+                    const text = el.textContent?.trim();
+                    if (text && text.length > 1 && text.length < 80 && !text.includes('\n')) {
+                        result.links.push({
+                            text: text.substring(0, 50),
+                            href: el.href,
+                            selector: getReadableSelector(el)
+                        });
+                    }
+                });
+
+                // 4. PRODUCTS - Best-effort heuristic detection for e-commerce sites
+                // Look for common e-commerce patterns
+                const productSelectors = '[class*="product"], [class*="item"], [data-product], [data-item], .card, .product-card, article';
+                document.querySelectorAll(productSelectors).forEach(el => {
+                    if (result.products.length >= MAX_ITEMS) return;
+
+                    // Look for price
+                    const priceEl = el.querySelector('[class*="price"], .price, [data-price], span:contains("$"), span:contains("€"), span:contains("£")');
+                    const priceText = priceEl ? priceEl.textContent.trim() : null;
+
+                    // Look for product name
+                    const nameEl = el.querySelector('[class*="name"], [class*="title"], h1, h2, h3, h4, .product-name, .item-name');
+                    const nameText = nameEl ? nameEl.textContent.trim() : null;
+
+                    // Only add if we found at least a name
+                    if (nameText && nameText.length < 100) {
+                        result.products.push({
+                            name: nameText.substring(0, 60),
+                            price: priceText ? priceText.substring(0, 20) : null
+                        });
+                    }
+                });
+
+                // 5. HEADINGS - For understanding page structure
+                document.querySelectorAll('h1, h2').forEach(el => {
+                    if (result.headings.length >= 5) return;
+                    const text = el.textContent?.trim();
+                    if (text && text.length < 100) {
+                        result.headings.push(text.substring(0, 60));
+                    }
+                });
+
+                return result;
+            });
+
+            console.log(`[CBA Hub] Page context extracted: ${context.buttons.length} buttons, ${context.inputs.length} inputs, ${context.links.length} links, ${context.products.length} products`);
+            return context;
+
+        } catch (e) {
+            console.error('[CBA Hub] Error extracting page context:', e.message);
+            return { error: e.message, buttons: [], inputs: [], links: [], products: [], headings: [] };
+        }
+    }
+
     validateProtocol(msg) {
         // Starlight v2.0: JSON-RPC 2.0 Validation
         return msg.jsonrpc === '2.0' && msg.method && msg.method.startsWith('starlight.') && msg.params;
@@ -1058,11 +1295,31 @@ class CBAHub {
         if (s) {
             console.log(`[CBA Hub] Sentinel Disconnected: ${s.layer}`);
             this.sentinels.delete(id);
+
+            // Notify others
+            this.broadcastToSentinels({
+                jsonrpc: '2.0',
+                method: 'starlight.sentinel_left',
+                params: { layer: s.layer, id }
+            });
+
             if (this.lockOwner === id) this.releaseLock('Sentinel disconnected');
         }
     }
 
     async handleMessage(id, ws, msg) {
+        // Phase 1 Security: Validate message against schema
+        const validation = this.schemaValidator.validate(msg);
+        if (!validation.valid) {
+            console.warn(`[CBA Hub] Rejected invalid message: ${validation.errors.join(', ')}`);
+            ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                error: { code: -32600, message: 'Invalid Request', data: validation.errors },
+                id: msg.id || null
+            }));
+            return;
+        }
+
         const sentinel = this.sentinels.get(id);
         const params = msg.params;
 
@@ -1091,6 +1348,12 @@ class CBAHub {
                     sentinel.currentAura = params.data?.currentAura || [];
                 }
                 break;
+            case 'starlight.pong':
+                if (sentinel) {
+                    sentinel.lastSeen = Date.now();
+                    // console.log(`[CBA Hub] Pong from ${sentinel.layer}`);
+                }
+                break;
             case 'starlight.context_update':
                 // Phase 4: Context Injection from Sentinels
                 // Phase 12: Also handles A11y Sentinel accessibility reports
@@ -1104,7 +1367,13 @@ class CBAHub {
                         this.a11yReport = params.context.accessibility;
                     }
 
-                    this.broadcastContextUpdate();
+                    // Use prioritized broadcast
+                    this.broadcastToSentinels({
+                        jsonrpc: '2.0',
+                        method: 'starlight.sovereign_update',
+                        params: { context: this.sovereignState },
+                        id: nanoid()
+                    });
                 }
                 break;
             case 'starlight.clear':
@@ -1310,6 +1579,16 @@ class CBAHub {
                 break;
             case 'starlight.warp_restore':
                 await this.handleWarpRestore(id, params);
+                break;
+
+            // Phase 13: NLI Page Context Extraction
+            case 'starlight.getPageContext':
+                const pageContext = await this.getPageContext();
+                ws.send(JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: msg.id,
+                    result: pageContext
+                }));
                 break;
         }
     }
@@ -1877,7 +2156,8 @@ class CBAHub {
         }
 
         // Standardize broadcast
-        this.broadcast({
+        // Standardize broadcast
+        this.broadcastToSentinels({
             jsonrpc: '2.0',
             method: 'starlight.pre_check',
             params: {
