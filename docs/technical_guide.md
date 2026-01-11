@@ -1,6 +1,6 @@
 # CBA Technical Guide: Architecture & Implementation (v3.0)
 
-This document provides a deep technical overview of Constellation-Based Automation (CBA), including the protocol specification, implementation details, and configuration reference.
+This document provides a deep technical overview of Constellation-Based Automation (CBA), including the protocol specification, implementation details, security architecture, and configuration reference.
 
 ---
 
@@ -104,9 +104,117 @@ graph TD
 
 ---
 
-## 4. Configuration Reference
+## 4. Security Architecture
 
-CBA v2.8 uses `config.json` for all settings:
+### 4.1 Authentication System
+
+Starlight Protocol implements industry-standard JWT authentication for secure client identification.
+
+#### JWT Handler Implementation
+```javascript
+// src/auth/jwt_handler.js
+class JWThandler {
+    constructor(secret, expiresIn = 3600) {
+        this.secret = secret;
+        this.expiresIn = expiresIn;
+    }
+    
+    generateToken(payload) {
+        // HMAC-SHA256 signing with timing-safe comparison
+    }
+    
+    verifyToken(token) {
+        // Signature verification + expiration validation
+    }
+}
+```
+
+#### Authentication Flow
+1. **Token Generation**: Clients generate JWT using shared secret
+2. **Registration**: Token included in `starlight.registration` message
+3. **Validation**: Hub verifies token before accepting connection
+4. **Session Management**: Token refresh for long-running sessions
+
+### 4.2 Input Validation Pipeline
+
+#### Schema Validator
+All incoming messages are validated against JSON schemas:
+
+```javascript
+// src/validation/schema_validator.js
+class SchemaValidator {
+    validateMessage(message) {
+        const schema = this.getSchema(message.method);
+        const result = this.validate(message, schema);
+        if (!result.valid) {
+            throw new ValidationError(result.errors);
+        }
+    }
+}
+```
+
+#### Validation Layers
+- **Base Format**: JSON-RPC 2.0 compliance
+- **Method Validation**: Method-specific parameter schemas
+- **Type Checking**: Strict type validation for all fields
+- **Pattern Matching**: Regex validation for strings (selectors, URLs)
+- **Length Limits**: Maximum field length enforcement (2000 chars)
+
+### 4.3 PII Protection System
+
+#### PII Redactor
+Comprehensive PII detection and redaction:
+
+```javascript
+// src/utils/pii_redactor.js
+class PIIRedactor {
+    patterns = {
+        email: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
+        phone: /\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g,
+        creditCard: /\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b/g,
+        jwt: /eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*/g
+    };
+    
+    redact(data) {
+        return this.recursiveRedact(data);
+    }
+}
+```
+
+#### Protection Layers
+- **Log Sanitization**: All logs pass through PII redactor
+- **Screenshot Protection**: Automatic PII detection in images
+- **Data Export**: Warps and traces sanitized before storage
+- **API Response**: Sensitive data filtered from responses
+
+### 4.4 Security Configuration
+
+```json
+{
+    "security": {
+        "jwtSecret": "your-256-bit-secret-key",
+        "tokenExpiry": 3600,
+        "piiRedaction": true,
+        "inputValidation": true,
+        "ssl": {
+            "enabled": false,
+            "keyPath": "./certs/server.key",
+            "certPath": "./certs/server.crt"
+        },
+        "rateLimiting": {
+            "enabled": true,
+            "maxRequests": 100,
+            "windowMs": 60000
+        }
+    }
+}
+```
+
+---
+
+## 5. Configuration Reference
+
+CBA v3.0 uses `config.json` for all settings:
 
 ```json
 {
@@ -124,6 +232,22 @@ CBA v2.8 uses `config.json` for all settings:
             "maxDepth": 5
         }
     },
+    "security": {
+        "jwtSecret": "your-256-bit-secret-key",
+        "tokenExpiry": 3600,
+        "piiRedaction": true,
+        "inputValidation": true,
+        "ssl": {
+            "enabled": false,
+            "keyPath": null,
+            "certPath": null
+        },
+        "rateLimiting": {
+            "enabled": true,
+            "maxRequests": 100,
+            "windowMs": 60000
+        }
+    },
     "aura": {
         "preventiveWaitMs": 1500,
         "bucketSizeMs": 500
@@ -135,7 +259,7 @@ CBA v2.8 uses `config.json` for all settings:
     },
     "vision": {
         "model": "moondream",
-        "timeout": 25,
+        "timeout": 3,
         "ollamaUrl": "http://localhost:11434/api/generate"
     }
 }
@@ -155,6 +279,21 @@ CBA v2.8 uses `config.json` for all settings:
 | `traceMaxEvents` | int | 500 | Max events in mission trace |
 | `shadowDom.enabled` | bool | true | Enable shadow DOM traversal |
 | `shadowDom.maxDepth` | int | 5 | Max shadow root nesting depth |
+
+### Security Settings
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `jwtSecret` | string | null | JWT signing secret (256-bit minimum) |
+| `tokenExpiry` | int | 3600 | JWT token expiration time (seconds) |
+| `piiRedaction` | bool | true | Enable PII detection and redaction |
+| `inputValidation` | bool | true | Enable message schema validation |
+| `ssl.enabled` | bool | false | Enable SSL/TLS encryption |
+| `ssl.keyPath` | string | null | Path to SSL private key |
+| `ssl.certPath` | string | null | Path to SSL certificate |
+| `rateLimiting.enabled` | bool | true | Enable rate limiting |
+| `rateLimiting.maxRequests` | int | 100 | Max requests per window |
+| `rateLimiting.windowMs` | int | 60000 | Rate limit window (ms) |
 
 ---
 
@@ -257,25 +396,34 @@ class MySentinel(SentinelBase):
         pass
 ```
 
-### SDK Features (v2.7)
+### SDK Features (v3.0)
 
 | Feature | Description |
 |---------|-------------|
+| **JWT Authentication** | Automatic token generation and refresh |
+| **Message Validation** | Built-in schema validation |
 | **Persistent Memory** | `self.memory` dict, auto-loaded/saved |
 | **Graceful Shutdown** | SIGINT/SIGTERM handlers |
 | **Atomic Writes** | Temp file + rename pattern |
 | **Config Loading** | Reads `config.json` automatically |
 | **Auto-Reconnect** | Retries on connection failure |
 | **Proper Exceptions** | No silent error swallowing |
+| **PII Protection** | Automatic data sanitization |
 
 ### Communication Methods
 ```python
+# Basic protocol methods
 await self.send_clear()           # Approve execution
 await self.send_wait(1000)        # Veto with delay (ms)
 await self.send_hijack("reason")  # Request browser lock
 await self.send_resume()          # Release lock
 await self.send_action("click", selector)  # Execute action
 await self.update_context({...})  # Inject shared state
+
+# Security features
+await self.authenticate_with_token(jwt_token)  # Authenticate
+await self.validate_and_send(message)  # Validate before sending
+await self.redact_pii(data)  # Sanitize sensitive data
 
 # Phase 17: Inter-Sentinel Side-Talk
 await self.send_sidetalk("A11ySentinel", "query", {...})  # Direct message

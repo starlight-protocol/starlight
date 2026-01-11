@@ -8,6 +8,10 @@
 const https = require('https');
 const http = require('http');
 
+// Phase 3 Performance: Connection pooling with keepAlive
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 10 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
+
 class WebhookNotifier {
     constructor(config) {
         this.enabled = config?.enabled || false;
@@ -15,8 +19,12 @@ class WebhookNotifier {
         this.notifyOn = config?.notifyOn || ['failure'];
         this.includeTrace = config?.includeTrace || false;
 
+        // Use pooled agents
+        this.httpAgent = httpAgent;
+        this.httpsAgent = httpsAgent;
+
         if (this.enabled && this.urls.length > 0) {
-            console.log(`[Webhook] Enabled with ${this.urls.length} endpoint(s)`);
+            console.log(`[Webhook] Enabled with ${this.urls.length} endpoint(s), connection pooling ON`);
         }
     }
 
@@ -102,6 +110,7 @@ class WebhookNotifier {
                     port: urlObj.port || (isHttps ? 443 : 80),
                     path: urlObj.pathname + urlObj.search,
                     method: 'POST',
+                    agent: isHttps ? this.httpsAgent : this.httpAgent, // Phase 3: Use pooled agent
                     headers: {
                         'Content-Type': 'application/json',
                         'Content-Length': Buffer.byteLength(data),

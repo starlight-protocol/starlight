@@ -10,6 +10,7 @@
 1. [Introduction: Why Starlight?](#chapter-1-introduction)
 2. [The Core Philosophy](#chapter-2-the-core-philosophy)
 3. [Architecture Deep Dive](#chapter-3-architecture-deep-dive)
+3.5 [Security Architecture](#35-security-architecture)
 4. [The Hub: The Orchestrator](#chapter-4-the-hub)
 5. [Sentinels: The Guardians](#chapter-5-sentinels)
 6. [The Protocol: JSON-RPC Messages](#chapter-6-the-protocol)
@@ -178,6 +179,103 @@ Every action in Starlight follows this lifecycle:
    ↓
 8. Action executes
 ```
+
+---
+
+## 3.5 Security Architecture
+
+Starlight Protocol implements defense-in-depth security with multiple protection layers.
+
+### Security Components
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SECURITY LAYERS                              │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Network Security (TLS/WSS)                    │  │
+│  │              - SSL/TLS encryption                          │  │
+│  │              - Rate limiting                               │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Authentication (JWT)                          │  │
+│  │              - Token generation and verification           │  │
+│  │              - Timing-safe comparison                      │  │
+│  │              - Configurable expiration                     │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Input Validation (Schema)                     │  │
+│  │              - JSON schema validation                      │  │
+│  │              - Type checking and patterns                  │  │
+│  │              - Injection prevention                        │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Data Protection (PII)                         │  │
+│  │              - Automatic PII detection                     │  │
+│  │              - Automatic redaction                         │  │
+│  │              - AES-256-GCM encryption                      │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### JWT Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant S as Sentinel
+    participant V as JWT Validator
+    participant H as Hub
+    
+    S->>S: Generate JWT Token
+    S->>H: WebSocket Connection + Registration
+    H->>V: Validate Token
+    V->>V: Verify Signature (timing-safe)
+    V->>V: Check Expiration
+    V-->>H: Validation Result
+    H-->>S: Registration Accepted/Rejected
+```
+
+### PII Protection
+
+The PII Sentinel automatically detects and redacts sensitive data:
+
+| PII Type | Pattern | Redaction |
+|----------|---------|-----------|
+| Email | `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b` | `[EMAIL_REDACTED]` |
+| Phone | `\b\d{3}[-.]?\d{3}[-.]?\d{4}\b` | `[PHONE_REDACTED]` |
+| Credit Card | `\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b` | `[CREDITCARD_REDACTED]` |
+| SSN | `\b\d{3}-\d{2}-\d{4}\b` | `[SSN_REDACTED]` |
+| JWT | `eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*` | `[JWT_REDACTED]` |
+
+### Security Configuration
+
+```json
+{
+    "security": {
+        "jwtSecret": "your-256-bit-secret",
+        "tokenExpiry": 3600,
+        "piiRedaction": true,
+        "inputValidation": true,
+        "ssl": {
+            "enabled": true,
+            "certPath": "/etc/ssl/server.crt",
+            "keyPath": "/etc/ssl/server.key"
+        },
+        "rateLimiting": {
+            "enabled": true,
+            "maxRequests": 100
+        }
+    }
+}
+```
+
+### Security Best Practices
+
+1. **Always use SSL/TLS in production** - Enable `security.ssl.enabled`
+2. **Use strong JWT secrets** - Minimum 256 bits (32 characters)
+3. **Enable PII redaction** - Protect sensitive data in logs
+4. **Configure rate limiting** - Prevent brute force attacks
+5. **Enable audit logging** - Monitor security events
 
 ---
 

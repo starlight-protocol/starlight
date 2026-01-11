@@ -223,6 +223,20 @@ function handleCommand(msg, ws) {
             forwardToHub({ method: 'starlight.stopRecording', params: { name: msg.name } });
             log('System', '⏹️ Recording stopped', 'success');
             break;
+
+        // Phase 13: Natural Language Intent commands
+        case 'executeNLI':
+            executeNLI(msg.instruction);
+            break;
+        case 'getNLIStatus':
+            getNLIStatus();
+            break;
+        case 'startOllama':
+            startOllama();
+            break;
+        case 'stopOllama':
+            stopOllama();
+            break;
     }
 }
 
@@ -397,6 +411,207 @@ function launchMission(missionFile) {
         broadcast({ type: 'status', status: processStatus });
     });
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Phase 13: Natural Language Intent (NLI)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Execute a natural language instruction via generated temp script
+ */
+function executeNLI(instruction) {
+    if (!instruction) {
+        log('NLI', 'No instruction provided', 'error');
+        return;
+    }
+
+    // Auto-start Hub if not running
+    if (!processes.hub) {
+        log('NLI', 'Starting Hub for NLI execution...', 'info');
+        startProcess('hub');
+        // Wait for Hub to be ready
+        setTimeout(() => executeNLI(instruction), 2500);
+        return;
+    }
+
+    log('NLI', `🗣️ Parsing: "${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`, 'info');
+
+    // Generate temp script
+    const scriptContent = `
+const IntentRunner = require('./src/intent_runner');
+
+async function run() {
+    const runner = new IntentRunner();
+    
+    try {
+        await runner.connect();
+        console.log('[NLI] Connected to Hub');
+        
+        const results = await runner.executeNL(${JSON.stringify(instruction)});
+        
+        console.log('\\n[NLI] ✅ Execution complete!');
+        console.log('[NLI] Steps executed:', results.length);
+        
+        await runner.finish('NLI execution complete');
+    } catch (error) {
+        console.error('[NLI] ❌ Execution failed:', error.message);
+        runner.close();
+        process.exit(1);
+    }
+}
+
+run();
+`;
+
+    const cwd = path.join(__dirname, '..');
+    const scriptPath = path.join(cwd, '_nli_temp_mission.js');
+
+    try {
+        fs.writeFileSync(scriptPath, scriptContent, 'utf8');
+
+        // Launch as a mission
+        const proc = spawn('node', [scriptPath], {
+            cwd,
+            shell: true,
+            stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        processes.mission = proc;
+        processStatus.mission = 'running';
+        broadcast({ type: 'status', status: processStatus });
+
+        proc.stdout.on('data', (data) => {
+            const lines = data.toString().split('\n').filter(l => l.trim());
+            lines.forEach(line => log('NLI', line, 'intent'));
+        });
+
+        proc.stderr.on('data', (data) => {
+            const lines = data.toString().split('\n').filter(l => l.trim());
+            lines.forEach(line => log('NLI', line, 'error'));
+        });
+
+        proc.on('close', (code) => {
+            // Cleanup temp script
+            try { fs.unlinkSync(scriptPath); } catch { }
+
+            log('NLI', `Execution ${code === 0 ? 'completed successfully' : 'failed with code ' + code}`,
+                code === 0 ? 'success' : 'error');
+            processes.mission = null;
+            processStatus.mission = 'stopped';
+            broadcast({ type: 'status', status: processStatus });
+        });
+
+    } catch (e) {
+        log('NLI', `Failed to create script: ${e.message}`, 'error');
+    }
+}
+
+/**
+ * Get NLI status (config, Ollama availability)
+ */
+function getNLIStatus() {
+    const configPath = path.join(__dirname, '..', 'config.json');
+
+    try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const nliConfig = config.nli || {};
+
+        log('NLI', `Model: ${nliConfig.model || 'llama3.2:1b'}`, 'info');
+        log('NLI', `Endpoint: ${nliConfig.endpoint || 'http://localhost:11434'}`, 'info');
+        log('NLI', `Fallback: ${nliConfig.fallback?.enabled !== false ? 'Enabled' : 'Disabled'} (${nliConfig.fallback?.mode || 'pattern'})`, 'info');
+
+        // Check Ollama availability via HTTP
+        const http = require('http');
+        const url = new URL(nliConfig.endpoint || 'http://localhost:11434');
+
+        const req = http.get({ hostname: url.hostname, port: url.port, path: '/api/tags', timeout: 3000 }, (res) => {
+            if (res.statusCode === 200) {
+                log('NLI', '✅ Ollama is available', 'success');
+            } else {
+                log('NLI', `⚠️ Ollama responded with status ${res.statusCode}`, 'info');
+            }
+        });
+
+        req.on('error', () => {
+            log('NLI', '❌ Ollama not available (will use fallback)', 'info');
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            log('NLI', '❌ Ollama connection timeout', 'info');
+        });
+
+    } catch (e) {
+        log('NLI', `Error reading config: ${e.message}`, 'error');
+    }
+}
+
+/**
+ * Start Ollama server
+ */
+let ollamaProcess = null;
+
+function startOllama() {
+    if (ollamaProcess) {
+        log('NLI', 'Ollama is already running', 'info');
+        return;
+    }
+
+    log('NLI', '🦙 Starting Ollama server...', 'info');
+
+    // Try to start Ollama
+    ollamaProcess = spawn('ollama', ['serve'], {
+        shell: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        detached: false
+    });
+
+    ollamaProcess.stdout.on('data', (data) => {
+        const lines = data.toString().split('\n').filter(l => l.trim());
+        lines.forEach(line => log('Ollama', line, 'info'));
+    });
+
+    ollamaProcess.stderr.on('data', (data) => {
+        const text = data.toString();
+        // Ollama logs to stderr but it's not always an error
+        if (text.includes('listening') || text.includes('Listening')) {
+            log('NLI', '✅ Ollama server is ready at http://localhost:11434', 'success');
+        } else {
+            log('Ollama', text.trim(), 'info');
+        }
+    });
+
+    ollamaProcess.on('error', (err) => {
+        log('NLI', `❌ Failed to start Ollama: ${err.message}`, 'error');
+        log('NLI', 'Install Ollama: https://ollama.ai', 'info');
+        ollamaProcess = null;
+    });
+
+    ollamaProcess.on('close', (code) => {
+        log('NLI', `Ollama exited with code ${code}`, code === 0 ? 'info' : 'error');
+        ollamaProcess = null;
+    });
+}
+
+function stopOllama() {
+    if (!ollamaProcess) {
+        log('NLI', 'Ollama is not running', 'info');
+        return;
+    }
+
+    log('NLI', '⏹️ Stopping Ollama...', 'info');
+
+    if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', ollamaProcess.pid, '/f', '/t']);
+    } else {
+        ollamaProcess.kill('SIGTERM');
+    }
+
+    ollamaProcess = null;
+    log('NLI', 'Ollama stopped', 'success');
+}
+
+
 
 // HTTP server for static files
 const projectRoot = path.join(__dirname, '..');

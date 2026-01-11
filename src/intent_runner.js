@@ -302,6 +302,206 @@ class IntentRunner {
             this.ws.close();
         }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Phase 13: Natural Language Intent (NLI) Methods
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Execute a natural language instruction.
+     * Parses the text into structured commands and executes each.
+     * 
+     * Phase 13: Now requests page context from Hub for context-aware parsing.
+     * 
+     * @param {string} instruction - Plain English instruction
+     * @returns {Promise<object[]>} Results from all executed steps
+     * 
+     * @example
+     * await runner.executeNL('Login with username test and password secret123');
+     * await runner.executeNL('Go to saucedemo.com and add first item to cart');
+     */
+    async executeNL(instruction) {
+        // Lazy load NLI parser to avoid import issues if not used
+        if (!this._nliParser) {
+            const config = this._loadConfig();
+            const { NLIParser } = require('./nli/parser');
+            this._nliParser = new NLIParser(config.nli || {});
+        }
+
+        console.log(`[IntentRunner] 🗣️ NLI: "${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`);
+
+        // Request page context from Hub for context-aware parsing
+        let pageContext = null;
+        try {
+            pageContext = await this.requestPageContext();
+        } catch (e) {
+            console.warn(`[IntentRunner] Could not get page context: ${e.message}`);
+        }
+
+        // Parse with page context (parser will use it if fallback is uncertain)
+        const steps = await this._nliParser.parse(instruction, pageContext);
+        const results = [];
+
+        for (let i = 0; i < steps.length; i++) {
+            const step = steps[i];
+            console.log(`[IntentRunner] 📝 Step ${i + 1}/${steps.length}: ${step.cmd} ${step.goal || step.url || ''}`);
+
+            try {
+                const result = await this._sendCommand(step);
+                results.push({ step, success: true, result });
+            } catch (error) {
+                results.push({ step, success: false, error: error.message });
+                throw error; // Re-throw to stop execution on failure
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Request page context from Hub.
+     * Returns buttons, inputs, links, products, and headings on the current page.
+     * 
+     * @returns {Promise<object>} Page context
+     */
+    async requestPageContext() {
+        // Check if WebSocket is connected
+        if (!this.ws || this.ws.readyState !== 1) {
+            return { error: 'WebSocket not connected' };
+        }
+
+        return new Promise((resolve, reject) => {
+            const id = `context-${Date.now()}`;
+            const timeout = setTimeout(() => {
+                this.ws.removeListener('message', handler);
+                // Return empty context instead of rejecting - this allows tests to continue
+                resolve({ error: 'Page context request timed out', buttons: [], inputs: [], links: [], products: [], headings: [] });
+            }, 10000); // Increased timeout to 10s
+
+            // Set up one-time message handler for this specific response
+            const handler = (data) => {
+                try {
+                    // Handle both Buffer and string data
+                    const dataStr = typeof data === 'string' ? data : data.toString('utf8');
+                    const msg = JSON.parse(dataStr);
+
+                    // Check if this response matches our request
+                    if (msg.id === id) {
+                        clearTimeout(timeout);
+                        this.ws.removeListener('message', handler);
+
+                        if (msg.error) {
+                            resolve({ error: msg.error.message || 'Unknown error', buttons: [], inputs: [], links: [], products: [], headings: [] });
+                        } else {
+                            resolve(msg.result || {});
+                        }
+                    }
+                } catch (e) {
+                    // Ignore parse errors - message may not be for us
+                }
+            };
+
+            // Add listener
+            this.ws.on('message', handler);
+
+            // Send request
+            this.ws.send(JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'starlight.getPageContext',
+                params: {},
+                id
+            }));
+        });
+    }
+
+    /**
+     * Execute a Gherkin .feature file.
+     * 
+     * @param {string} featurePath - Path to .feature file
+     * @param {string} scenarioName - Optional: run only this scenario
+     * @returns {Promise<object[]>} Results from all steps
+     * 
+     * @example
+     * await runner.executeFeature('./test/features/checkout.feature');
+     */
+    async executeFeature(featurePath, scenarioName = null) {
+        const { GherkinBridge } = require('./nli/gherkin');
+        const bridge = new GherkinBridge();
+
+        console.log(`[IntentRunner] 📄 Loading feature: ${featurePath}`);
+        const parsed = bridge.parseFile(featurePath);
+
+        console.log(`[IntentRunner] Feature: ${parsed.feature}`);
+        console.log(`[IntentRunner] Scenarios: ${parsed.scenarios.map(s => s.name).join(', ')}`);
+
+        const results = [];
+
+        for (const scenario of parsed.scenarios) {
+            // Skip if specific scenario requested and this isn't it
+            if (scenarioName && scenario.name !== scenarioName) {
+                continue;
+            }
+
+            console.log(`[IntentRunner] 🎬 Scenario: ${scenario.name}`);
+
+            for (const step of scenario.steps) {
+                try {
+                    const result = await this._sendCommand(step);
+                    results.push({ scenario: scenario.name, step, success: true, result });
+                } catch (error) {
+                    results.push({ scenario: scenario.name, step, success: false, error: error.message });
+                    throw error;
+                }
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Generate a .feature file from completed mission trace.
+     * 
+     * @param {string} tracePath - Path to mission_trace.json
+     * @param {string} outputName - Output filename (without .feature)
+     * @returns {string} Path to generated feature file
+     */
+    documentMission(tracePath, outputName = 'generated') {
+        const { MissionDocumenter } = require('./nli/documenter');
+        const documenter = new MissionDocumenter();
+
+        const content = documenter.generateFromTrace(tracePath, outputName);
+        return documenter.save(content, outputName);
+    }
+
+    /**
+     * Get NLI parser status for diagnostics.
+     * @returns {Promise<object>} NLI status
+     */
+    async getNLIStatus() {
+        if (!this._nliParser) {
+            const config = this._loadConfig();
+            const { NLIParser } = require('./nli/parser');
+            this._nliParser = new NLIParser(config.nli || {});
+        }
+        return this._nliParser.getStatus();
+    }
+
+    /**
+     * Load config.json for NLI settings.
+     * @private
+     */
+    _loadConfig() {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+            const configPath = path.join(__dirname, '..', 'config.json');
+            if (fs.existsSync(configPath)) {
+                return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+            }
+        } catch { }
+        return {};
+    }
 }
+
 
 module.exports = IntentRunner;
