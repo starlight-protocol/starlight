@@ -1,6 +1,6 @@
 # Starlight Protocol Python SDK
 
-[![PyPI version](https://badge.fury.io/py/starlight-protocol.svg)](https://pypi.org/project/starlight-protocol/)
+[![PyPI version](https://img.shields.io/pypi/v/starlight-protocol.svg?color=green)](https://pypi.org/project/starlight-protocol/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 Python SDK for building **Sentinels** that connect to the Starlight Protocol Hub.
@@ -13,7 +13,7 @@ pip install starlight-protocol
 
 ## Quick Start
 
-### 🚀 New in v1.3.0: Protocol Resilience & Extended Actions
+### 🚀 New in v1.3 Series: Protocol Resilience & Extended Actions
 - **Protocol Resilience**: Support for Phase 14 Hub features (Generic Perception, Self-Healing).
 - **Extended Commands**: Native support for scroll, hover, check/uncheck, select, press, type.
 - **Enterprise Security**: JWT-ready Sentinel base class.
