@@ -1,114 +1,66 @@
 /**
- * Starlight Protocol - Element Cache
+ * Interactive Element Cache
+ * Part of Phase 8.5: Performance Optimization
  * 
- * Phase 3.1: Performance Optimization
- * 
- * Caches DOM element lookups to avoid repeated full DOM scans
- * during semantic resolution.
+ * Caches interactive elements to reduce DOM traversal overhead during
+ * repeated semantic resolution attempts.
  */
 
-class ElementCache {
-    /**
-     * Create element cache.
-     * @param {object} options - Configuration
-     * @param {number} options.ttl - Cache entry TTL in ms (default: 5000)
-     * @param {number} options.maxSize - Maximum cache entries (default: 100)
-     */
-    constructor(options = {}) {
-        this.ttl = options.ttl || 5000;
-        this.maxSize = options.maxSize || 100;
-        this.cache = new Map();
-        this.hits = 0;
-        this.misses = 0;
+class InteractiveElementCache {
+    constructor(ttlMs = 2000) {
+        this.cache = new Map(); // root element -> { items: [], timestamp: number }
+        this.ttl = ttlMs;
     }
 
     /**
-     * Get cached value.
-     * @param {string} key - Cache key
-     * @returns {any|null} Cached value or null if not found/expired
+     * Get cached elements for a root node if valid
+     * @param {Element} root - The root element (usually document or container)
+     * @returns {Array|null} Array of elements or null if miss/expired
      */
-    get(key) {
-        const entry = this.cache.get(key);
+    get(root) {
+        // We can't use DOM elements as Map keys efficiently if they get GC'd, 
+        // but for short lived cache within a single evaluation context it works.
+        // NOTE: In Playwright evaluate(), this class runs inside the browser context,
+        // so weak references or IDs are needed if persistent. 
+        // If this runs in Node.js, it can't hold DOM elements.
 
-        if (!entry) {
-            this.misses++;
-            return null;
-        }
+        // Since this module likely runs INSIDE browser context (injected), 
+        // we can use the element reference.
 
-        // Check expiration
+        const entry = this.cache.get(root);
+        if (!entry) return null;
+
         if (Date.now() - entry.timestamp > this.ttl) {
-            this.cache.delete(key);
-            this.misses++;
+            this.cache.delete(root);
             return null;
         }
 
-        this.hits++;
-        return entry.value;
+        return entry.items;
     }
 
     /**
-     * Set cached value.
-     * @param {string} key - Cache key
-     * @param {any} value - Value to cache
+     * Set cache for a root node
+     * @param {Element} root 
+     * @param {Array} items 
      */
-    set(key, value) {
-        // Enforce max size (LRU eviction)
-        if (this.cache.size >= this.maxSize) {
-            const oldestKey = this.cache.keys().next().value;
-            this.cache.delete(oldestKey);
-        }
-
-        this.cache.set(key, {
-            value,
+    set(root, items) {
+        this.cache.set(root, {
+            items: items,
             timestamp: Date.now()
         });
     }
 
     /**
-     * Invalidate entire cache.
-     * Called after navigation or significant DOM changes.
+     * Clear the cache
      */
-    invalidate() {
+    clear() {
         this.cache.clear();
-    }
-
-    /**
-     * Invalidate entries matching a pattern.
-     * @param {string|RegExp} pattern - Key pattern to match
-     */
-    invalidatePattern(pattern) {
-        const regex = pattern instanceof RegExp ? pattern : new RegExp(pattern);
-
-        for (const key of this.cache.keys()) {
-            if (regex.test(key)) {
-                this.cache.delete(key);
-            }
-        }
-    }
-
-    /**
-     * Get cache statistics.
-     * @returns {object} Cache stats
-     */
-    getStats() {
-        const total = this.hits + this.misses;
-        return {
-            size: this.cache.size,
-            maxSize: this.maxSize,
-            hits: this.hits,
-            misses: this.misses,
-            hitRate: total > 0 ? (this.hits / total * 100).toFixed(1) + '%' : 'N/A'
-        };
-    }
-
-    /**
-     * Clear cache and reset stats.
-     */
-    reset() {
-        this.cache.clear();
-        this.hits = 0;
-        this.misses = 0;
     }
 }
 
-module.exports = { ElementCache };
+// Export for browser context injection if needed, or CommonJS for Node
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { InteractiveElementCache };
+} else {
+    window.InteractiveElementCache = InteractiveElementCache;
+}

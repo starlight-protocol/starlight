@@ -24,6 +24,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.5] - 2026-01-11
+
+### 🛡️ Phase 14: Protocol Resilience & Integrity
+Successfully verified the "Holy Trinity" of Starlight Protocol capabilities:
+
+#### Added
+- **Generic Semantic Perception**: `hub.js` now implements generic class-name semantic extraction. It correctly identifies icon-only elements (like "Shopping Cart") even when they contain dynamic badges (e.g., "2"), eliminating the need for hardcoded selectors.
+- **Reporting Integrity**: `intent_nli_test.js` now strictly enforces `minSteps` verification. Partial execution (e.g., LLM stopping after one step) is now correctly flagged as a failure.
+- **True Self-Healing**: Verified that the Hub learns selecting mappings on the fly (`click:Shopping Cart` -> `a:has-text("2")`) and persists them to `starlight_memory.json`, making subsequent runs instantaneous.
+
+#### Fixed
+- **NLI Parser**: Implemented fuzzy matching (`includes`) for context validation, allowing `fill Shopping Cart` (LLM) to be correctly auto-corrected to `click` when the Hub perceives "shopping cart link".
+- **Hub Perception**: `getPageContext` aligned with `resolveSemanticIntent` to ensure consistent element discovery for the LLM.
+
+---
+
 ## [UNRELEASED] Phase 14.3 - Enterprise Security Hardening
 
 ### 🔒 Comprehensive Security Infrastructure

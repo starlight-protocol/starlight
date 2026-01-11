@@ -18,7 +18,7 @@ class OllamaClient {
     constructor(config = {}) {
         this.endpoint = process.env.NLI_ENDPOINT || config.endpoint || 'http://localhost:11434';
         this.model = process.env.NLI_MODEL || config.model || 'llama3.2:1b';
-        this.timeout = config.timeout || 30000;
+        this.timeout = config.timeout || 60000;
         this.available = null; // Cached availability status
     }
 

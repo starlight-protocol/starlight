@@ -95,6 +95,11 @@ function handleMessage(msg) {
         case 'sentinels':
             renderSentinelCards(msg.sentinels);
             break;
+        case 'SENTINEL_ERROR':
+            const errText = `🚨 ${msg.layer}: ${msg.error}`;
+            showToast(errText, true);
+            addLog(msg.layer, msg.error, 'error');
+            break;
         default:
             // Phase 13.5: Handle recording events
             if (msg.type?.startsWith('RECORDING_')) {

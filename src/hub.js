@@ -13,6 +13,8 @@ const https = require('https');
 const { JWTHandler } = require('./auth/jwt_handler');
 const { SchemaValidator } = require('./validation/schema_validator');
 const { PIIRedactor, redact } = require('./utils/pii_redactor');
+const { AtomicLock } = require('./sync/atomic_lock');
+const { InteractiveElementCache } = require('./cache/element_cache');
 
 // Security: HTML escaping to prevent XSS
 function escapeHtml(str) {
@@ -126,6 +128,10 @@ class CBAHub {
         this.isShuttingDown = false;
         this.recorder = new ActionRecorder();  // Phase 13.5: Test Recorder
 
+        // Phase 8.5: Performance & Safety
+        this.memoryLock = new AtomicLock({ ttl: 5000 });
+        this.elementCache = new InteractiveElementCache();
+
         // Phase 1 Security: Initialize security handlers
         this.jwtHandler = new JWTHandler({
             secret: this.config.hub?.security?.jwtSecret || process.env.STARLIGHT_JWT_SECRET,
@@ -148,7 +154,25 @@ class CBAHub {
         const configPath = path.join(process.cwd(), 'config.json');
         try {
             if (fs.existsSync(configPath)) {
-                return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+                // Phase 8.5: Config Schema Validation (Issue 9)
+                try {
+                    const { validateConfig } = require('./validation/config_schema');
+                    const validation = validateConfig(config);
+                    if (!validation.valid) {
+                        console.error('[CBA Hub] ❌ Configuration Error(s):');
+                        validation.errors.forEach(err => console.error(`  - ${err}`));
+                        console.warn('[CBA Hub] ⚠️ Proceeding with potentially invalid configuration (Check config.json)');
+                        // Alternative: throw new Error('Invalid Configuration');
+                    } else {
+                        console.log('[CBA Hub] ✓ Configuration validated successfully');
+                    }
+                } catch (e) {
+                    // Ignore if validation module missing during dev
+                }
+
+                return config;
             }
         } catch (e) {
             console.warn('[CBA Hub] Warning: Could not load config.json:', e.message);
@@ -344,7 +368,8 @@ class CBAHub {
 
     broadcastEntropy() {
         const now = Date.now();
-        const throttle = this.config.hub?.entropyThrottle || 100;
+        // Phase 8.5: Increased throttle to 500ms (Issue 12)
+        const throttle = this.config.hub?.entropyThrottle || 500;
         if (now - this.lastEntropyBroadcast < throttle) return;
         this.lastEntropyBroadcast = now;
 
@@ -452,6 +477,24 @@ class CBAHub {
                 const textContent = (el.textContent || '').trim();
                 if (innerText) texts.push(innerText);
                 else if (textContent && textContent.length < 100) texts.push(textContent);
+
+                // Phase 14: Generic Semantic Class Extraction
+                // Check for semantic meaning in class names regardless of text content
+                // e.g. "shopping_cart_link" -> "shopping cart link"
+                if (el.classList && el.classList.length > 0) {
+                    const semanticKeywords = ['cart', 'menu', 'login', 'signin', 'sign-in', 'search', 'user', 'profile', 'account', 'home'];
+                    const classes = Array.from(el.classList);
+
+                    const semanticClass = classes.find(c => semanticKeywords.some(k => c.toLowerCase().includes(k)));
+                    if (semanticClass) {
+                        // Convert snake_case or kebab-case to space-separated text
+                        const extracted = semanticClass.replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+                        // Only add if not already present/similar
+                        if (extracted && !texts.some(t => t.toLowerCase() === extracted.toLowerCase())) {
+                            texts.push(extracted);
+                        }
+                    }
+                }
 
                 // Input value
                 if (el.value) texts.push(el.value);
@@ -964,40 +1007,52 @@ class CBAHub {
      */
     async saveHistoricalMemory() {
         if (this.historicalMemory.size === 0) {
-            console.log('[CBA Hub] No learned mappings to save.');
-            return;
+            return; // Nothing new to merge
         }
 
         const memoryFile = path.join(process.cwd(), 'starlight_memory.json');
 
-        // Load existing memory and merge with current session
-        let existingMemory = {};
-        if (fs.existsSync(memoryFile)) {
-            try {
-                existingMemory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
-            } catch (e) {
-                console.warn('[CBA Hub] Could not load existing memory file:', e.message);
-            }
-        }
-
-        // Merge: current session overwrites existing (newer mappings win)
-        const allMappings = { ...existingMemory };
-        this.historicalMemory.forEach((selector, goal) => {
-            // Skip ghost metrics (they're saved separately)
-            if (!goal.startsWith('ghost:')) {
-                allMappings[goal] = selector;
-            }
-        });
-
-        // Atomic write
-        const tempFile = memoryFile + '.tmp';
+        // Phase 8.5: Atomic Locking (Issue 13)
+        // Ensure we don't write concurrently
+        let acquired = false;
         try {
+            acquired = await this.memoryLock.acquire('memory', 'hub');
+            if (!acquired) {
+                console.warn('[CBA Hub] Failed to acquire lock for memory save. Skipping.');
+                return;
+            }
+
+            // Load existing memory from disk to merge (in case other tools updated it)
+            let existingMemory = {};
+            if (fs.existsSync(memoryFile)) {
+                try {
+                    existingMemory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+                } catch (e) {
+                    console.warn('[CBA Hub] Start fresh: Could not parse starlight_memory.json');
+                }
+            }
+
+            // Merge: current session's memory overrides disk if keys conflict
+            const allMappings = { ...existingMemory };
+            this.historicalMemory.forEach((selector, goal) => {
+                // Skip ghost metrics (they're saved separately)
+                if (!goal.startsWith('ghost:')) {
+                    allMappings[goal] = selector;
+                }
+            });
+
+            // Atomic write using temp file
+            const tempFile = memoryFile + '.tmp';
             fs.writeFileSync(tempFile, JSON.stringify(allMappings, null, 2));
             fs.renameSync(tempFile, memoryFile);
-            console.log(`[CBA Hub] 🧠 Memory saved: ${Object.keys(allMappings).length} learned mappings`);
+            console.log(`[CBA Hub] 🧠 Memory saved: ${Object.keys(allMappings).length} mappings`);
+
         } catch (e) {
             console.error('[CBA Hub] Failed to save memory:', e.message);
-            if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+        } finally {
+            if (acquired) {
+                this.memoryLock.release('memory', 'hub');
+            }
         }
     }
 
@@ -1589,6 +1644,30 @@ class CBAHub {
                     id: msg.id,
                     result: pageContext
                 }));
+                break;
+
+            // Phase 8.5: Sentinel Error Protocol (Issue 16)
+            case 'starlight.error':
+                console.error(`[CBA Hub] 🚨 Error from Sentinel ${sentinel?.layer || 'Unknown'}:`, params.error);
+                if (params.stack) {
+                    console.error(`[CBA Hub] Sentinel Stack Trace:\n${params.stack}`);
+                }
+
+                // Add to report
+                this.reportData.push({
+                    type: 'SENTINEL_ERROR',
+                    layer: sentinel?.layer || 'Unknown',
+                    error: params.error,
+                    stack: params.stack,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+
+                // Notify UI via broadcast
+                this.broadcastToClients({
+                    type: 'SENTINEL_ERROR',
+                    layer: sentinel?.layer || 'Unknown',
+                    error: params.error
+                });
                 break;
         }
     }
@@ -2257,12 +2336,27 @@ class CBAHub {
     async executeCommand(msg, retry = true) {
         const startTime = Date.now();
         try {
-            // Lazy launch browser if needed
-            if (!this.page) {
-                console.log('[CBA Hub] Launching browser for mission execution...');
-                this.browser = await chromium.launch({ headless: this.headless });
+            // Ensure browser is launched
+            if (!this.browser) {
+                console.log('[CBA Hub] Launching browser for execution...');
+
+                // Phase 15: Use BrowserAdapter for Polymorphism
+                if (!this.browserAdapter) {
+                    this.browserAdapter = await BrowserAdapter.create(this.config.hub?.browser || {});
+                }
+                this.browser = await this.browserAdapter.launch({ headless: this.headless });
+
                 const context = await this.browser.newContext();
                 this.page = await context.newPage();
+            }
+
+            // Phase 15: Normalize Selectors (e.g. remove >>> for Firefox)
+            if (this.browserAdapter && msg.selector && typeof msg.selector === 'string') {
+                const originalSelector = msg.selector;
+                msg.selector = this.browserAdapter.normalizeSelector(msg.selector);
+                if (msg.selector !== originalSelector) {
+                    console.log(`[CBA Hub] Normalized selector for ${this.browserAdapter.engine}: "${originalSelector}" -> "${msg.selector}"`);
+                }
             }
 
             if (this.config.hub?.ghostMode && msg.cmd !== 'goto' && msg.cmd !== 'checkpoint') {
@@ -2388,6 +2482,124 @@ class CBAHub {
                 }
                 hideObstacles(document);
             });
+        }
+    }
+
+    /**
+     * Phase 13: Get page context for NLI parsing.
+     * Extracts semantic elements (buttons, inputs, products) to guide the LLM.
+     */
+    async getPageContext() {
+        if (!this.page) return { error: 'No active page' };
+
+        try {
+            const context = await this.page.evaluate(() => {
+                const data = {
+                    url: window.location.href,
+                    title: document.title,
+                    headings: [],
+                    buttons: [],
+                    inputs: [],
+                    links: [],
+                    products: []
+                };
+
+                // Helper to get visible text
+                const isVisible = (el) => {
+                    const style = window.getComputedStyle(el);
+                    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+                };
+
+                // Headings
+                document.querySelectorAll('h1, h2, h3').forEach(h => {
+                    if (isVisible(h) && h.innerText.trim()) data.headings.push(h.innerText.trim());
+                });
+
+                // Buttons (and inputs that act as buttons)
+                document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"]').forEach(b => {
+                    if (isVisible(b)) {
+                        const text = b.innerText || b.value || b.getAttribute('aria-label') || '';
+                        if (text.trim()) data.buttons.push({ text: text.trim().slice(0, 50) });
+                    }
+                });
+
+                // Inputs
+                document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach(i => {
+                    if (isVisible(i) && !['button', 'submit', 'image'].includes(i.type)) {
+                        let label = '';
+                        if (i.labels && i.labels.length > 0) label = i.labels[0].innerText;
+                        else if (i.placeholder) label = i.placeholder;
+                        else if (i.getAttribute('aria-label')) label = i.getAttribute('aria-label');
+                        else if (i.id) label = i.id;
+
+                        data.inputs.push({
+                            label: (label || 'unknown').trim().slice(0, 50),
+                            type: i.type || 'text',
+                            value: i.value
+                        });
+                    }
+                });
+
+                // Links (Navigation) - Enhanced with Generic Semantic Extraction
+                document.querySelectorAll('a').forEach(a => {
+                    if (isVisible(a)) {
+                        let text = a.innerText.trim();
+
+                        // Fallback to accessibility attributes
+                        if (!text) text = a.getAttribute('aria-label') || a.getAttribute('data-test') || a.title;
+
+                        // Phase 14: Generic Semantic Class Extraction
+                        // If text is empty OR short/numeric (like a badge "1"), scan classes
+                        if ((!text || text.length < 3 || !isNaN(text)) && a.classList && a.classList.length > 0) {
+                            const semanticKeywords = ['cart', 'menu', 'login', 'signin', 'sign-in', 'search', 'user', 'profile', 'account', 'home'];
+                            const classes = Array.from(a.classList);
+                            const semanticClass = classes.find(c => semanticKeywords.some(k => c.toLowerCase().includes(k)));
+
+                            if (semanticClass) {
+                                // Convert snake_case or kebab-case
+                                const extracted = semanticClass.replace(/[-_]/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+                                if (extracted) {
+                                    // Append or replace
+                                    text = text ? `${text} (${extracted})` : extracted;
+                                }
+                            }
+                        }
+
+                        if (text) {
+                            data.links.push({ text: text.trim().slice(0, 50), href: a.href });
+                        }
+                    }
+                });
+
+                // Product Detection Heuristic (Price patterns)
+                // Looks for elements containing "$" or "€" or "£" + digits
+                const priceRegex = /[$€£]\s*\d+(?:\.\d{2})?/;
+                const priceElements = Array.from(document.querySelectorAll('*')).filter(el =>
+                    el.children.length === 0 && el.innerText && priceRegex.test(el.innerText) && isVisible(el)
+                );
+
+                priceElements.forEach(el => {
+                    // Try to find a container for this product
+                    const container = el.closest('.inventory_item, .product, .item, .card, div');
+                    if (container) {
+                        const nameEl = container.querySelector('.inventory_item_name, .product-name, h3, h4, .title');
+                        const name = nameEl ? nameEl.innerText.trim() : 'Unknown Product';
+                        const price = el.innerText.trim();
+                        // Deduplicate
+                        if (!data.products.some(p => p.name === name)) {
+                            data.products.push({ name, price });
+                        }
+                    }
+                });
+
+                return data;
+            });
+
+            console.log(`[CBA Hub] Page Context extracted: ${context.buttons.length} buttons, ${context.inputs.length} inputs, ${context.products.length} products`);
+            return context;
+        } catch (e) {
+            console.error(`[CBA Hub] Failed to extract page context: ${e.message}`);
+            return { error: e.message };
         }
     }
 

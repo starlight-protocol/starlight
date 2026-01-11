@@ -156,7 +156,7 @@ class NLIParser {
         const commands = this._extractJSON(response);
 
         // Validate commands
-        return this._validateCommands(commands);
+        return this._validateCommands(commands, pageContext);
     }
 
     /**
@@ -259,7 +259,7 @@ class NLIParser {
      * Validate and normalize command objects.
      * @private
      */
-    _validateCommands(commands) {
+    _validateCommands(commands, context = null) {
         const validCmds = ['goto', 'click', 'fill', 'select', 'hover',
             'check', 'uncheck', 'scroll', 'press',
             'screenshot', 'checkpoint', 'type', 'upload'];
@@ -277,6 +277,33 @@ class NLIParser {
                     else if (normalized.text && normalized.goal) normalized.cmd = 'fill';
                     else if (normalized.goal) normalized.cmd = 'click';
                     else return null;
+                }
+
+                // Correction: If 'fill' is used without text, assume it's a click (LLM hallucination)
+                if (normalized.cmd === 'fill' && !normalized.text && normalized.goal) {
+                    console.log(`[NLI] Auto-correction: 'fill ${normalized.goal}' -> 'click ${normalized.goal}' (missing text)`);
+                    normalized.cmd = 'click';
+                }
+
+                // Context-Aware Correction: If 'fill' targets a known link/button, switch to 'click'
+                if (normalized.cmd === 'fill' && context && normalized.goal) {
+
+                    // Phase 14: Fuzzy Matching for Generic Perception
+                    // "Shopping Cart" (LLM) should match "shopping cart link" (Generic generic extraction)
+                    const goal = normalized.goal.toLowerCase();
+                    const isLink = context.links?.some(l => l.text.toLowerCase().includes(goal) || goal.includes(l.text.toLowerCase()));
+                    const isButton = context.buttons?.some(b => b.text.toLowerCase().includes(goal) || goal.includes(b.text.toLowerCase()));
+
+                    if (isLink || isButton) {
+                        console.log(`[NLI] Context Correction: 'fill ${normalized.goal}' -> 'click ${normalized.goal}' (target is ${isLink ? 'link' : 'button'})`);
+                        normalized.cmd = 'click';
+                        delete normalized.text; // Remove text payload if any
+                    } else {
+                        console.log(`[NLI] No context match for '${normalized.goal}'. Available links: ${context.links?.length}`);
+                        if (context.links?.length > 0) {
+                            console.log(`[NLI] Links: ${context.links.map(l => l.text).slice(0, 10).join(', ')}...`);
+                        }
+                    }
                 }
 
                 // Normalize URL

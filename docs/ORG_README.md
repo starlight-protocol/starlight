@@ -17,7 +17,8 @@ Starlight is an open protocol for building **self-healing browser automation** s
 ### The Solution
 - ✅ **Autonomous Sentinels** handle popups, cookies, modals automatically
 - ✅ **Entropy-based stability** waits only as long as needed
-- ✅ **Self-healing** and **Semantic Resolution** find elements by goal, not just selectors
+- ✅ **True Self-Healing**: Hub learns and persists element selectors automatically
+- ✅ **Semantic Perception**: Resolves goals like "Buy something" dynamically without hardcoded selectors
 - ✅ **Sentinel Store** and **Visual Editor** for no-code agent creation
 - ✅ **Enterprise Security** with JWT authentication, input validation, and PII protection
 

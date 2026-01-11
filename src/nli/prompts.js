@@ -33,6 +33,7 @@ RULES:
 3. Use "goal" for semantic element identification, not selectors.
 4. Preserve the exact values the user provides (usernames, passwords, etc.)
 5. If URL is missing protocol, assume "https://"
+6. DO NOT generate 'goto' commands unless the user EXPLICITLY asks to navigate (e.g., "go to", "open", "navigate"). NEVER hallucinate a navigation step after an interaction.
 
 EXAMPLES:
 
@@ -52,6 +53,7 @@ Output: [{"cmd":"goto","url":"https://saucedemo.com"},{"cmd":"fill","goal":"User
 const INTENT_PARSER_PROMPT_LITE = `Convert instructions to JSON commands.
 Commands: goto(url), fill(goal,text), click(goal), select(goal,value), hover(goal), check(goal), screenshot(name)
 Output ONLY JSON array. No text.
+Rule: Do NOT generate goto/url unless explicitly asked.
 
 Example: "Login with user test and password 123"
 Output: [{"cmd":"fill","goal":"user","text":"test"},{"cmd":"fill","goal":"password","text":"123"},{"cmd":"click","goal":"Login"}]`;
@@ -82,7 +84,7 @@ CRITICAL RULES:
 2. Use EXACT text from the page context for "goal" values.
 3. Only generate commands for elements that EXIST in the page context.
 4. If user asks for "cheapest" product, find the lowest price from the products list.
-5. If user asks to "buy" something, generate a click on "Add to cart" or similar button.
+5. If user asks to "buy" something, generate a sequence: Click "Add to cart" -> Click "Shopping Cart" or "Checkout" if available.
 
 AVAILABLE COMMANDS:
 - { "cmd": "click", "goal": "<EXACT_BUTTON_TEXT>" }
@@ -92,10 +94,11 @@ AVAILABLE COMMANDS:
 
 EXAMPLE:
 Page Context has buttons: ["Add to cart", "Remove", "Checkout"]
-Page Context has products: [{"name": "Bike Light", "price": "$9.99"}, {"name": "Backpack", "price": "$29.99"}]
+Page Context has links: ["Shopping Cart"]
+Page Context has products: [{"name": "Bike Light", "price": "$9.99"}]
 
 User: "Buy the cheapest product"
-Output: [{"cmd":"click","goal":"Add to cart"}]
+Output: [{"cmd":"click","goal":"Add to cart"}, {"cmd":"click","goal":"Shopping Cart"}]
 
 User: "Add the backpack to cart"
 Output: [{"cmd":"click","goal":"Add to cart"}]

@@ -17,22 +17,26 @@ const TEST_CASES = [
     // Simple commands - Fallback parser handles these instantly
     {
         description: 'Navigate to SauceDemo',
-        instruction: 'Go to https://www.saucedemo.com'
+        instruction: 'Go to https://www.saucedemo.com',
+        minSteps: 1
     },
     {
         description: 'Login with credentials',
-        instruction: 'Fill Username with standard_user and fill Password with secret_sauce and click Login'
+        instruction: 'Fill Username with standard_user and fill Password with secret_sauce and click Login',
+        minSteps: 3
     },
     {
         description: 'Add item to cart',
-        instruction: 'Click Add to cart'
+        instruction: 'Click Add to cart',
+        minSteps: 1
     },
     // Context-aware command - LLM with page context
     // This test MUST succeed now with context-aware NLI
     {
         description: 'Context-aware: Buy something (LLM with page context)',
         instruction: 'I want to buy something',
-        isContextTest: true
+        isContextTest: true,
+        minSteps: 2
     }
 ];
 
@@ -77,6 +81,10 @@ async function runNLITest() {
                 const startTime = Date.now();
                 const results = await runner.executeNL(test.instruction);
                 const elapsed = Date.now() - startTime;
+
+                if (test.minSteps && results.length < test.minSteps) {
+                    throw new Error(`Incomplete execution: Expected at least ${test.minSteps} steps, got ${results.length}`);
+                }
 
                 console.log(`\n[Result] ✅ Success in ${elapsed}ms`);
                 console.log(`[Steps Executed] ${results.length}`);
