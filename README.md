@@ -180,14 +180,16 @@ The following **production-ready Sentinels** are included and used by Mission Co
 | Sentinel | Location | Description |
 |----------|----------|-------------|
 | **Pulse Sentinel** | `sentinels/pulse_sentinel.py` | Waits for page stability |
-| **Janitor Sentinel** | `sentinels/janitor_sentinel.py` | Clears popups, modals, banners |
+| **Janitor Sentinel** | `sentinels/janitor.py` | Clears popups, modals, banners |
 | **Vision Sentinel** | `sentinels/vision_sentinel.py` | AI-powered obstacle detection |
 | **Data Sentinel** | `sentinels/data_sentinel.py` | Context extraction |
 | **A11y Sentinel** | `sentinels/a11y_sentinel.py` | Accessibility monitoring |
+| **PII Sentinel** | `sentinels/pii_sentinel.py` | Sensitive data protection |
+| **Responsive Sentinel** | `sentinels/responsive_sentinel.py` | Viewport monitoring |
 
 ```bash
 # These are what Mission Control launches
-python sentinels/janitor_sentinel.py
+python sentinels/janitor.py
 ```
 
 ### SDKs for Custom Sentinel Development
@@ -260,34 +262,35 @@ await runner.clickGoal('Submit');
 ---
 
 
-## 🛒 Sentinel Store
+## 🛒 Available Sentinels
 
-Install community Sentinels or create your own:
+The following Sentinels are included and ready to use:
+
+| Sentinel | File | Description |
+|----------|------|-------------|
+| **Pulse** | `sentinels/pulse_sentinel.py` | Monitors DOM mutations and network activity for stability |
+| **Janitor** | `sentinels/janitor.py` | Clears popups, modals, overlays, cookie banners |
+| **Vision** | `sentinels/vision_sentinel.py` | AI-powered visual obstacle detection (Moondream/Ollama) |
+| **Data** | `sentinels/data_sentinel.py` | Context extraction and injection |
+| **A11y** | `sentinels/a11y_sentinel.py` | Accessibility monitoring and WCAG compliance |
+| **PII** | `sentinels/pii_sentinel.py` | Sensitive data detection and redaction |
+| **Responsive** | `sentinels/responsive_sentinel.py` | Viewport and responsive layout monitoring |
+
+### Create Your Own Sentinel
 
 ```bash
-# List installed & available
-python cli/main.py list --available
+# Use CLI to scaffold a new Sentinel
+python cli/main.py create "My Custom Sentinel"
 
-# Install from registry or GitHub
-python cli/main.py install cookie-consent
-python cli/main.py install captcha-detector
-python cli/main.py install https://github.com/user/my-sentinel
-
-# Create new Sentinel
-python cli/main.py create "Cookie Blocker"
-
-# Use Visual Editor (no-code)
+# Or use the Visual Editor (no-code)
 # Open Mission Control → Click "Create Sentinel"
 ```
 
-**Available Plugins:**
-| Plugin | Description |
-|--------|-------------|
-| `cookie-consent` | Auto-dismiss cookie banners and GDPR popups |
-| `captcha-detector` | Detect CAPTCHA and pause for manual intervention |
-| `login-session` | Persist login sessions across test runs |
+### Coming Soon: Sentinel Marketplace
+> 🚧 **Planned for Phase 3**: A community marketplace for sharing and installing Sentinels.
 
 ---
+
 
 ## ✅ Test Coverage
 
