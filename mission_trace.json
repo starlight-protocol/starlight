@@ -1,14 +1,67 @@
 [
   {
-    "timestamp": 1768124394535,
-    "humanTime": "3:09:54 pm",
-    "method": "starlight.getPageContext",
-    "params": {},
+    "timestamp": 1768130085077,
+    "humanTime": "4:44:45 pm",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "PulseSentinel",
+      "priority": 1,
+      "selectors": [],
+      "capabilities": [
+        "temporal-stability",
+        "settling",
+        "network-idle"
+      ],
+      "version": "1.0.0",
+      "authToken": null
+    },
     "snapshot": null
   },
   {
-    "timestamp": 1768124394657,
-    "humanTime": "3:09:54 pm",
+    "timestamp": 1768130085093,
+    "humanTime": "4:44:45 pm",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "JanitorSentinel",
+      "priority": 5,
+      "selectors": [
+        ".modal",
+        ".popup",
+        "#overlay",
+        ".obstacle",
+        "#stabilize-btn",
+        ".shadow-overlay",
+        ".shadow-close-btn",
+        ".newsletter",
+        "#newsletter",
+        ".subscribe-popup",
+        "#subscribe-modal",
+        ".email-popup",
+        ".signup-modal",
+        ".newsletter-modal",
+        ".newsletter-popup",
+        ".g-recaptcha",
+        "#recaptcha",
+        ".recaptcha-checkbox",
+        "[data-sitekey]",
+        "#captcha",
+        ".captcha",
+        ".captcha-container",
+        "#challenge-form",
+        ".challenge-form",
+        "#captcha-form",
+        ".rc-anchor",
+        ".rc-imageselect"
+      ],
+      "capabilities": [],
+      "version": "1.0.0",
+      "authToken": null
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130086554,
+    "humanTime": "4:44:46 pm",
     "method": "starlight.intent",
     "params": {
       "cmd": "goto",
@@ -17,8 +70,26 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124396307,
-    "humanTime": "3:09:56 pm",
+    "timestamp": 1768130088096,
+    "humanTime": "4:44:48 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130088096,
+    "humanTime": "4:44:48 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130088179,
+    "humanTime": "4:44:48 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -26,8 +97,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124396498,
-    "humanTime": "3:09:56 pm",
+    "timestamp": 1768130088383,
+    "humanTime": "4:44:48 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -35,8 +106,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124396707,
-    "humanTime": "3:09:56 pm",
+    "timestamp": 1768130088518,
+    "humanTime": "4:44:48 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -44,8 +115,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124396928,
-    "humanTime": "3:09:56 pm",
+    "timestamp": 1768130088733,
+    "humanTime": "4:44:48 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -53,8 +124,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124397081,
-    "humanTime": "3:09:57 pm",
+    "timestamp": 1768130088849,
+    "humanTime": "4:44:48 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -62,8 +133,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124397609,
-    "humanTime": "3:09:57 pm",
+    "timestamp": 1768130089366,
+    "humanTime": "4:44:49 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -71,8 +142,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124397662,
-    "humanTime": "3:09:57 pm",
+    "timestamp": 1768130089424,
+    "humanTime": "4:44:49 pm",
     "method": "SEND",
     "params": {
       "type": "COMMAND_COMPLETE",
@@ -84,46 +155,41 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124398084,
-    "humanTime": "3:09:58 pm",
-    "method": "starlight.entropy_stream",
-    "params": {
-      "entropy": true
-    },
-    "snapshot": null
-  },
-  {
-    "timestamp": 1768124398661,
-    "humanTime": "3:09:58 pm",
-    "method": "starlight.entropy_stream",
-    "params": {
-      "entropy": true
-    },
-    "snapshot": null
-  },
-  {
-    "timestamp": 1768124398676,
-    "humanTime": "3:09:58 pm",
-    "method": "starlight.getPageContext",
-    "params": {},
-    "snapshot": null
-  },
-  {
-    "timestamp": 1768124398686,
-    "humanTime": "3:09:58 pm",
+    "timestamp": 1768130089426,
+    "humanTime": "4:44:49 pm",
     "method": "starlight.intent",
     "params": {
       "cmd": "fill",
       "goal": "Username",
       "text": "standard_user",
+      "context": {},
       "selector": "#user-name",
       "selfHealed": false
     },
     "snapshot": null
   },
   {
-    "timestamp": 1768124400202,
-    "humanTime": "3:10:00 pm",
+    "timestamp": 1768130089439,
+    "humanTime": "4:44:49 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130089440,
+    "humanTime": "4:44:49 pm",
+    "method": "starlight.wait",
+    "params": {
+      "retryAfterMs": 427,
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130089873,
+    "humanTime": "4:44:49 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -131,8 +197,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124400865,
-    "humanTime": "3:10:00 pm",
+    "timestamp": 1768130090400,
+    "humanTime": "4:44:50 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -140,8 +206,63 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124400915,
-    "humanTime": "3:10:00 pm",
+    "timestamp": 1768130090890,
+    "humanTime": "4:44:50 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130090890,
+    "humanTime": "4:44:50 pm",
+    "method": "starlight.wait",
+    "params": {
+      "retryAfterMs": 200,
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130092117,
+    "humanTime": "4:44:52 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130092117,
+    "humanTime": "4:44:52 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130092120,
+    "humanTime": "4:44:52 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130092729,
+    "humanTime": "4:44:52 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130092776,
+    "humanTime": "4:44:52 pm",
     "method": "SEND",
     "params": {
       "type": "COMMAND_COMPLETE",
@@ -153,21 +274,59 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124400916,
-    "humanTime": "3:10:00 pm",
+    "timestamp": 1768130092777,
+    "humanTime": "4:44:52 pm",
     "method": "starlight.intent",
     "params": {
       "cmd": "fill",
       "goal": "Password",
       "text": "secret_sauce",
+      "context": {},
       "selector": "#password",
       "selfHealed": false
     },
     "snapshot": null
   },
   {
-    "timestamp": 1768124402432,
-    "humanTime": "3:10:02 pm",
+    "timestamp": 1768130092785,
+    "humanTime": "4:44:52 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130092785,
+    "humanTime": "4:44:52 pm",
+    "method": "starlight.wait",
+    "params": {
+      "retryAfterMs": 444,
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130095747,
+    "humanTime": "4:44:55 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130095747,
+    "humanTime": "4:44:55 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130095750,
+    "humanTime": "4:44:55 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -175,8 +334,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124403027,
-    "humanTime": "3:10:03 pm",
+    "timestamp": 1768130096317,
+    "humanTime": "4:44:56 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -184,8 +343,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124403083,
-    "humanTime": "3:10:03 pm",
+    "timestamp": 1768130096368,
+    "humanTime": "4:44:56 pm",
     "method": "SEND",
     "params": {
       "type": "COMMAND_COMPLETE",
@@ -197,20 +356,39 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124403084,
-    "humanTime": "3:10:03 pm",
+    "timestamp": 1768130096369,
+    "humanTime": "4:44:56 pm",
     "method": "starlight.intent",
     "params": {
       "cmd": "click",
       "goal": "Login",
+      "context": {},
       "selector": "input[type=\"submit\"][value=\"Login\"]",
       "selfHealed": false
     },
     "snapshot": null
   },
   {
-    "timestamp": 1768124404604,
-    "humanTime": "3:10:04 pm",
+    "timestamp": 1768130097896,
+    "humanTime": "4:44:57 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130097896,
+    "humanTime": "4:44:57 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130097899,
+    "humanTime": "4:44:57 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -218,8 +396,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124404782,
-    "humanTime": "3:10:04 pm",
+    "timestamp": 1768130098076,
+    "humanTime": "4:44:58 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -227,8 +405,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124405463,
-    "humanTime": "3:10:05 pm",
+    "timestamp": 1768130098708,
+    "humanTime": "4:44:58 pm",
     "method": "SEND",
     "params": {
       "type": "COMMAND_COMPLETE",
@@ -240,27 +418,21 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124406469,
-    "humanTime": "3:10:06 pm",
-    "method": "starlight.getPageContext",
-    "params": {},
-    "snapshot": null
-  },
-  {
-    "timestamp": 1768124406481,
-    "humanTime": "3:10:06 pm",
+    "timestamp": 1768130098710,
+    "humanTime": "4:44:58 pm",
     "method": "starlight.intent",
     "params": {
       "cmd": "click",
       "goal": "Add to cart",
+      "context": {},
       "selector": "button:has-text(\"Add to cart\")",
       "selfHealed": false
     },
     "snapshot": null
   },
   {
-    "timestamp": 1768124408065,
-    "humanTime": "3:10:08 pm",
+    "timestamp": 1768130099823,
+    "humanTime": "4:44:59 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -268,8 +440,27 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124408605,
-    "humanTime": "3:10:08 pm",
+    "timestamp": 1768130100242,
+    "humanTime": "4:45:00 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130100242,
+    "humanTime": "4:45:00 pm",
+    "method": "starlight.wait",
+    "params": {
+      "retryAfterMs": 200,
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130100349,
+    "humanTime": "4:45:00 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -277,8 +468,53 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124408666,
-    "humanTime": "3:10:08 pm",
+    "timestamp": 1768130101020,
+    "humanTime": "4:45:01 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130101530,
+    "humanTime": "4:45:01 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130102980,
+    "humanTime": "4:45:02 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130102981,
+    "humanTime": "4:45:02 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130103082,
+    "humanTime": "4:45:03 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130103662,
+    "humanTime": "4:45:03 pm",
     "method": "SEND",
     "params": {
       "type": "COMMAND_COMPLETE",
@@ -290,45 +526,39 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124409475,
-    "humanTime": "3:10:09 pm",
-    "method": "starlight.entropy_stream",
-    "params": {
-      "entropy": true
-    },
-    "snapshot": null
-  },
-  {
-    "timestamp": 1768124409670,
-    "humanTime": "3:10:09 pm",
-    "method": "starlight.getPageContext",
-    "params": {},
-    "snapshot": null
-  },
-  {
-    "timestamp": 1768124409746,
-    "humanTime": "3:10:09 pm",
-    "method": "starlight.entropy_stream",
-    "params": {
-      "entropy": true
-    },
-    "snapshot": null
-  },
-  {
-    "timestamp": 1768124427043,
-    "humanTime": "3:10:27 pm",
+    "timestamp": 1768130103663,
+    "humanTime": "4:45:03 pm",
     "method": "starlight.intent",
     "params": {
       "cmd": "click",
-      "goal": "Add to cart",
-      "selector": "button:has-text(\"Add to cart\")",
+      "goal": "shopping cart",
+      "context": {},
+      "selector": "a:has-text(\"1\")",
       "selfHealed": false
     },
     "snapshot": null
   },
   {
-    "timestamp": 1768124427469,
-    "humanTime": "3:10:27 pm",
+    "timestamp": 1768130105178,
+    "humanTime": "4:45:05 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130105179,
+    "humanTime": "4:45:05 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130105330,
+    "humanTime": "4:45:05 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -336,8 +566,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124428078,
-    "humanTime": "3:10:28 pm",
+    "timestamp": 1768130105914,
+    "humanTime": "4:45:05 pm",
     "method": "SEND",
     "params": {
       "type": "COMMAND_COMPLETE",
@@ -349,20 +579,39 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124428081,
-    "humanTime": "3:10:28 pm",
+    "timestamp": 1768130105916,
+    "humanTime": "4:45:05 pm",
     "method": "starlight.intent",
     "params": {
       "cmd": "click",
-      "goal": "Shopping Cart",
-      "selector": "a:has-text(\"2\")",
+      "goal": "Checkout",
+      "context": {},
+      "selector": "button:has-text(\"Checkout\")",
       "selfHealed": false
     },
     "snapshot": null
   },
   {
-    "timestamp": 1768124429483,
-    "humanTime": "3:10:29 pm",
+    "timestamp": 1768130107433,
+    "humanTime": "4:45:07 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130107433,
+    "humanTime": "4:45:07 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130107522,
+    "humanTime": "4:45:07 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -370,8 +619,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124429858,
-    "humanTime": "3:10:29 pm",
+    "timestamp": 1768130108045,
+    "humanTime": "4:45:08 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -379,8 +628,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124430500,
-    "humanTime": "3:10:30 pm",
+    "timestamp": 1768130108094,
+    "humanTime": "4:45:08 pm",
     "method": "SEND",
     "params": {
       "type": "COMMAND_COMPLETE",
@@ -392,8 +641,40 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124430833,
-    "humanTime": "3:10:30 pm",
+    "timestamp": 1768130108097,
+    "humanTime": "4:45:08 pm",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "fill",
+      "goal": "First Name",
+      "text": "John",
+      "context": {},
+      "selector": "#first-name",
+      "selfHealed": false
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130109614,
+    "humanTime": "4:45:09 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130109614,
+    "humanTime": "4:45:09 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130109616,
+    "humanTime": "4:45:09 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -401,8 +682,8 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124431306,
-    "humanTime": "3:10:31 pm",
+    "timestamp": 1768130110188,
+    "humanTime": "4:45:10 pm",
     "method": "starlight.entropy_stream",
     "params": {
       "entropy": true
@@ -410,11 +691,322 @@
     "snapshot": null
   },
   {
-    "timestamp": 1768124431521,
-    "humanTime": "3:10:31 pm",
+    "timestamp": 1768130110259,
+    "humanTime": "4:45:10 pm",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-8",
+      "success": true,
+      "error": null,
+      "context": {}
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130110261,
+    "humanTime": "4:45:10 pm",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "fill",
+      "goal": "Last Name",
+      "text": "Doe",
+      "context": {},
+      "selector": "#last-name",
+      "selfHealed": false
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130110271,
+    "humanTime": "4:45:10 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130110271,
+    "humanTime": "4:45:10 pm",
+    "method": "starlight.wait",
+    "params": {
+      "retryAfterMs": 418,
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130111712,
+    "humanTime": "4:45:11 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130111712,
+    "humanTime": "4:45:11 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130111715,
+    "humanTime": "4:45:11 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130112276,
+    "humanTime": "4:45:12 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130112333,
+    "humanTime": "4:45:12 pm",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-9",
+      "success": true,
+      "error": null,
+      "context": {}
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130112334,
+    "humanTime": "4:45:12 pm",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "fill",
+      "goal": "Zip/Postal Code",
+      "text": "12345",
+      "context": {},
+      "selector": "#postal-code",
+      "selfHealed": false
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130112341,
+    "humanTime": "4:45:12 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130112341,
+    "humanTime": "4:45:12 pm",
+    "method": "starlight.wait",
+    "params": {
+      "retryAfterMs": 436,
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130113808,
+    "humanTime": "4:45:13 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130113808,
+    "humanTime": "4:45:13 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130113812,
+    "humanTime": "4:45:13 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130114402,
+    "humanTime": "4:45:14 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130114467,
+    "humanTime": "4:45:14 pm",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-10",
+      "success": true,
+      "error": null,
+      "context": {}
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130114468,
+    "humanTime": "4:45:14 pm",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "click",
+      "goal": "Continue",
+      "context": {},
+      "selector": "input[type=\"submit\"][value=\"Continue\"]",
+      "selfHealed": false
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130114481,
+    "humanTime": "4:45:14 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130114481,
+    "humanTime": "4:45:14 pm",
+    "method": "starlight.wait",
+    "params": {
+      "retryAfterMs": 421,
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130115935,
+    "humanTime": "4:45:15 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130115935,
+    "humanTime": "4:45:15 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130115940,
+    "humanTime": "4:45:15 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130116071,
+    "humanTime": "4:45:16 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130116670,
+    "humanTime": "4:45:16 pm",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-11",
+      "success": true,
+      "error": null,
+      "context": {}
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130116672,
+    "humanTime": "4:45:16 pm",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "click",
+      "goal": "Finish",
+      "context": {},
+      "selector": "button:has-text(\"Finish\")",
+      "selfHealed": false
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130116686,
+    "humanTime": "4:45:16 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130116687,
+    "humanTime": "4:45:16 pm",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130116805,
+    "humanTime": "4:45:16 pm",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130117372,
+    "humanTime": "4:45:17 pm",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-12",
+      "success": true,
+      "error": null,
+      "context": {}
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768130117374,
+    "humanTime": "4:45:17 pm",
     "method": "starlight.finish",
     "params": {
-      "reason": "NLI E2E test complete"
+      "reason": "SauceDemo checkout demo completed successfully"
     },
     "snapshot": null
   }

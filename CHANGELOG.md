@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.0-alpha] - 2026-01-14
+
+### 🌟 Phase 19: World-Class Foundation
+
+#### Added - Go SDK (`go-sdk/`)
+- **Full Protocol Compliance** - Implements Starlight Protocol v1.0.0
+- **WebSocket Client** - Auto-reconnect with configurable delays
+- **JWT Authentication** - Built-in token generation and validation
+- **Goroutine-Safe** - Thread-safe operations with proper mutex locking
+- **Context-Aware** - Graceful shutdown via context cancellation
+- **Example Sentinel** - `examples/simple_sentinel/main.go`
+
+#### Added - OpenTelemetry Integration (`src/observability/otel.js`)
+- **Distributed Tracing** - Spans for mission lifecycle, commands, pre-checks
+- **Metrics Collection** - Mission duration, sentinel count, error rate, hijack count
+- **OTLP Export** - Compatible with Jaeger, Zipkin, Grafana, Datadog
+- **W3C Trace Context** - Standard header propagation
+
+#### Added - VS Code Extension (`vscode-starlight/`)
+- **Syntax Highlighting** - `.warp` files and Starlight API injection in JS/TS
+- **Snippets** - JavaScript (`starlightRunner`, `clickGoal`) and Python (`starlightSentinel`, `sendHijack`)
+- **Commands** - Start/Stop Hub, Run Mission, Create Sentinel, Open Triage
+- **Sidebar Views** - Sentinels, Missions, Hub Status tree views
+- **Configuration** - Hub URL, browser selection, headless mode
+
+#### Added - Multi-Provider NLI
+- **OpenAI Integration** - GPT-4 support via API
+- **Anthropic Integration** - Claude 3 support
+- **Azure OpenAI** - Enterprise cloud deployment
+- **Provider Switching** - Hot-swap between providers in config
+
+#### Changed - Configuration
+- **`config.json`** - Added `observability` section with OTLP, tracing, metrics settings
+- **`config.json`** - Added `nli.providers` for multi-provider support
+
+---
+
 ## [3.0.4] - 2026-01-11
 
 ### 🚑 Critical Hotfixes
