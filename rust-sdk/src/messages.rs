@@ -77,18 +77,18 @@ impl<T> JsonRpcNotification<T> {
 pub struct RegistrationParams {
     /// Sentinel layer name (e.g., "JanitorSentinel")
     pub layer: String,
-    
+
     /// Priority (1-10, lower = higher priority)
     pub priority: u8,
-    
+
     /// Capabilities (e.g., ["detection", "healing"])
     #[serde(default)]
     pub capabilities: Vec<String>,
-    
+
     /// CSS selectors this Sentinel monitors
     #[serde(default)]
     pub selectors: Vec<String>,
-    
+
     /// Optional JWT authentication token
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_token: Option<String>,
@@ -131,26 +131,26 @@ pub struct PreCheckParams {
     /// Current page URL
     #[serde(default)]
     pub url: Option<String>,
-    
+
     /// Upcoming command type
     pub command: String,
-    
+
     /// Target selector for the command
     #[serde(default)]
     pub selector: Option<String>,
-    
+
     /// Semantic goal
     #[serde(default)]
     pub goal: Option<String>,
-    
+
     /// Detected blocking elements
     #[serde(default)]
     pub blocking: Vec<BlockingElement>,
-    
+
     /// Page screenshot (base64)
     #[serde(default)]
     pub screenshot: Option<String>,
-    
+
     /// Additional context
     #[serde(default)]
     pub context: HashMap<String, serde_json::Value>,
@@ -173,7 +173,7 @@ pub enum PreCheckResponse {
     /// All clear - proceed with command
     #[serde(rename = "clear")]
     Clear,
-    
+
     /// Wait - retry after specified milliseconds
     #[serde(rename = "wait")]
     Wait {
@@ -182,12 +182,10 @@ pub enum PreCheckResponse {
         #[serde(default)]
         reason: Option<String>,
     },
-    
+
     /// Hijack - Sentinel takes browser control
     #[serde(rename = "hijack")]
-    Hijack {
-        reason: String,
-    },
+    Hijack { reason: String },
 }
 
 /// Hijack parameters (Sentinel → Hub).

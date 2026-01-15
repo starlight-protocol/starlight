@@ -11,17 +11,17 @@ use crate::error::Result;
 pub struct Claims {
     /// Subject (Sentinel name)
     pub sub: String,
-    
+
     /// Issued at (Unix timestamp)
     pub iat: i64,
-    
+
     /// Expiration (Unix timestamp)
     pub exp: i64,
-    
+
     /// Issuer
     #[serde(default)]
     pub iss: Option<String>,
-    
+
     /// Additional claims
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
@@ -148,9 +148,9 @@ mod tests {
     fn test_generate_and_verify() {
         let handler = JwtHandler::new("test-secret-key-32-characters-long");
         let token = handler.generate_token("TestSentinel").unwrap();
-        
+
         assert!(!token.is_empty());
-        
+
         let claims = handler.verify_token(&token).unwrap();
         assert_eq!(claims.sub, "TestSentinel");
     }
@@ -161,9 +161,12 @@ mod tests {
         // (jsonwebtoken has a default leeway of 60 seconds for clock skew)
         let handler = JwtHandler::new("test-secret").with_expiry(-120);
         let token = handler.generate_token("TestSentinel").unwrap();
-        
+
         let result = handler.verify_token(&token);
-        assert!(result.is_err(), "Expected expired token to fail verification");
+        assert!(
+            result.is_err(),
+            "Expected expired token to fail verification"
+        );
     }
 
     #[test]
@@ -171,15 +174,15 @@ mod tests {
         let handler = JwtHandler::new("test-secret-key-32-characters-long");
         let original = handler.generate_token("TestSentinel").unwrap();
         let refreshed = handler.refresh_token(&original).unwrap();
-        
+
         // Both tokens should be valid
         let original_claims = handler.verify_token(&original).unwrap();
         let refreshed_claims = handler.verify_token(&refreshed).unwrap();
-        
+
         // Both should have the same subject
         assert_eq!(original_claims.sub, "TestSentinel");
         assert_eq!(refreshed_claims.sub, "TestSentinel");
-        
+
         // Refreshed token should have same or later expiration
         assert!(refreshed_claims.exp >= original_claims.exp);
     }

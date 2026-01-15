@@ -7,9 +7,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::time::sleep;
-use tokio_tungstenite::{
-    connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream,
-};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use tracing::{debug, error, info, warn};
 
 use crate::error::{Error, Result};
@@ -23,16 +21,16 @@ pub type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 pub struct ClientConfig {
     /// Hub URL (e.g., "ws://localhost:8080")
     pub url: String,
-    
+
     /// Enable auto-reconnection
     pub auto_reconnect: bool,
-    
+
     /// Initial reconnect delay in milliseconds
     pub reconnect_delay_ms: u64,
-    
+
     /// Maximum reconnect delay in milliseconds
     pub max_reconnect_delay_ms: u64,
-    
+
     /// Maximum reconnection attempts (0 = unlimited)
     pub max_reconnect_attempts: u32,
 }
@@ -85,9 +83,9 @@ impl WebSocketClient {
         info!("Connecting to Hub at {}", self.config.url);
 
         let (ws_stream, _) = connect_async(&self.config.url).await?;
-        
+
         info!("Connected to Hub");
-        
+
         *self.stream.write().await = Some(ws_stream);
         *self.connected.write().await = true;
         *self.reconnect_count.write().await = 0;
@@ -103,7 +101,7 @@ impl WebSocketClient {
     /// Send a message to the Hub.
     pub async fn send(&self, message: &str) -> Result<()> {
         let mut stream_guard = self.stream.write().await;
-        
+
         if let Some(ref mut stream) = *stream_guard {
             stream.send(Message::Text(message.to_string())).await?;
             debug!("Sent: {}", message);
@@ -122,7 +120,7 @@ impl WebSocketClient {
     /// Receive a message from the Hub.
     pub async fn receive(&self) -> Result<Option<RawMessage>> {
         let mut stream_guard = self.stream.write().await;
-        
+
         if let Some(ref mut stream) = *stream_guard {
             match stream.next().await {
                 Some(Ok(Message::Text(text))) => {
@@ -165,11 +163,16 @@ impl WebSocketClient {
             attempts += 1;
             *self.reconnect_count.write().await = attempts;
 
-            if self.config.max_reconnect_attempts > 0 
-                && attempts > self.config.max_reconnect_attempts 
+            if self.config.max_reconnect_attempts > 0
+                && attempts > self.config.max_reconnect_attempts
             {
-                error!("Max reconnection attempts ({}) exceeded", self.config.max_reconnect_attempts);
-                return Err(Error::ConnectionClosed("Max reconnection attempts exceeded".to_string()));
+                error!(
+                    "Max reconnection attempts ({}) exceeded",
+                    self.config.max_reconnect_attempts
+                );
+                return Err(Error::ConnectionClosed(
+                    "Max reconnection attempts exceeded".to_string(),
+                ));
             }
 
             info!("Reconnection attempt {} (delay: {}ms)", attempts, delay);
@@ -191,14 +194,14 @@ impl WebSocketClient {
     /// Close the connection.
     pub async fn close(&self) -> Result<()> {
         let mut stream_guard = self.stream.write().await;
-        
+
         if let Some(ref mut stream) = *stream_guard {
             stream.close(None).await?;
         }
-        
+
         *stream_guard = None;
         *self.connected.write().await = false;
-        
+
         info!("Connection closed");
         Ok(())
     }

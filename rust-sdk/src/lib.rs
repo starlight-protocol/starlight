@@ -39,10 +39,10 @@ pub use auth::JwtHandler;
 pub use client::WebSocketClient;
 pub use error::{Error, Result};
 pub use messages::{
-    JsonRpcRequest, JsonRpcResponse, PreCheckParams, PreCheckResponse,
-    RegistrationParams, ActionParams, HijackParams, EntropyParams, ActionCommand,
+    ActionCommand, ActionParams, EntropyParams, HijackParams, JsonRpcRequest, JsonRpcResponse,
+    PreCheckParams, PreCheckResponse, RegistrationParams,
 };
-pub use sentinel::{Sentinel, SentinelConfig, SentinelHandler, DefaultHandler};
+pub use sentinel::{DefaultHandler, Sentinel, SentinelConfig, SentinelHandler};
 
 /// Protocol version
 pub const PROTOCOL_VERSION: &str = "1.0.0";
