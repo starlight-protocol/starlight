@@ -180,7 +180,7 @@ pub struct Sentinel<H: SentinelHandler> {
 impl<H: SentinelHandler + 'static> Sentinel<H> {
     /// Create a new Sentinel.
     pub fn new(config: SentinelConfig, handler: H) -> Self {
-        let jwt_handler = config.jwt_secret.as_ref().map(|s| JwtHandler::new(s));
+        let jwt_handler = config.jwt_secret.as_ref().map(JwtHandler::new);
         
         Self {
             config,
@@ -316,7 +316,7 @@ impl<H: SentinelHandler + 'static> Sentinel<H> {
     }
 
     /// Send pre-check response to Hub.
-    async fn send_pre_check_response(&self, id: &str, response: PreCheckResponse) -> Result<()> {
+    async fn send_pre_check_response(&self, _id: &str, response: PreCheckResponse) -> Result<()> {
         let client = self.client.as_ref().ok_or(Error::NotConnected)?;
         
         let method = match &response {

@@ -4,7 +4,7 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// JWT claims for Starlight authentication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +74,7 @@ impl JwtHandler {
     /// let handler = JwtHandler::new("secret");
     /// let token = handler.generate_token("MySentinel").unwrap();
     /// ```
+    #[allow(clippy::result_large_err)]
     pub fn generate_token(&self, subject: impl Into<String>) -> Result<String> {
         let now = Utc::now();
         let exp = now + Duration::seconds(self.expires_in_seconds);
@@ -105,6 +106,7 @@ impl JwtHandler {
     ///
     /// # Errors
     /// Returns an error if the token is invalid or expired
+    #[allow(clippy::result_large_err)]
     pub fn verify_token(&self, token: &str) -> Result<Claims> {
         let mut validation = Validation::default();
         validation.set_required_spec_claims(&["exp", "sub"]);
@@ -125,6 +127,7 @@ impl JwtHandler {
     ///
     /// # Returns
     /// A new token with extended expiration
+    #[allow(clippy::result_large_err)]
     pub fn refresh_token(&self, token: &str) -> Result<String> {
         let claims = self.verify_token(token)?;
         self.generate_token(claims.sub)
