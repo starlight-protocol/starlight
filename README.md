@@ -243,6 +243,38 @@ sentinel.start("ws://localhost:8080");
 
 📦 **Location:** [`java-sdk/`](java-sdk/) | 📄 **[Java SDK README](java-sdk/README.md)**
 
+#### Rust SDK (New - v4.0.0)
+> ⚠️ **Note:** This SDK provides building blocks. Pre-built Sentinels (Janitor, Pulse, etc.) are NOT included - use Python versions or build your own.
+
+```rust
+// rust-sdk/examples/simple_sentinel.rs
+use starlight::{Sentinel, SentinelConfig, SentinelHandler, PreCheckParams, PreCheckResponse};
+
+struct MyHandler;
+
+#[async_trait::async_trait]
+impl SentinelHandler for MyHandler {
+    async fn on_pre_check(&self, params: PreCheckParams) -> PreCheckResponse {
+        if params.blocking.is_empty() {
+            PreCheckResponse::Clear
+        } else {
+            PreCheckResponse::Hijack { reason: "Detected obstacles".to_string() }
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = SentinelConfig::new("MySentinel", 5);
+    let mut sentinel = Sentinel::new(config, MyHandler);
+    sentinel.connect("ws://localhost:8080").await?;
+    sentinel.run().await?;
+    Ok(())
+}
+```
+
+📦 **Location:** [`rust-sdk/`](rust-sdk/) | 📄 **[Rust SDK README](rust-sdk/README.md)**
+
 #### JavaScript SDK (Built-in)
 ```javascript
 const { IntentRunner } = require('./sdk/intent_runner');
@@ -253,13 +285,13 @@ await runner.clickGoal('Submit');
 
 ### SDK Comparison
 
-| Feature | Python | Go | Java | JavaScript |
-|---------|--------|-----|------|------------|
-| Pre-built Sentinels | ✅ Yes | ❌ No | ❌ No | ❌ No |
-| Mission Control Support | ✅ Yes | ❌ Manual | ❌ Manual | ✅ Intents |
-| JWT Authentication | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| Auto-Reconnect | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
-| Production Ready | ✅ Yes | 🔶 Alpha | 🔶 Alpha | ✅ Yes |
+| Feature | Python | Go | Java | Rust | JavaScript |
+|---------|--------|-----|------|------|------------|
+| Pre-built Sentinels | ✅ Yes | ❌ No | ❌ No | ❌ No | ❌ No |
+| Mission Control Support | ✅ Yes | ❌ Manual | ❌ Manual | ❌ Manual | ✅ Intents |
+| JWT Authentication | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| Auto-Reconnect | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| Production Ready | ✅ Yes | 🔶 Alpha | 🔶 Alpha | 🔶 Alpha | ✅ Yes |
 
 ---
 
