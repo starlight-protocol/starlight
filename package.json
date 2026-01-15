@@ -6,8 +6,7 @@
   "exports": {
     ".": "./src/hub.js",
     "./hub": "./src/hub.js",
-    "./sdk": "./sdk/intent_runner.js",
-    "./intent-runner": "./sdk/intent_runner.js",
+    "./intent-runner": "./src/intent_runner.js",
     "./observability": "./src/observability/otel.js",
     "./auth": "./src/auth/jwt_handler.js",
     "./validation": "./src/validation/schema_validator.js"
@@ -58,7 +57,7 @@
   ],
   "author": {
     "name": "Dhiraj Das",
-    "email": "contact@dhirajdas.dev",
+    "email": "dhirajdas.666@gmail.com",
     "url": "https://www.dhirajdas.dev"
   },
   "license": "MIT",
@@ -76,12 +75,13 @@
     "playwright": "^1.57.0",
     "ws": "^8.18.3"
   },
-  "optionalDependencies": {
+  "devDependencies": {
     "@opentelemetry/api": "^1.7.0",
-    "@opentelemetry/sdk-trace-node": "^1.19.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.46.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.46.0",
     "@opentelemetry/sdk-metrics": "^1.19.0",
-    "@opentelemetry/exporter-metrics-otlp-http": "^0.46.0"
+    "@opentelemetry/sdk-trace-base": "^1.19.0",
+    "@opentelemetry/sdk-trace-node": "^1.19.0"
   },
   "engines": {
     "node": ">=18.0.0"

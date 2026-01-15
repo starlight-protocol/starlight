@@ -130,7 +130,7 @@
         },
         "tracing": {
             "enabled": true,
-            "sampleRate": 1.0
+            "sampleRate": 1
         },
         "metrics": {
             "enabled": true,
