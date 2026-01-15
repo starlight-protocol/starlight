@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-3.0.3-blue.svg" alt="Version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-4.0.0--alpha-blue.svg" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
   <a href="https://github.com/starlight-protocol/starlight/actions/workflows/starlight_ci.yml"><img src="https://github.com/starlight-protocol/starlight/actions/workflows/starlight_ci.yml/badge.svg" alt="CI"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node"></a>
@@ -169,8 +169,34 @@ All communication uses JSON-RPC 2.0:
 
 ---
 
-## 🛠️ Build a Sentinel
+## 🛠️ SDKs & Language Support
 
+The Starlight Protocol is **language-agnostic**. The Hub (Node.js) communicates with Sentinels via WebSocket, regardless of what language they're written in.
+
+### Pre-Built Sentinels (Python)
+
+The following **production-ready Sentinels** are included and used by Mission Control:
+
+| Sentinel | Location | Description |
+|----------|----------|-------------|
+| **Pulse Sentinel** | `sentinels/pulse_sentinel.py` | Waits for page stability |
+| **Janitor Sentinel** | `sentinels/janitor.py` | Clears popups, modals, banners |
+| **Vision Sentinel** | `sentinels/vision_sentinel.py` | AI-powered obstacle detection |
+| **Data Sentinel** | `sentinels/data_sentinel.py` | Context extraction |
+| **A11y Sentinel** | `sentinels/a11y_sentinel.py` | Accessibility monitoring |
+| **PII Sentinel** | `sentinels/pii_sentinel.py` | Sensitive data protection |
+| **Responsive Sentinel** | `sentinels/responsive_sentinel.py` | Viewport monitoring |
+
+```bash
+# These are what Mission Control launches
+python sentinels/janitor.py
+```
+
+### SDKs for Custom Sentinel Development
+
+Build your own Sentinels in your preferred language:
+
+#### Python SDK (Mature)
 ```python
 from sdk.starlight_sdk import SentinelBase
 
@@ -180,44 +206,91 @@ class MySentinel(SentinelBase):
         self.selectors = [".my-obstacle"]
     
     async def on_pre_check(self, params, msg_id):
-        # Your detection logic
-        await self.send_clear()
+        await self.send_clear(msg_id)
 
 if __name__ == "__main__":
     import asyncio
     asyncio.run(MySentinel().start())
 ```
 
+#### Go SDK (New - v4.0.0)
+> ⚠️ **Note:** This SDK provides building blocks. Pre-built Sentinels (Janitor, Pulse, etc.) are NOT included - use Python versions or build your own.
+
+```go
+// go-sdk/examples/simple_sentinel/main.go
+sentinel := starlight.NewSentinel("MySentinel", 5)
+sentinel.OnPreCheck = func(params starlight.PreCheckParams, msgID string) error {
+    return sentinel.SendClear(msgID)
+}
+sentinel.Start(ctx, "ws://localhost:8080")
+```
+
+📦 **Location:** [`go-sdk/`](go-sdk/) | 📄 **[Go SDK README](go-sdk/README.md)**
+
+#### Java SDK (New - v4.0.0)
+> ⚠️ **Note:** This SDK provides building blocks. Pre-built Sentinels (Janitor, Pulse, etc.) are NOT included - use Python versions or build your own.
+
+```java
+// java-sdk/src/.../examples/SimpleSentinel.java
+Sentinel sentinel = new Sentinel("MySentinel", 5)
+    .withSelectors(List.of(".popup"))
+    .onPreCheck((params, ctx) -> ctx.clear());
+
+sentinel.start("ws://localhost:8080");
+```
+
+📦 **Location:** [`java-sdk/`](java-sdk/) | 📄 **[Java SDK README](java-sdk/README.md)**
+
+#### JavaScript SDK (Built-in)
+```javascript
+const { IntentRunner } = require('./sdk/intent_runner');
+
+const runner = new IntentRunner('ws://localhost:8080');
+await runner.clickGoal('Submit');
+```
+
+### SDK Comparison
+
+| Feature | Python | Go | Java | JavaScript |
+|---------|--------|-----|------|------------|
+| Pre-built Sentinels | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| Mission Control Support | ✅ Yes | ❌ Manual | ❌ Manual | ✅ Intents |
+| JWT Authentication | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| Auto-Reconnect | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| Production Ready | ✅ Yes | 🔶 Alpha | 🔶 Alpha | ✅ Yes |
+
 ---
 
-## 🛒 Sentinel Store
 
-Install community Sentinels or create your own:
+## 🛒 Available Sentinels
+
+The following Sentinels are included and ready to use:
+
+| Sentinel | File | Description |
+|----------|------|-------------|
+| **Pulse** | `sentinels/pulse_sentinel.py` | Monitors DOM mutations and network activity for stability |
+| **Janitor** | `sentinels/janitor.py` | Clears popups, modals, overlays, cookie banners |
+| **Vision** | `sentinels/vision_sentinel.py` | AI-powered visual obstacle detection (Moondream/Ollama) |
+| **Data** | `sentinels/data_sentinel.py` | Context extraction and injection |
+| **A11y** | `sentinels/a11y_sentinel.py` | Accessibility monitoring and WCAG compliance |
+| **PII** | `sentinels/pii_sentinel.py` | Sensitive data detection and redaction |
+| **Responsive** | `sentinels/responsive_sentinel.py` | Viewport and responsive layout monitoring |
+
+### Create Your Own Sentinel
 
 ```bash
-# List installed & available
-python cli/main.py list --available
+# Use CLI to scaffold a new Sentinel
+python cli/main.py create "My Custom Sentinel"
 
-# Install from registry or GitHub
-python cli/main.py install cookie-consent
-python cli/main.py install captcha-detector
-python cli/main.py install https://github.com/user/my-sentinel
-
-# Create new Sentinel
-python cli/main.py create "Cookie Blocker"
-
-# Use Visual Editor (no-code)
+# Or use the Visual Editor (no-code)
 # Open Mission Control → Click "Create Sentinel"
 ```
 
-**Available Plugins:**
-| Plugin | Description |
-|--------|-------------|
-| `cookie-consent` | Auto-dismiss cookie banners and GDPR popups |
-| `captcha-detector` | Detect CAPTCHA and pause for manual intervention |
-| `login-session` | Persist login sessions across test runs |
+### Coming Soon: Sentinel Marketplace
+> 🚧 **Planned for Phase 3**: A community marketplace for sharing and installing Sentinels.
 
 ---
+
 
 ## ✅ Test Coverage
 

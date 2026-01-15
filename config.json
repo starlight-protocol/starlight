@@ -98,6 +98,47 @@
         },
         "gherkin": {
             "stepDefinitionsPath": "./step_definitions"
+        },
+        "providers": {
+            "ollama": {
+                "endpoint": "http://localhost:11434",
+                "model": "llama3.2:1b"
+            },
+            "openai": {
+                "apiKey": null,
+                "model": "gpt-4",
+                "endpoint": "https://api.openai.com/v1"
+            },
+            "anthropic": {
+                "apiKey": null,
+                "model": "claude-3-sonnet",
+                "endpoint": "https://api.anthropic.com"
+            },
+            "azure": {
+                "apiKey": null,
+                "endpoint": null,
+                "deploymentName": null
+            }
+        }
+    },
+    "observability": {
+        "enabled": false,
+        "serviceName": "starlight-hub",
+        "otlp": {
+            "endpoint": "http://localhost:4318",
+            "headers": {}
+        },
+        "tracing": {
+            "enabled": true,
+            "sampleRate": 1
+        },
+        "metrics": {
+            "enabled": true,
+            "exportIntervalMs": 30000
+        },
+        "logging": {
+            "level": "info",
+            "format": "json"
         }
     }
 }

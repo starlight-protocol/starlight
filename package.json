@@ -1,32 +1,87 @@
 {
-  "name": "cba",
-  "version": "3.0.4",
-  "description": "Constellation-Based Automation: A self-healing browser automation framework using the Starlight Protocol",
+  "name": "@starlight-protocol/starlight",
+  "version": "4.0.0-alpha.1",
+  "description": "Starlight Protocol: An Open Standard for Autonomous Browser Automation with self-healing Sentinels",
   "main": "src/hub.js",
+  "exports": {
+    ".": "./src/hub.js",
+    "./hub": "./src/hub.js",
+    "./intent-runner": "./src/intent_runner.js",
+    "./observability": "./src/observability/otel.js",
+    "./auth": "./src/auth/jwt_handler.js",
+    "./validation": "./src/validation/schema_validator.js"
+  },
+  "types": "./types/index.d.ts",
+  "files": [
+    "src/",
+    "sdk/",
+    "schemas/",
+    "types/",
+    "bin/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "bin": {
+    "starlight": "./bin/starlight.js"
+  },
   "directories": {
     "test": "test"
   },
   "scripts": {
     "start": "node src/hub.js",
-    "launch": "run_cba.bat",
-    "test": "echo \"Run: node test/intent_learning.js\" && exit 0"
+    "start:headless": "node src/hub.js --headless",
+    "mission": "node bin/starlight.js",
+    "launcher": "node launcher/server.js",
+    "test": "node test/run_all_tests.js",
+    "test:unit": "node test/unit/run_unit_tests.js",
+    "test:integration": "node test/run_integration_tests.js",
+    "tck": "cd tck && npm test",
+    "lint": "eslint src/ sdk/ --ext .js",
+    "prepublishOnly": "npm run test"
   },
   "keywords": [
+    "starlight",
+    "starlight-protocol",
     "automation",
-    "browser",
+    "browser-automation",
     "playwright",
     "self-healing",
     "testing",
-    "AI",
-    "sentinel"
+    "e2e",
+    "sentinel",
+    "json-rpc",
+    "websocket",
+    "ai",
+    "autonomous"
   ],
-  "author": "Godhiraj",
+  "author": {
+    "name": "Dhiraj Das",
+    "email": "dhirajdas.666@gmail.com",
+    "url": "https://www.dhirajdas.dev"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/starlight-protocol/starlight.git"
+  },
+  "bugs": {
+    "url": "https://github.com/starlight-protocol/starlight/issues"
+  },
+  "homepage": "https://github.com/starlight-protocol/starlight#readme",
   "type": "commonjs",
   "dependencies": {
     "nanoid": "^5.1.6",
     "playwright": "^1.57.0",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.7.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.46.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.46.0",
+    "@opentelemetry/sdk-metrics": "^1.19.0",
+    "@opentelemetry/sdk-trace-base": "^1.19.0",
+    "@opentelemetry/sdk-trace-node": "^1.19.0"
   },
   "engines": {
     "node": ">=18.0.0"
