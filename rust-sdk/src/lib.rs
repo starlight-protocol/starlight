@@ -6,14 +6,14 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use starlight::{Sentinel, SentinelConfig, PreCheckParams, PreCheckResponse};
+//! use starlight::{Sentinel, SentinelConfig, DefaultHandler};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let config = SentinelConfig::new("MySentinel", 5)
 //!         .with_selectors(vec![".popup", ".modal"]);
 //!
-//!     let sentinel = Sentinel::new(config);
+//!     let mut sentinel = Sentinel::new(config, DefaultHandler);
 //!     sentinel.connect("ws://localhost:8080").await?;
 //!     sentinel.run().await?;
 //!     Ok(())
@@ -42,7 +42,7 @@ pub use messages::{
     JsonRpcRequest, JsonRpcResponse, PreCheckParams, PreCheckResponse,
     RegistrationParams, ActionParams, HijackParams, EntropyParams, ActionCommand,
 };
-pub use sentinel::{Sentinel, SentinelConfig, SentinelHandler};
+pub use sentinel::{Sentinel, SentinelConfig, SentinelHandler, DefaultHandler};
 
 /// Protocol version
 pub const PROTOCOL_VERSION: &str = "1.0.0";

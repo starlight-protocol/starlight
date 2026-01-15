@@ -14,23 +14,11 @@ use starlight::{
 use tracing::{info, warn};
 
 /// Custom handler for our Sentinel.
-struct JanitorHandler {
-    /// CSS selectors to look for
-    blocking_patterns: Vec<String>,
-}
+struct JanitorHandler;
 
 impl JanitorHandler {
     fn new() -> Self {
-        Self {
-            blocking_patterns: vec![
-                ".popup".to_string(),
-                ".modal".to_string(),
-                ".overlay".to_string(),
-                ".cookie-banner".to_string(),
-                ".newsletter-popup".to_string(),
-                "[role=\"dialog\"]".to_string(),
-            ],
-        }
+        Self
     }
 }
 
