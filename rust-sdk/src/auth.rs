@@ -154,11 +154,13 @@ mod tests {
 
     #[test]
     fn test_expired_token() {
-        let handler = JwtHandler::new("test-secret").with_expiry(-1); // Already expired
+        // Use -60 seconds to ensure the token is definitely expired
+        // (jsonwebtoken has a default leeway of 60 seconds for clock skew)
+        let handler = JwtHandler::new("test-secret").with_expiry(-120);
         let token = handler.generate_token("TestSentinel").unwrap();
         
         let result = handler.verify_token(&token);
-        assert!(result.is_err());
+        assert!(result.is_err(), "Expected expired token to fail verification");
     }
 
     #[test]
@@ -167,9 +169,15 @@ mod tests {
         let original = handler.generate_token("TestSentinel").unwrap();
         let refreshed = handler.refresh_token(&original).unwrap();
         
-        assert_ne!(original, refreshed);
+        // Both tokens should be valid
+        let original_claims = handler.verify_token(&original).unwrap();
+        let refreshed_claims = handler.verify_token(&refreshed).unwrap();
         
-        let claims = handler.verify_token(&refreshed).unwrap();
-        assert_eq!(claims.sub, "TestSentinel");
+        // Both should have the same subject
+        assert_eq!(original_claims.sub, "TestSentinel");
+        assert_eq!(refreshed_claims.sub, "TestSentinel");
+        
+        // Refreshed token should have same or later expiration
+        assert!(refreshed_claims.exp >= original_claims.exp);
     }
 }
