@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'rust-sdk/**'
+      - '.github/workflows/rust_sdk_ci.yml'
   pull_request:
     paths:
       - 'rust-sdk/**'
