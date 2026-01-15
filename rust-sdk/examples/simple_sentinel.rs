@@ -9,7 +9,7 @@ use std::env;
 
 use starlight::{
     PreCheckParams, PreCheckResponse, Sentinel, SentinelConfig, SentinelHandler,
-    EntropyParams, ActionCommand,
+    EntropyParams,
 };
 use tracing::{info, warn};
 
@@ -123,29 +123,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Run message loop (blocks until stopped)
     info!("Sentinel running. Press Ctrl+C to stop.");
     
-    // Handle Ctrl+C gracefully
-    let sentinel_clone = sentinel.clone();
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.ok();
-        info!("Received shutdown signal");
-        sentinel_clone.stop().await;
-    });
-    
     sentinel.run().await?;
 
     info!("JanitorSentinel stopped");
     Ok(())
-}
-
-// Note: We need to make Sentinel cloneable for the shutdown handler
-impl<H: SentinelHandler + 'static> Clone for Sentinel<H> {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            handler: self.handler.clone(),
-            client: self.client.clone(),
-            running: self.running.clone(),
-            jwt_handler: self.jwt_handler.clone(),
-        }
-    }
 }

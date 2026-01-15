@@ -40,7 +40,7 @@ pub use client::WebSocketClient;
 pub use error::{Error, Result};
 pub use messages::{
     JsonRpcRequest, JsonRpcResponse, PreCheckParams, PreCheckResponse,
-    RegistrationParams, ActionParams, HijackParams,
+    RegistrationParams, ActionParams, HijackParams, EntropyParams, ActionCommand,
 };
 pub use sentinel::{Sentinel, SentinelConfig, SentinelHandler};
 
