@@ -9,7 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-4.0.0--alpha-blue.svg" alt="Version"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.3.5--alpha.1-blue.svg" alt="Version"></a>
+  <a href="https://www.npmjs.com/package/@starlight-protocol/starlight"><img src="https://img.shields.io/npm/v/@starlight-protocol/starlight?label=npm&color=cb3837" alt="npm"></a>
+  <a href="https://pypi.org/project/starlight-protocol/"><img src="https://img.shields.io/pypi/v/starlight-protocol?label=pypi&color=3775a9" alt="PyPI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
   <a href="https://github.com/starlight-protocol/starlight/actions/workflows/starlight_ci.yml"><img src="https://github.com/starlight-protocol/starlight/actions/workflows/starlight_ci.yml/badge.svg" alt="CI"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg" alt="Node"></a>
