@@ -1,4 +1,5 @@
 const { BrowserAdapter } = require('./browser_adapter');
+const { SmartBrowserAdapter } = require('./smart_browser_adapter');
 const { WebSocketServer, WebSocket } = require('ws');
 const { nanoid } = require('nanoid');
 const fs = require('fs');
@@ -148,6 +149,44 @@ class CBAHub {
         this.webhooks = new WebhookNotifier(this.config.webhooks);
         this.recoveryTimes = []; // Track recovery times for MTTR
         this.temporalMetrics = []; // Phase 17.4: Temporal Ghosting metrics
+
+        // World-Class Quality: Register signal handlers for graceful shutdown
+        process.on('SIGINT', () => this.shutdown());
+        process.on('SIGTERM', () => this.shutdown());
+    }
+
+    async shutdown() {
+        if (this.isShuttingDown) return;
+        this.isShuttingDown = true;
+        console.log('[CBA Hub] Graceful shutdown initiated...');
+
+        // 1. Broadcast shutdown to Sentinels
+        this.broadcastToSentinels({
+            jsonrpc: '2.0',
+            method: 'starlight.shutdown',
+            params: { reason: 'System termination' },
+            id: nanoid()
+        });
+
+        // 2. Clear command queue
+        this.commandQueue = [];
+
+        // 3. Save historical memory
+        this.saveHistoricalMemory();
+
+        // 4. Close browser
+        if (this.browserAdapter) {
+            console.log('[CBA Hub] Closing browser...');
+            await this.browserAdapter.close().catch(e => console.warn('[CBA Hub] Browser close error:', e.message));
+        }
+
+        // 5. Close servers
+        console.log('[CBA Hub] Closing WebSocket server...');
+        this.wss.close();
+        this.server.close();
+
+        console.log('[CBA Hub] Shutdown complete. Final Trace saved.');
+        process.exit(0);
     }
 
     loadConfig() {
@@ -1396,6 +1435,13 @@ class CBAHub {
                     protocolVersion: params.version || '1.0.0'
                 });
                 console.log(`[CBA Hub] Registered Sentinel: ${params.layer} (Priority: ${params.priority})`);
+
+                // World-Class Protocol: Send registration acknowledgment
+                ws.send(JSON.stringify({
+                    jsonrpc: '2.0',
+                    result: { success: true, assignedId: id, protocol: 'starlight/1.0.0' },
+                    id: msg.id
+                }));
                 break;
             case 'starlight.pulse':
                 if (sentinel) {
@@ -2338,16 +2384,16 @@ class CBAHub {
         try {
             // Ensure browser is launched
             if (!this.browser) {
-                console.log('[CBA Hub] Launching browser for execution...');
+                console.log('[CBA Hub] Launching Smart Browser constellation...');
 
-                // Phase 15: Use BrowserAdapter for Polymorphism
+                // Phase 14 / World-Class Stealth Integration
                 if (!this.browserAdapter) {
-                    this.browserAdapter = await BrowserAdapter.create(this.config.hub?.browser || {});
+                    this.browserAdapter = new SmartBrowserAdapter(this.config.hub?.browser || {});
                 }
-                this.browser = await this.browserAdapter.launch({ headless: this.headless });
 
-                const context = await this.browser.newContext();
-                this.page = await context.newPage();
+                await this.browserAdapter.launch({ headless: this.headless });
+                this.browser = this.browserAdapter;
+                this.page = this.browserAdapter.page;
             }
 
             // Phase 15: Normalize Selectors (e.g. remove >>> for Firefox)
