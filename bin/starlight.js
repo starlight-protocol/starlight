@@ -39,7 +39,8 @@ async function waitForHub(timeout = 30000) {
     const start = Date.now();
     return new Promise((resolve, reject) => {
         const check = setInterval(() => {
-            http.get('http://localhost:8080/health', (res) => {
+            // CI Fix: Use port 8095 as defined in config.json
+            http.get('http://localhost:8095/health', (res) => {
                 if (res.statusCode === 200) {
                     clearInterval(check);
                     resolve();
