@@ -60,10 +60,20 @@ class StarlightValidator {
             this.pendingResponses.delete(msg.id);
         }
 
-        // Handle registration
         if (msg.method === 'starlight.registration') {
             this.sentinelInfo = msg.params;
             console.log(`[Validator] Registered: ${msg.params.layer} (priority: ${msg.params.priority})`);
+
+            // Corrected Delta v1.2.2: Mandatory registration acknowledgment
+            this.client.send(JSON.stringify({
+                jsonrpc: '2.0',
+                result: {
+                    success: true,
+                    assignedId: `val-reg-${msg.params.layer}`,
+                    protocolVersion: '1.2.2'
+                },
+                id: msg.id
+            }));
         }
 
         // Respond to hijack - acknowledge lock

@@ -55,6 +55,11 @@ public class Sentinel {
     private ScheduledExecutorService scheduler;
     private String hubUrl;
     
+    // Handshake state
+    private String regId;
+    private String challengeId;
+    private CompletableFuture<Void> handshakeFuture;
+    
     /**
      * Create a new Sentinel with the given name and priority.
      * 
@@ -143,8 +148,31 @@ public class Sentinel {
         
         while (running.get()) {
             try {
+                this.handshakeFuture = new CompletableFuture<>();
                 connect();
                 
+                // Wait for mutual handshake (Registration Guard)
+                try {
+                    handshakeFuture.get(10, TimeUnit.SECONDS);
+                    log.info("[{}] Handshake Verified -> READY state achieved", name);
+                } catch (TimeoutException e) {
+                    log.error("[{}] Handshake TIMEOUT. Protocol violation or Hub COLD.", name);
+                    disconnect();
+                    throw e;
+                } catch (Exception e) {
+                    log.error("[{}] Handshake FAILED: {}", name, e.getMessage());
+                    disconnect();
+                    throw e;
+                }
+                
+                // Start heartbeat AFTER handshake
+                scheduler.scheduleAtFixedRate(
+                    this::sendPulse,
+                    heartbeatInterval.toMillis(),
+                    heartbeatInterval.toMillis(),
+                    TimeUnit.MILLISECONDS
+                );
+
                 // Wait for disconnection
                 while (connected.get() && running.get()) {
                     Thread.sleep(100);
@@ -216,8 +244,9 @@ public class Sentinel {
         this.connected.set(true);
         log.info("[{}] Connected to Hub", name);
         
-        // Send registration
+        // Send registration with unique ID for handshake tracking
         try {
+            this.regId = "reg-" + System.currentTimeMillis();
             RegistrationParams params = new RegistrationParams();
             params.setLayer(name);
             params.setPriority(priority);
@@ -225,21 +254,18 @@ public class Sentinel {
             params.setSelectors(selectors);
             params.setAuthToken(authToken);
             
-            sendMessage("starlight.registration", params);
-            log.info("[{}] Registered with Hub (priority={})", name, priority);
-            
-            // Start heartbeat
-            scheduler.scheduleAtFixedRate(
-                this::sendPulse,
-                heartbeatInterval.toMillis(),
-                heartbeatInterval.toMillis(),
-                TimeUnit.MILLISECONDS
-            );
+            sendMessageWithId(regId, "starlight.registration", params);
+            log.info("[{}] Handshake started, waiting for Hub challenge...", name);
             
         } catch (Exception e) {
-            log.error("[{}] Registration failed: {}", name, e.getMessage());
+            log.error("[{}] Handshake failed to start: {}", name, e.getMessage());
             disconnect();
         }
+    }
+    
+    private void sendMessageWithId(String id, String method, Object params) throws Exception {
+        Message msg = Message.withId(id, method, params);
+        session.getBasicRemote().sendText(msg.toJson());
     }
     
     @OnMessage
@@ -264,6 +290,30 @@ public class Sentinel {
     }
     
     private void handleMessage(Message msg) {
+        // Phase 1 Security: Handle Handshake Responses (Registration Guard)
+        if (msg.getId() != null) {
+            if (msg.getId().equals(regId) && msg.getResult() != null) {
+                RegistrationResult result = msg.getParamsAs(RegistrationResult.class); // Hub result mapping
+                if (result.isSuccess() && result.getChallenge() != null) {
+                    log.info("[{}] Handshake challenge received, verifying...", name);
+                    this.challengeId = "chal-" + System.currentTimeMillis();
+                    ChallengeResponseParams challengeResp = new ChallengeResponseParams(result.getChallenge());
+                    try {
+                        sendMessageWithId(challengeId, "starlight.challenge_response", challengeResp);
+                    } catch (Exception e) {
+                        handshakeFuture.completeExceptionally(e);
+                    }
+                } else {
+                    handshakeFuture.completeExceptionally(new Exception("Registration rejected by Hub"));
+                }
+                return;
+            }
+            if (msg.getId().equals(challengeId) && msg.getResult() != null) {
+                handshakeFuture.complete(null);
+                return;
+            }
+        }
+
         switch (msg.getMethod()) {
             case "starlight.pre_check":
                 if (onPreCheck != null) {

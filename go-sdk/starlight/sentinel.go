@@ -55,6 +55,11 @@ type Sentinel struct {
 
 	// isConnected tracks connection state.
 	isConnected bool
+
+	// Handshake tracking
+	regID       string
+	handshakeID string
+	ready       chan struct{}
 }
 
 // NewSentinel creates a new Sentinel with the given name and priority.
@@ -132,7 +137,6 @@ func (s *Sentinel) connect(ctx context.Context, hubURL string) error {
 	s.conn = conn
 	s.isConnected = true
 
-	// Send registration
 	regParams := RegistrationParams{
 		Layer:        s.Name,
 		Priority:     s.Priority,
@@ -141,14 +145,40 @@ func (s *Sentinel) connect(ctx context.Context, hubURL string) error {
 		AuthToken:    s.AuthToken,
 	}
 
-	if err := s.sendMessage("starlight.registration", regParams); err != nil {
+	// Send registration with unique ID for handshake tracking
+	s.regID = fmt.Sprintf("reg-%d", time.Now().UnixNano())
+	msg, err := NewMessage("starlight.registration", regParams)
+	if err != nil {
+		conn.Close()
+		s.isConnected = false
+		return fmt.Errorf("failed to create registration message: %w", err)
+	}
+	msg.ID = s.regID
+
+	s.ready = make(chan struct{})
+
+	if err := s.writeMessage(msg); err != nil {
 		conn.Close()
 		s.isConnected = false
 		return fmt.Errorf("registration failed: %w", err)
 	}
 
-	s.Logger.Printf("[%s] Connected and registered with Hub (priority=%d)", s.Name, s.Priority)
-	return nil
+	s.Logger.Printf("[%s] Handshake started, waiting for Hub challenge...", s.Name)
+
+	// Block until handshake is verified or timeout
+	select {
+	case <-s.ready:
+		s.Logger.Printf("[%s] Handshake Verified -> READY state achieved", s.Name)
+		return nil
+	case <-ctx.Done():
+		conn.Close()
+		s.isConnected = false
+		return ctx.Err()
+	case <-time.After(10 * time.Second):
+		conn.Close()
+		s.isConnected = false
+		return fmt.Errorf("handshake timeout")
+	}
 }
 
 // disconnect closes the WebSocket connection.
@@ -224,6 +254,34 @@ func (s *Sentinel) messageLoop(ctx context.Context) error {
 
 // handleMessage routes incoming messages to appropriate handlers.
 func (s *Sentinel) handleMessage(msg *Message) {
+	// Phase 1 Security: Handle Handshake Responses (Registration Guard)
+	if msg.ID != "" {
+		if msg.ID == s.regID && msg.Result != nil {
+			var result struct {
+				Success   bool   `json:"success"`
+				Challenge string `json:"challenge"`
+			}
+			if err := json.Unmarshal(msg.Result, &result); err == nil && result.Success {
+				s.Logger.Printf("[%s] Handshake challenge received, responding...", s.Name)
+				s.handshakeID = fmt.Sprintf("chal-%d", time.Now().UnixNano())
+
+				challengeMsg, _ := NewMessage("starlight.challenge_response", ChallengeResponseParams{Response: result.Challenge})
+				challengeMsg.ID = s.handshakeID
+				s.writeMessage(challengeMsg)
+			}
+			return
+		}
+		if msg.ID == s.handshakeID && msg.Result != nil {
+			var result struct {
+				Success bool `json:"success"`
+			}
+			if err := json.Unmarshal(msg.Result, &result); err == nil && result.Success {
+				close(s.ready)
+			}
+			return
+		}
+	}
+
 	switch msg.Method {
 	case "starlight.pre_check":
 		if s.OnPreCheck != nil {

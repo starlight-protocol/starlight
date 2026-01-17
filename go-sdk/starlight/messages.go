@@ -34,10 +34,10 @@ type RegistrationParams struct {
 
 // PreCheckParams contains parameters sent by Hub during pre-check.
 type PreCheckParams struct {
-	Command    CommandInfo      `json:"command"`
+	Command    CommandInfo       `json:"command"`
 	Blocking   []BlockingElement `json:"blocking,omitempty"`
-	Screenshot string           `json:"screenshot,omitempty"`
-	URL        string           `json:"url,omitempty"`
+	Screenshot string            `json:"screenshot,omitempty"`
+	URL        string            `json:"url,omitempty"`
 }
 
 // CommandInfo describes the pending command.
@@ -89,6 +89,11 @@ type HijackParams struct {
 // ResumeParams contains parameters for resume after hijack.
 type ResumeParams struct {
 	ReCheck bool `json:"re_check"`
+}
+
+// ChallengeResponseParams contains parameters for the challenge response.
+type ChallengeResponseParams struct {
+	Response string `json:"response"`
 }
 
 // NewMessage creates a new JSON-RPC 2.0 message.

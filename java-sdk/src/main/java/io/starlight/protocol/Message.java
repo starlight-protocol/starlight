@@ -217,3 +217,33 @@ class EntropyStreamParams {
     public Integer getNetworkPending() { return networkPending; }
     public void setNetworkPending(Integer networkPending) { this.networkPending = networkPending; }
 }
+
+/**
+ * Mutual handshake result from Hub.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+class RegistrationResult {
+    private boolean success;
+    @JsonProperty("assignedId")
+    private String assignedId;
+    private String challenge;
+
+    public boolean isSuccess() { return success; }
+    public void setSuccess(boolean success) { this.success = success; }
+    public String getAssignedId() { return assignedId; }
+    public void setAssignedId(String assignedId) { this.assignedId = assignedId; }
+    public String getChallenge() { return challenge; }
+    public void setChallenge(String challenge) { this.challenge = challenge; }
+}
+
+/**
+ * Challenge response from Sentinel.
+ */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+class ChallengeResponseParams {
+    private String response;
+    public ChallengeResponseParams() {}
+    public ChallengeResponseParams(String response) { this.response = response; }
+    public String getResponse() { return response; }
+    public void setResponse(String response) { this.response = response; }
+}

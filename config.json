@@ -1,6 +1,6 @@
 {
     "hub": {
-        "port": 8080,
+        "port": 8095,
         "browser": {
             "engine": "chromium",
             "mobile": {
@@ -11,7 +11,7 @@
         "network": {
             "emulation": "online"
         },
-        "syncBudget": 30000,
+        "syncBudget": 60000,
         "missionTimeout": 180000,
         "heartbeatTimeout": 5000,
         "lockTTL": 5000,
