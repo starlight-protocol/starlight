@@ -16,8 +16,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sdk.starlight_sdk import SentinelBase
 
 class PIISentinel(SentinelBase):
-    def __init__(self):
-        super().__init__(layer_name="PIISentinel", priority=2)  # High priority - security first
+    def __init__(self, uri=None):
+        super().__init__(layer_name="PIISentinel", priority=2, uri=uri)  # High priority - security first
         self.capabilities = ["pii-detection", "compliance"]
         
         # Load PII config
@@ -127,5 +127,10 @@ class PIISentinel(SentinelBase):
                 self.detected_pii = []
 
 if __name__ == "__main__":
-    sentinel = PIISentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+
+    sentinel = PIISentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())

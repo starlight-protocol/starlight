@@ -18,16 +18,36 @@ import time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sdk.starlight_sdk import SentinelBase
 
+class SentinelState:
+    IDLE = "IDLE"
+    ANALYZING = "ANALYZING"
+    VETOING = "VETOING"
+    CLEARED = "CLEARED"
+
 class PulseSentinel(SentinelBase):
-    def __init__(self):
-        super().__init__(layer_name="PulseSentinel", priority=1)
+    def __init__(self, uri=None):
+        super().__init__(layer_name="PulseSentinel", priority=1, uri=uri)
         self.capabilities = ["temporal-stability", "settling", "network-idle"]
         self.settlement_window = self.config.get("sentinel", {}).get("settlementWindow", 0.5)
         self.max_veto_count = self.config.get("sentinel", {}).get("maxVetoCount", 3)
+        self.state = SentinelState.IDLE
+        self.metrics = {
+            "pre_checks": 0,
+            "vetoes": 0,
+            "clearances": 0
+        }
         self.last_entropy_time = time.time()
-        self.is_stable = False
-        self.veto_count = 0
         self.current_command_id = None
+
+    async def _emit_telemetry(self):
+        """Report Sentinel health and activity to Hub context."""
+        await self.update_context({
+            "pulse_telemetry": {
+                "state": self.state,
+                "metrics": self.metrics,
+                "layer": self.layer
+            }
+        })
 
     async def on_entropy(self, params):
         """Handle entropy stream events from Hub."""
@@ -44,9 +64,9 @@ class PulseSentinel(SentinelBase):
             if len(self.entropy_history) > 10:
                 self.entropy_history.pop(0)
 
-            if self.is_stable:
+            if self.state == SentinelState.CLEARED:
                 print(f"[{self.layer}] Jitter Detected! Environment is UNSTABLE.")
-            self.is_stable = False
+            self.state = SentinelState.IDLE
 
     def _is_rhythmic_animation(self):
         """Detect if entropy is periodic (e.g., CSS animation loop)."""
@@ -68,6 +88,9 @@ class PulseSentinel(SentinelBase):
 
     async def on_pre_check(self, params, msg_id):
         """Verify temporal stability before allowing command execution."""
+        self.state = SentinelState.ANALYZING
+        self.metrics["pre_checks"] += 1
+        await self._emit_telemetry()
         cmd = params.get("command", {}).get("cmd", "unknown")
         
         # Use goal or selector as stable command identifier (stays same across retries)
@@ -102,32 +125,47 @@ class PulseSentinel(SentinelBase):
         silence_duration = time.time() - self.last_entropy_time
         
         if silence_duration >= current_window:
-            if not self.is_stable:
+            if self.state != SentinelState.CLEARED:
                 print(f"[{self.layer}] Environment SETTLED for {cmd} ({silence_duration:.1f}s silence, Target: {current_window:.1f}s).")
-            self.is_stable = True
+            self.state = SentinelState.CLEARED
         elif is_rhythmic:
-            if not self.is_stable:
-                 print(f"[{self.layer}] Rhythmic Animation Detected (Interval ~{sum([self.entropy_history[i]-self.entropy_history[i-1] for i in range(1,len(self.entropy_history))])/len(self.entropy_history)-1:.2f}s). Treating as STABLE.")
-            self.is_stable = True
+            if self.state != SentinelState.CLEARED:
+                 print(f"[{self.layer}] Rhythmic Animation Detected. Treating as STABLE.")
+            self.state = SentinelState.CLEARED
         
-        if self.is_stable:
+        if self.state == SentinelState.CLEARED:
             print(f"[{self.layer}] Stability Verified for: {cmd}")
             self.veto_count = 0
+            self.metrics["clearances"] += 1
+            await self._emit_telemetry()
             await self.send_clear()
         elif self.veto_count >= self.max_veto_count:
             # Animation tolerance: force clear after max retries
-            print(f"[{self.layer}] ANIMATION TOLERANCE: Max vetoes ({self.max_veto_count}) reached, force clearing for: {cmd}")
+            print(f"[{self.layer}] ANIMATION TOLERANCE: Max vetoes reached, force clearing for: {cmd}")
             self.veto_count = 0
+            self.state = SentinelState.CLEARED
             await self.send_clear()
         else:
+            self.state = SentinelState.VETOING
             self.veto_count += 1
-            # Exponential backoff for checking?
-            # wait_time = max(0.2, self.settlement_window - silence_duration)
-            wait_time = max(0.2, (self.settlement_window - silence_duration)) 
+            self.metrics["vetoes"] += 1
+            await self._emit_telemetry()
+            wait_time = max(0.2, (current_window - silence_duration)) 
             print(f"[{self.layer}] VETO ({self.veto_count}/{self.max_veto_count}): Environment settling. Retry in {wait_time:.1f}s")
             await self.send_wait(int(wait_time * 1000))
 
+    async def on_message(self, method, params, msg_id):
+        """Handle system signals."""
+        if method == "starlight.shutdown":
+            print(f"[{self.layer}] System shutdown signal received.")
+            sys.exit(0)
+
 if __name__ == "__main__":
-    sentinel = PulseSentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+
+    sentinel = PulseSentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())
 

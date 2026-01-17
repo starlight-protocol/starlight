@@ -33,16 +33,7 @@ class IntentRunner {
                 });
 
                 this.ws.addEventListener('message', (event) => {
-                    try {
-                        const data = typeof event.data === 'string' ? event.data : event.data.toString();
-                        const msg = JSON.parse(data);
-                        if (this.onMessage) {
-                            this.onMessage(msg);
-                        }
-                        this._handleMessage(msg);
-                    } catch (e) {
-                        console.error('[IntentRunner] Failed to parse message:', e.message);
-                    }
+                    this._handleMessage(event);
                 });
 
                 this.ws.addEventListener('error', (event) => {
@@ -61,14 +52,27 @@ class IntentRunner {
         });
     }
 
-    _handleMessage(msg) {
-        // Internal Protocol Tracking
-        const msgType = msg.method || msg.type;
+    _handleMessage(event) {
+        let msg;
+        try {
+            const data = typeof event.data === 'string' ? event.data : event.data.toString();
+            msg = JSON.parse(data);
+        } catch (e) {
+            console.error('[IntentRunner] Failed to parse message:', e.message);
+            return;
+        }
 
+        if (this.onMessage) {
+            this.onMessage(msg);
+        }
+
+        const msgType = msg.method || msg.type;
         if (msgType === 'starlight.hijack') {
             console.log(`[IntentRunner] 🛡️ Sentinel Hijack Detected: ${msg.params?.sentinel || msg.sentinel}`);
             this.lastActionHijacked = true;
             this.hijackDetails = msg;
+        } else if (msgType === 'starlight.sentinel_active') {
+            console.log(`[IntentRunner] 🛡️ Sentinel Active: ${msg.layer || msg.sentinelId} (${msg.sentinelType || 'Guardian'})`);
         }
 
         if (msg.type === 'COMMAND_COMPLETE') {
@@ -87,6 +91,7 @@ class IntentRunner {
             this.onContextUpdate(msg.params.context);
         }
     }
+
 
     /**
      * Navigate to a URL and wait for completion.
@@ -220,7 +225,7 @@ class IntentRunner {
      * Send a command and wait for completion.
      * @private
      */
-    _sendCommand(params, timeout = 30000) {
+    _sendCommand(params, timeout = 60000) {
         return new Promise((resolve, reject) => {
             const id = `cmd-${++this.commandIdCounter}`;
 

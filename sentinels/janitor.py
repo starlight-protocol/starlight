@@ -14,6 +14,13 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sdk.starlight_sdk import SentinelBase
 
+class SentinelState:
+    IDLE = "IDLE"
+    ANALYZING = "ANALYZING"
+    HIJACKING = "HIJACKING"
+    RESUMED = "RESUMED"
+    ERROR = "ERROR"
+
 class JanitorSentinel(SentinelBase):
     def __init__(self, uri=None):
         super().__init__(layer_name="JanitorSentinel", priority=5, uri=uri)
@@ -22,23 +29,29 @@ class JanitorSentinel(SentinelBase):
         self.exploration_delay = janitor_config.get("explorationDelayMs", 300) / 1000.0
         self.remediation_delay = janitor_config.get("remediationDelayMs", 1000) / 1000.0
         # Comprehensive blocking patterns for common UI obstacles
-        # Refined (v1.2.2): Removed generic IDs (newsletter) to prevent false positives on forms
+        # Refined (v1.2.2): Simplified patterns for robust matching
         self.blocking_patterns = [
             # Modals and Popups
             ".modal", ".popup", "#overlay", ".obstacle", "#stabilize-btn",
             ".shadow-overlay", ".shadow-close-btn",
-            # Newsletter/Subscribe popups (Intelligent Filter checks Tag)
+            # Newsletter/Subscribe
             ".newsletter", "#newsletter", ".subscribe-popup", "#subscribe-modal",
-            ".email-popup", ".signup-modal", ".newsletter-modal", ".newsletter-popup",
-            # Cookie consent-btn", ".dismiss-btn", "[data-dismiss]", ".btn-close",
-            # CAPTCHA and Robot Detection
+            # === Cookie Consent / GDPR (CRITICAL FIX) ===
+            "#onetrust-consent-sdk", "#onetrust-banner-sdk", ".onetrust-pc-dark-filter",
+            "#onetrust-pc-btn-handler", ".onetrust-banner-overlay",
+            "#CybotCookiebotDialog", ".CybotCookiebotDialogActive",
+            ".qc-cmp2-container", ".qc-cmp2-summary-section",
+            "#truste-consent-track", ".truste-banner",
+            "#didomi-host", ".didomi-popup-container",
+            ".cookie-consent", "#cookie-consent", ".cookie-banner", "#cookie-banner",
+            ".cookie-notice", "#cookie-notice", ".cookie-modal", "#cookie-modal",
+            ".consent-banner", "#consent-banner", ".consent-modal", "#consent-modal",
+            ".gdpr-banner", "#gdpr-banner", ".privacy-banner", "#privacy-banner",
+            # Wildcards
+            "cookie-accept", "cookie-dismiss", "consent-accept",
+            # CAPTCHA
             ".g-recaptcha", "#recaptcha", ".recaptcha-checkbox",
-            "[data-sitekey]",  # reCAPTCHA marker
-            "#captcha", ".captcha", ".captcha-container",
-            "#challenge-form", ".challenge-form",
-            # Google specific
-            "#captcha-form", ".rc-anchor", ".rc-imageselect",
-            # Robot/verification prompts (text-based detection handled in on_pre_check)
+            "data-sitekey", "#captcha", ".captcha", "#challenge-form"
         ]
         self.captcha_text_patterns = [
             "are you a robot", "i'm not a robot", "verify you're human",
@@ -46,25 +59,54 @@ class JanitorSentinel(SentinelBase):
             "security check", "verify yourself", "prove you're human"
         ]
         self.selectors = self.blocking_patterns 
-        self.is_hijacking = False
+        self.state = SentinelState.IDLE
+        self.metrics = {
+            "pre_checks": 0,
+            "hijacks": 0,
+            "recoveries": 0,
+            "failures": 0
+        }
         self.tried_selectors = []  # Track ALL selectors tried during exploration
         self.current_action_selector = None  # Track most recent action for learning
 
+    async def _emit_telemetry(self):
+        """Report Sentinel health and activity to Hub context."""
+        await self.update_context({
+            "janitor_telemetry": {
+                "state": self.state,
+                "metrics": self.metrics,
+                "layer": self.layer
+            }
+        })
+
     async def on_pre_check(self, params, msg_id):
+        self.state = SentinelState.ANALYZING
+        self.metrics["pre_checks"] += 1
+        
         blocking = params.get("blocking", [])
         target_rect = params.get("targetRect")  # Target element's bounding rect
         command = params.get("command", {})
         
         # Skip if no blocking elements or already hijacking
-        if not blocking or self.is_hijacking:
-            if not self.is_hijacking:
-                await self.send_clear()
+        if not blocking or self.state == SentinelState.HIJACKING:
+            if not blocking:
+                print(f"[{self.layer}] Clean Path: No obstacles reported by Hub.")
+            if self.state != SentinelState.HIJACKING:
+                self.state = SentinelState.IDLE
+                await self.send_clear(msg_id=msg_id)
             return
         
         for b in blocking:
             matched_pattern = None
+            # Extract element properties
+            element_id = b.get("id", "")
+            classes = b.get("className", "")
+            combined = f"{element_id} {classes}".lower()
+            
             for pattern in self.blocking_patterns:
-                if pattern.replace('.', '') in b.get("className", "") or pattern.replace('#', '') == b.get("id", ""):
+                # Optimized regex-style matching for classes and IDs
+                clean_p = pattern.lstrip('.#').lower()
+                if clean_p in combined:
                     matched_pattern = pattern
                     break
             
@@ -104,59 +146,71 @@ class JanitorSentinel(SentinelBase):
                     self._last_cleared = obstacle_id
                     self._clear_count = 1
                 
-                await self.perform_remediation(obstacle_id)
+                await self.perform_remediation(obstacle_id, msg_id)
                 return
         
         # No blocking elements matched or all were skipped
-        await self.send_clear()
+        self.state = SentinelState.IDLE
+        await self.send_clear(msg_id=msg_id)
 
-    async def perform_remediation(self, obstacle_id):
-        if self.is_hijacking: 
+    async def perform_remediation(self, obstacle_id, msg_id):
+        if self.state == SentinelState.HIJACKING: 
             return
-        self.is_hijacking = True
-        self.tried_selectors = []  # Reset for this remediation attempt
         
+        self.tried_selectors = []  # Reset for this remediation attempt
         best_action = self.memory.get(obstacle_id)
         if best_action:
-            print(f"[{self.layer}] Phase 7: Recalling best action for {obstacle_id} -> {best_action}")
-            await self.send_hijack(f"Predictive remediation for {obstacle_id}")
-            await self.send_action("click", best_action)
+            print(f"[{self.layer}] State: {self.state} -> HIJACKING (Predictive)")
+            self.state = SentinelState.HIJACKING
+            self.metrics["hijacks"] += 1
+            await self._emit_telemetry()
+            
+            await self.send_hijack(msg_id=msg_id, reason=f"Predictive remediation for {obstacle_id}")
+            await self.send_action("click", best_action, msg_id=msg_id)
             self.last_action = {"id": obstacle_id, "selector": best_action, "known": True}
         else:
-            print(f"[{self.layer}] !!! HIJACKING !!! Reason: Detected {obstacle_id}")
-            await self.send_hijack(f"Janitor heuristic healing for {obstacle_id}")
+            print(f"[{self.layer}] State: {self.state} -> HIJACKING (Heuristic)")
+            self.state = SentinelState.HIJACKING
+            self.metrics["hijacks"] += 1
+            await self._emit_telemetry()
             
-            # Heuristic exploration - try multiple selectors
+            await self.send_hijack(msg_id=msg_id, reason=f"Janitor heuristic healing for {obstacle_id}")
+            
+            # Heuristic exploration - try multiple selectors, including Shadow-Piercing
             fallback_selectors = [
-                # ID-based (most specific)
-                "#newsletter-close",
-                "#cookie-accept", 
-                "#cookie-decline",
-                "#close-btn",
-                "#custom-close",
-                # Class-based
-                f"{obstacle_id} .close", 
-                f"{obstacle_id} .btn-close",
-                f"{obstacle_id} button",
-                ".modal-close", 
-                ".close-btn",
-                ".btn-close",
-                ".btn-accept",
-                ".btn-decline",
-                # Text-based (Playwright format)
-                "button:has-text('No Thanks')",
+                # === Shadow-DOM Piercing (World-Class support for modern retailers like H&M) ===
+                "nth-child(1) >> #onetrust-accept-btn-handler",
+                "internal:control=enter-frame >> #onetrust-accept-btn-handler",
+                # === OneTrust ===
+                "#onetrust-accept-btn-handler",
+                "#onetrust-reject-all-handler", 
+                "#onetrust-pc-btn-handler",
+                ".onetrust-close-btn-handler",
+                # === Cookiebot ===
+                "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
+                "#CybotCookiebotDialogBodyButtonDecline",
+                # === Generic Cookie Dismiss ===
+                "#cookie-accept", "#accept-cookies", ".cookie-accept",
+                # === Shadow Close Buttons ===
+                ".shadow-close-btn", "#close-btn", ".close-btn", ".btn-close",
+                # === Text-based (Playwright format - most reliable for complex sites) ===
+                "button:has-text('Accept All')",
+                "button:has-text('Accept Cookies')",
+                "button:has-text('Accept')",
+                "button:has-text('Agree')",
+                "button:has-text('Allow All')",
+                "button:has-text('Reject All')",
+                "button:has-text('Dismiss')",
                 "button:has-text('Close')",
                 "button:has-text('OK')",
-                "button:has-text('Accept')",
-                "button:has-text('Decline')",
-                "button:has-text('Got it')",
-                "button:has-text('Dismiss')",
+                "button:has-text('Got It')",
+                "button:has-text('×')",
             ]
             
             for selector in fallback_selectors:
                 full_sel = f"{selector} >> visible=true"
                 print(f"[{self.layer}] Trying heuristic: {full_sel}")
-                await self.send_action("click", full_sel)
+                await self.send_action("click", full_sel, msg_id=msg_id)
                 self.tried_selectors.append(full_sel)
                 self.current_action_selector = full_sel  # Track for learning
                 await asyncio.sleep(self.exploration_delay)
@@ -166,11 +220,20 @@ class JanitorSentinel(SentinelBase):
             self.last_action = None
 
         await asyncio.sleep(self.remediation_delay)
-        await self.send_resume(re_check=True)
-        self.is_hijacking = False
-
+        await self.send_resume(re_check=True, msg_id=msg_id)
+        print(f"[{self.layer}] Remediation complete. State: {self.state} -> RESUMED")
+        self.state = SentinelState.RESUMED
+        self.metrics["recoveries"] += 1
+        await self._emit_telemetry()
+        # After a brief pause, return to IDLE to accept new pre-checks
+        self.state = SentinelState.IDLE
     async def on_message(self, method, params, msg_id):
-        """Learn from command completion feedback."""
+        """Learn from command completion feedback and handle system signals."""
+        if method == "starlight.shutdown":
+            print(f"[{self.layer}] System shutdown signal received. Saving state...")
+            self._save_memory()
+            sys.exit(0)
+
         m_type = params.get("type") if isinstance(params, dict) else None
         
         if m_type == "COMMAND_COMPLETE" and self.last_action:

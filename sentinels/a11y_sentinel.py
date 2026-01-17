@@ -33,10 +33,11 @@ class A11ySentinel(SentinelBase):
     Capabilities: ["accessibility", "audit", "wcag"]
     """
     
-    def __init__(self):
+    def __init__(self, uri=None):
         super().__init__(
             layer_name="A11ySentinel",
-            priority=10  # Low priority - runs after other Sentinels
+            priority=10,  # Low priority - runs after other Sentinels
+            uri=uri
         )
         # CRITICAL: Set capabilities AFTER super().__init__() but they are set
         # on self which is checked by SDK's _register() method
@@ -504,5 +505,10 @@ class A11ySentinel(SentinelBase):
 
 
 if __name__ == "__main__":
-    sentinel = A11ySentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+
+    sentinel = A11ySentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())

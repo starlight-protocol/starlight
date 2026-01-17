@@ -16,8 +16,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sdk.starlight_sdk import SentinelBase
 
 class VisionSentinel(SentinelBase):
-    def __init__(self):
-        super().__init__(layer_name="VisionSentinel", priority=3)
+    def __init__(self, uri=None):
+        super().__init__(layer_name="VisionSentinel", priority=3, uri=uri)
         self.capabilities = ["vision"]
         
         # Load from config
@@ -105,5 +105,10 @@ class VisionSentinel(SentinelBase):
         return None
 
 if __name__ == "__main__":
-    sentinel = VisionSentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+
+    sentinel = VisionSentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())
