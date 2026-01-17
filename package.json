@@ -34,8 +34,8 @@
     "mission": "node bin/starlight.js",
     "launcher": "node launcher/server.js",
     "test": "node test/run_all_tests.js",
-    "test:unit": "node test/unit/run_unit_tests.js",
-    "test:integration": "node test/run_integration_tests.js",
+    "test:unit": "node --test test/unit/**/*.test.js",
+    "test:integration": "set STARLIGHT_TEST=true&& node test/intent_integration.js",
     "tck": "cd tck && npm test",
     "lint": "eslint src/ sdk/ --ext .js",
     "prepublishOnly": "npm run test"

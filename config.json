@@ -2,7 +2,7 @@
     "hub": {
         "port": 8095,
         "browser": {
-            "engine": "chromium",
+            "engine": "playwright",
             "mobile": {
                 "enabled": false,
                 "device": null
@@ -11,8 +11,9 @@
         "network": {
             "emulation": "online"
         },
+        "allowStandby": false,
         "syncBudget": 60000,
-        "missionTimeout": 180000,
+        "missionTimeout": 300000,
         "heartbeatTimeout": 5000,
         "lockTTL": 5000,
         "entropyThrottle": 100,
@@ -41,7 +42,52 @@
             "maxScreenshots": 50,
             "maxMemoryMB": 512,
             "cleanupIntervalMs": 60000
-        }
+        },
+        "reporting": {
+            "screenshots": true
+        },
+        "sentinels": [
+            {
+                "name": "Pulse",
+                "entry": "./sentinels/pulse_sentinel.py",
+                "runtime": "python"
+            },
+            {
+                "name": "Janitor",
+                "entry": "./sentinels/janitor.py",
+                "runtime": "python"
+            },
+            {
+                "name": "Vision",
+                "entry": "./sentinels/vision_sentinel.py",
+                "runtime": "python"
+            },
+            {
+                "name": "A11y",
+                "entry": "./sentinels/a11y_sentinel.py",
+                "runtime": "python"
+            },
+            {
+                "name": "Data",
+                "entry": "./sentinels/data_sentinel.py",
+                "runtime": "python"
+            },
+            {
+                "name": "PII",
+                "entry": "./sentinels/pii_sentinel.py",
+                "runtime": "python"
+            },
+            {
+                "name": "Responsive",
+                "entry": "./sentinels/responsive_sentinel.py",
+                "runtime": "python"
+            },
+            {
+                "name": "Stealth",
+                "entry": "./sentinels/stealth_sentinel.py",
+                "runtime": "python"
+            }
+        ]
     },
     "aura": {
         "predictiveWaitMs": 1500,

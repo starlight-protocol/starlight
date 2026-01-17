@@ -77,6 +77,14 @@
                         }
                     ],
                     "description": "File path(s) for 'upload' command"
+                },
+                "value": {
+                    "type": "string",
+                    "description": "Value to select or check (for select/check commands)"
+                },
+                "key": {
+                    "type": "string",
+                    "description": "Key to press (for press command)"
                 }
             },
             "oneOf": [
@@ -101,6 +109,34 @@
                     "required": [
                         "cmd",
                         "name"
+                    ]
+                },
+                {
+                    "required": [
+                        "cmd",
+                        "key"
+                    ]
+                },
+                {
+                    "required": [
+                        "cmd",
+                        "text"
+                    ]
+                },
+                {
+                    "required": [
+                        "cmd",
+                        "files"
+                    ]
+                },
+                {
+                    "properties": {
+                        "cmd": {
+                            "const": "scroll"
+                        }
+                    },
+                    "required": [
+                        "cmd"
                     ]
                 }
             ]

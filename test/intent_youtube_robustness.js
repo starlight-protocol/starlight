@@ -10,7 +10,7 @@
 const IntentRunner = require('../src/intent_runner');
 
 async function runYouTubeMission() {
-    const runner = new IntentRunner('ws://127.0.0.1:8095');
+    const runner = new IntentRunner('ws://127.0.0.1:8080');
 
     try {
         await runner.connect();
@@ -23,9 +23,12 @@ async function runYouTubeMission() {
 
         // Step 2: Search for Starlight Protocol
         console.log('[Mission] Step 2: Searching for "Starlight Protocol"...');
+        console.time('Targeting: Search');
         await runner.fillGoal('Search', 'Starlight Protocol Constellation Automation');
-        // Explicitly click the search button selector to avoid semantic ambiguity (Input vs Button)
-        await runner.click('#search-icon-legacy');
+        console.timeEnd('Targeting: Search');
+        console.log('[Mission] ✅ Search input filled');
+        // Protocol Hardening: Semantic press ensures targeting even after crash recovery
+        await runner.pressGoal('Search', 'Enter');
         console.log('[Mission] ✅ Search executed\n');
 
         // Step 3: Click first result (Semantic)

@@ -4,7 +4,7 @@
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>CBA Hero Story: Mission Complete</title>
+                <title>CBA Hero Story: Mission Failed</title>
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
                     
@@ -173,14 +173,90 @@
                 </style>
             </head>
             <body>
-                <div class="hero-header" style="border-color: #10B981;">
-                    <h1>✅ Starlight Protocol: Mission Complete</h1>
+                <div class="hero-header" style="border-color: #f43f5e;">
+                    <h1>❌ Starlight Protocol: Mission Failed</h1>
                     <p>Evidence-based automation for the modern web.</p>
-                    
+                    <p style="color: #f43f5e; font-weight: 700; margin-top: 1rem;">⚠️ 1 command(s) failed during this mission.</p>
                 </div>
 
                 <div id="timeline">
                     
+                                <div class="card command">
+                                    <div class="tag tag-command">Intent</div>
+                                    <div class="meta">3:09:28 am | ID: cmd-1</div>
+                                    <div class="card-title">
+                                        <span>GOTO: https://www.youtube.com</span>
+                                        <span class="badge badge-success">SUCCESS</span>
+                                    </div>
+                                    <p>Resolved Selector: <code>N/A</code></p>
+                                    
+                                    <p>⏳ <i>Aura Throttling: Slowed down for historical jitter.</i></p>
+                                    
+                                    <div class="flex">
+                                        <div>
+                                            <div class="meta">Before State</div>
+                                            <img src="screenshots/1768685936506_BEFORE_goto.png" alt="Before State" onerror="this.src='https://placehold.co/400x300?text=No+Before+State'">
+                                        </div>
+                                        <div>
+                                            <div class="meta">After State</div>
+                                            <img src="screenshots/none.png" alt="After State" onerror="this.src='https://placehold.co/400x300?text=No+After+State'">
+                                        </div>
+                                    </div>
+                                </div>
+                            
+                                <div class="card command">
+                                    <div class="tag tag-command">Intent</div>
+                                    <div class="meta">3:09:38 am | ID: cmd-2</div>
+                                    <div class="card-title">
+                                        <span>FILL: Search</span>
+                                        <span class="badge badge-danger">FAILED</span>
+                                    </div>
+                                    <p>Resolved Selector: <code>N/A</code></p>
+                                    
+                                    
+                                    
+                                    <div class="flex">
+                                        <div>
+                                            <div class="meta">Before State</div>
+                                            <img src="screenshots/none.png" alt="Before State" onerror="this.src='https://placehold.co/400x300?text=No+Before+State'">
+                                        </div>
+                                        <div>
+                                            <div class="meta">After State</div>
+                                            <img src="screenshots/none.png" alt="After State" onerror="this.src='https://placehold.co/400x300?text=No+After+State'">
+                                        </div>
+                                    </div>
+                                </div>
+                            
+                                <div class="card command" style="border-left: 4px solid #f43f5e; background: rgba(244, 63, 94, 0.05);">
+                                    <span class="tag" style="background: #f43f5e; color: white;">Mission Failure</span>
+                                    <div class="meta">3:09:38 am</div>
+                                    <h3 style="color: #f43f5e;">⚠️ Termination Reason</h3>
+                                    <p style="font-size: 1.1rem; font-weight: 600;">Mission failed: Failed: Fill goal &quot;Search&quot; - Could not find form input matching &quot;Search&quot;</p>
+                                </div>
+                            
+                                <div class="card command">
+                                    <div class="tag tag-command">Intent</div>
+                                    <div class="meta">3:09:38 am | ID: shutdown-err</div>
+                                    <div class="card-title">
+                                        <span>MISSION CHECK</span>
+                                        <span class="badge badge-danger">FAILED</span>
+                                    </div>
+                                    <p>Resolved Selector: <code>N/A</code></p>
+                                    
+                                    
+                                    
+                                    <div class="flex">
+                                        <div>
+                                            <div class="meta">Before State</div>
+                                            <img src="screenshots/none.png" alt="Before State" onerror="this.src='https://placehold.co/400x300?text=No+Before+State'">
+                                        </div>
+                                        <div>
+                                            <div class="meta">After State</div>
+                                            <img src="screenshots/none.png" alt="After State" onerror="this.src='https://placehold.co/400x300?text=No+After+State'">
+                                        </div>
+                                    </div>
+                                </div>
+                            
                 </div>
 
                 

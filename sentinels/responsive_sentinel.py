@@ -30,10 +30,11 @@ class ResponsiveSentinel(SentinelBase):
     Priority: 6 (Medium - after Pulse, before Data)
     """
     
-    def __init__(self):
+    def __init__(self, uri=None):
         super().__init__(
             layer_name="ResponsiveSentinel",
-            priority=6
+            priority=6,
+            uri=uri
         )
         self.capabilities = ["responsive", "mobile", "detection"]
         
@@ -154,5 +155,10 @@ class ResponsiveSentinel(SentinelBase):
 
 
 if __name__ == "__main__":
-    sentinel = ResponsiveSentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+    
+    sentinel = ResponsiveSentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())

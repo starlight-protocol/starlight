@@ -153,6 +153,9 @@ class StealthBrowserAdapter extends EventEmitter {
         this.page = {
             goto: async (url, options = {}) => {
                 const result = await this._sendCommand('goto', { url });
+                if (result && result.status === 'error') {
+                    throw new Error(`[StealthDriver] goto failed: ${result.message || 'Unknown error'}`);
+                }
 
                 // Polyfill: Run init scripts after navigation
                 for (const script of this.initScripts) {
@@ -201,11 +204,16 @@ class StealthBrowserAdapter extends EventEmitter {
                     }, selector);
                 }
 
-                return await this._sendCommand('click', { selector: normalized });
+                const result = await this._sendCommand('click', { selector: normalized });
+                if (result && result.status === 'error') {
+                    throw new Error(`[StealthDriver] click failed: ${result.message || 'Unknown error'}`);
+                }
+                return result;
             },
 
             fill: async (selector, value, options = {}) => {
                 const normalized = this.normalizeSelector(selector);
+                console.log(`[StealthAdapter] fill ordered: "${value}" -> ${normalized}`);
 
                 // Shadow-Piercing Polyfill
                 if (selector.includes('>>>')) {
@@ -232,16 +240,69 @@ class StealthBrowserAdapter extends EventEmitter {
                     }, selector, value);
                 }
 
-                return await this._sendCommand('fill', { selector: normalized, value });
+                const result = await this._sendCommand('fill', { selector: normalized, value });
+                console.log(`[StealthAdapter] fill result:`, result);
+                if (result && result.status === 'error') {
+                    throw new Error(`[StealthDriver] fill failed: ${result.message || 'Unknown error'}`);
+                }
+                return result;
             },
 
             type: async (selector, text, options = {}) => {
                 const normalized = this.normalizeSelector(selector);
-                return await this._sendCommand('fill', { selector: normalized, value: text });
+                const result = await this._sendCommand('type', { selector: normalized, text });
+                if (result && result.status === 'error') {
+                    throw new Error(`[StealthDriver] type failed: ${result.message || 'Unknown error'}`);
+                }
+                return result;
+            },
+
+            keyboard: {
+                type: async (text) => {
+                    // Pre-Action Focus Hook (Proxied to Python Driver)
+                    await this._sendCommand('execute_script', {
+                        script: `
+                        const el = document.activeElement;
+                        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+                            el.focus();
+                            el.click();
+                        }`
+                    });
+                    const result = await this._sendCommand('type', { text });
+                    if (result && result.status === 'error') {
+                        throw new Error(`[StealthDriver] keyboard.type failed: ${result.message || 'Unknown error'}`);
+                    }
+                    return result;
+                },
+                press: async (key) => {
+                    // Pre-Action Focus Hook (Proxied to Python Driver)
+                    await this._sendCommand('execute_script', {
+                        script: `
+                        const el = document.activeElement;
+                        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+                            el.focus();
+                            el.click();
+                        }`
+                    });
+                    const result = await this._sendCommand('press', { key });
+                    if (result && result.status === 'error') {
+                        throw new Error(`[StealthDriver] keyboard.press failed: ${result.message || 'Unknown error'}`);
+                    }
+                    return result;
+                }
             },
 
             press: async (selector, key, options = {}) => {
-                return await this._sendCommand('press', { key });
+                if (key === undefined) {
+                    return this.page.keyboard.press(selector);
+                }
+
+                const normalized = this.normalizeSelector(selector);
+                const result = await this._sendCommand('press', { selector: normalized, key });
+                if (result && result.status === 'error') {
+                    throw new Error(`[StealthDriver] press failed: ${result.message || 'Unknown error'}`);
+                }
+                return result;
             },
 
             screenshot: async (options = {}) => {
@@ -562,7 +623,7 @@ class StealthBrowserAdapter extends EventEmitter {
      * Send JSON-RPC command to Python driver
      * @private
      */
-    _sendCommand(method, params, timeout = 30000) {
+    _sendCommand(method, params, timeout = 60000) {
         return new Promise((resolve, reject) => {
             const id = nanoid();
 

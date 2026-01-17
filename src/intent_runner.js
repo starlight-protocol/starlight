@@ -72,7 +72,13 @@ class IntentRunner {
             this.lastActionHijacked = true;
             this.hijackDetails = msg;
         } else if (msgType === 'starlight.sentinel_active') {
-            console.log(`[IntentRunner] 🛡️ Sentinel Active: ${msg.layer || msg.sentinelId} (${msg.sentinelType || 'Guardian'})`);
+            const caps = msg.capabilities || [];
+            const capStr = caps.length > 0 ? ` [${caps.join(', ')}]` : '';
+            console.log(`[IntentRunner] 🛡️ Sentinel Active: ${msg.layer || msg.sentinelId}${capStr}`);
+
+            if (caps.some(c => c.includes('offline') || c.includes('degraded'))) {
+                console.warn(`[IntentRunner] ⚠️ WARNING: Sentinel ${msg.layer} is in a degraded or offline state.`);
+            }
         }
 
         if (msg.type === 'COMMAND_COMPLETE') {
@@ -185,9 +191,17 @@ class IntentRunner {
     }
 
     // === KEYBOARD ===
-    async press(key) {
-        return this._sendCommand({ cmd: 'press', key });
+    async press(selector, key) {
+        if (key === undefined) {
+            return this._sendCommand({ cmd: 'press', key: selector });
+        }
+        return this._sendCommand({ cmd: 'press', selector, key });
     }
+
+    async pressGoal(goal, key) {
+        return this._sendCommand({ cmd: 'press', goal, key });
+    }
+
     async type(text) {
         return this._sendCommand({ cmd: 'type', text });
     }
@@ -225,7 +239,7 @@ class IntentRunner {
      * Send a command and wait for completion.
      * @private
      */
-    _sendCommand(params, timeout = 60000) {
+    _sendCommand(params, timeout = 90000) {
         return new Promise((resolve, reject) => {
             const id = `cmd-${++this.commandIdCounter}`;
 
@@ -249,12 +263,18 @@ class IntentRunner {
                 cmdDesc  // Store for better error messages
             });
 
-            this.ws.send(JSON.stringify({
+            const payload = JSON.stringify({
                 jsonrpc: '2.0',
                 method: 'starlight.intent',
                 params,
                 id
-            }));
+            });
+            if (params.cmd === 'press') {
+                console.log(`[IntentRunner] DEBUG SEND: ${payload}`);
+            }
+            console.log(`[IntentRunner] SEND >>> ${payload.substring(0, 150)}...`);
+            this.ws.send(payload);
+
         });
     }
 
@@ -265,12 +285,13 @@ class IntentRunner {
     _describeCommand(params) {
         if (params.cmd === 'goto') {
             return `Navigate to "${params.url}"`;
-        } else if (params.goal) {
-            return `Click goal "${params.goal}"`;
+        }
+
+        const action = params.cmd === 'fill' ? 'Fill' : 'Click';
+        if (params.goal) {
+            return `${action} goal "${params.goal}"`;
         } else if (params.selector) {
-            return `Click "${params.selector}"`;
-        } else if (params.cmd === 'fill') {
-            return `Fill "${params.selector}"`;
+            return `${action} "${params.selector}"`;
         } else if (params.cmd === 'screenshot') {
             return `Take screenshot "${params.name || 'unnamed'}"`;
         } else if (params.cmd === 'checkpoint') {

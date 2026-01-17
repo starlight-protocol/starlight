@@ -38,10 +38,11 @@ class StealthSentinel(SentinelBase):
     Priority: 2 (High - security layer, runs early)
     """
     
-    def __init__(self):
+    def __init__(self, uri=None):
         super().__init__(
             layer_name="StealthSentinel",
-            priority=2
+            priority=7,
+            uri=uri
         )
         self.capabilities = ["stealth", "anti-bot", "evasion"]
         self.selectors = []  # Behavioral detection, not selector-based
@@ -218,5 +219,10 @@ class StealthSentinel(SentinelBase):
 
 
 if __name__ == "__main__":
-    sentinel = StealthSentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+    
+    sentinel = StealthSentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())

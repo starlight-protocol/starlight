@@ -1,1 +1,658 @@
-[]
+[
+  {
+    "timestamp": 1768685907285,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "ResponsiveSentinel",
+      "priority": 6,
+      "selectors": [],
+      "capabilities": [
+        "responsive",
+        "mobile",
+        "detection"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907372,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "PIISentinel",
+      "priority": 2,
+      "selectors": [],
+      "capabilities": [
+        "pii-detection",
+        "compliance"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907378,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "jx1nQ6Tbvdu0crM1Se99RTqDCIo4pS5V"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907378,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "y5IMISD-nmG0ISB7vI3DYjfPLslmGYWB"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907380,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "A11ySentinel",
+      "priority": 10,
+      "selectors": [],
+      "capabilities": [
+        "accessibility",
+        "audit",
+        "wcag"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907380,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "DataSentinel",
+      "priority": 5,
+      "selectors": [],
+      "capabilities": [
+        "context-injection",
+        "data-extraction"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907382,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "JanitorSentinel",
+      "priority": 5,
+      "selectors": [
+        ".modal",
+        ".popup",
+        "#overlay",
+        ".obstacle",
+        "#stabilize-btn",
+        ".shadow-overlay",
+        ".shadow-close-btn",
+        ".newsletter",
+        "#newsletter",
+        ".subscribe-popup",
+        "#subscribe-modal",
+        "#onetrust-consent-sdk",
+        "#onetrust-banner-sdk",
+        ".onetrust-pc-dark-filter",
+        "#onetrust-pc-btn-handler",
+        ".onetrust-banner-overlay",
+        "#CybotCookiebotDialog",
+        ".CybotCookiebotDialogActive",
+        ".qc-cmp2-container",
+        ".qc-cmp2-summary-section",
+        "#truste-consent-track",
+        ".truste-banner",
+        "#didomi-host",
+        ".didomi-popup-container",
+        ".cookie-consent",
+        "#cookie-consent",
+        ".cookie-banner",
+        "#cookie-banner",
+        ".cookie-notice",
+        "#cookie-notice",
+        ".cookie-modal",
+        "#cookie-modal",
+        ".consent-banner",
+        "#consent-banner",
+        ".consent-modal",
+        "#consent-modal",
+        ".gdpr-banner",
+        "#gdpr-banner",
+        ".privacy-banner",
+        "#privacy-banner",
+        "ytd-consent-bump-v2-lightbox",
+        "#consent-bump",
+        "cookie-accept",
+        "cookie-dismiss",
+        "consent-accept",
+        "consent-reject",
+        ".g-recaptcha",
+        "#recaptcha",
+        ".recaptcha-checkbox",
+        "data-sitekey",
+        "#captcha",
+        ".captcha",
+        "#challenge-form"
+      ],
+      "capabilities": [
+        "obstacle-removal"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907383,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "PulseSentinel",
+      "priority": 1,
+      "selectors": [],
+      "capabilities": [
+        "stability"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907384,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "StealthSentinel",
+      "priority": 7,
+      "selectors": [],
+      "capabilities": [
+        "stealth",
+        "anti-bot",
+        "evasion"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907386,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "wfdq0FJ22sAniYC2Y-TyPka9mRVtBxiZ"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907387,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "3Wu4uhbaeJXP1LiDymvEkc83jysKDPI1"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907389,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "PRTev1hIPisHISMUYRWGA9RYiI8hDSWS"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907390,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "fGlrk0QYo3TOCdfEyzmtKpMNTcMhz9gx"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685907391,
+    "humanTime": "3:08:27 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "20Sx4wJsE-8G5YKCApyKWkJ-WyzyrTAg"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685910290,
+    "humanTime": "3:08:30 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "VisionSentinel",
+      "priority": 7,
+      "selectors": [],
+      "capabilities": [
+        "vision"
+      ],
+      "version": "1.0.0"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685910291,
+    "humanTime": "3:08:30 am",
+    "method": "starlight.challenge_response",
+    "params": {
+      "response": "iMGuW5pHffUYAqfIgKVgPPIn7oYPq2YE"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685932373,
+    "humanTime": "3:08:52 am",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "goto",
+      "url": "https://www.youtube.com"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933981,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.context_update",
+    "params": {
+      "context": {
+        "pulse_telemetry": {
+          "state": "ANALYZING",
+          "metrics": {
+            "pre_checks": 1,
+            "vetoes": 0,
+            "clearances": 0
+          },
+          "layer": "PulseSentinel"
+        }
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933982,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.context_update",
+    "params": {
+      "context": {
+        "pulse_telemetry": {
+          "state": "CLEARED",
+          "metrics": {
+            "pre_checks": 1,
+            "vetoes": 0,
+            "clearances": 1
+          },
+          "layer": "PulseSentinel"
+        }
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933983,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933985,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933985,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933986,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933986,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933987,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685933987,
+    "humanTime": "3:08:53 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685936504,
+    "humanTime": "3:08:56 am",
+    "method": "starlight.context_update",
+    "params": {
+      "context": {
+        "vision_status": "OFFLINE",
+        "reason": "Ollama unavailable"
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685936506,
+    "humanTime": "3:08:56 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685936562,
+    "humanTime": "3:08:56 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685936563,
+    "humanTime": "3:08:56 am",
+    "method": "starlight.context_update",
+    "params": {
+      "context": {
+        "environmentEntropy": true,
+        "entropyTimestamp": "Sun Jan 18 03:08:56 2026"
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685936980,
+    "humanTime": "3:08:56 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685937089,
+    "humanTime": "3:08:57 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685937288,
+    "humanTime": "3:08:57 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685937488,
+    "humanTime": "3:08:57 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685938460,
+    "humanTime": "3:08:58 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685938667,
+    "humanTime": "3:08:58 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685938784,
+    "humanTime": "3:08:58 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685938926,
+    "humanTime": "3:08:58 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939043,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939153,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939264,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939378,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939512,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939643,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939769,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939869,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685939970,
+    "humanTime": "3:08:59 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685940069,
+    "humanTime": "3:09:00 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685940169,
+    "humanTime": "3:09:00 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685940271,
+    "humanTime": "3:09:00 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685940372,
+    "humanTime": "3:09:00 am",
+    "method": "starlight.entropy_stream",
+    "params": {
+      "entropy": true
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685968087,
+    "humanTime": "3:09:28 am",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-1",
+      "success": true,
+      "error": null,
+      "context": {
+        "pulse_telemetry": {
+          "state": "CLEARED",
+          "metrics": {
+            "pre_checks": 1,
+            "vetoes": 0,
+            "clearances": 1
+          },
+          "layer": "PulseSentinel"
+        },
+        "vision_status": "OFFLINE",
+        "reason": "Ollama unavailable",
+        "environmentEntropy": true,
+        "entropyTimestamp": "Sun Jan 18 03:08:56 2026"
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685968212,
+    "humanTime": "3:09:28 am",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "fill",
+      "goal": "Search",
+      "text": "Starlight Protocol Constellation Automation",
+      "context": {}
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685978239,
+    "humanTime": "3:09:38 am",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-2",
+      "success": false,
+      "error": "Could not find form input matching \"Search\""
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768685978251,
+    "humanTime": "3:09:38 am",
+    "method": "starlight.finish",
+    "params": {
+      "reason": "Mission failed: Failed: Fill goal \"Search\" - Could not find form input matching \"Search\""
+    },
+    "snapshot": null
+  }
+]

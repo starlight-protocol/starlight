@@ -14,6 +14,7 @@ import sys
 import signal
 import tempfile
 import shutil
+from datetime import datetime
 from abc import ABC, abstractmethod
 
 class SentinelBase(ABC):
@@ -25,6 +26,7 @@ class SentinelBase(ABC):
         self.priority = priority
         self.selectors = []
         self.capabilities = []
+        self.entropy = 0.0 # Default compliance value
         self._running = True
         self._websocket = None
         self._registered = asyncio.Event()
@@ -101,52 +103,49 @@ class SentinelBase(ABC):
                 async with websockets.connect(self.uri) as websocket:
                     self._websocket = websocket
                     
-                    # Start message handler loop as a task BEFORE registration
-                    async def message_loop():
-                        try:
-                            async for message in websocket:
-                                if not self._running:
-                                    break
-                                data = json.loads(message)
-                                # Phase 1 Security: Handle Registration Guard (Challenge-Response)
-                                if "result" in data and "reg-" in str(data.get("id")):
-                                    if data["result"].get("success"):
-                                        self._assigned_id = data["result"].get("assignedId")
-                                        challenge = data["result"].get("challenge")
-                                        print(f"[{self.layer}] Handshake Challenge Received (ID: {self._assigned_id})")
-                                        
-                                        # Send challenge response immediately to complete transactional handshake
-                                        response_msg = {
-                                            "jsonrpc": "2.0",
-                                            "method": "starlight.challenge_response",
-                                            "params": {"response": challenge},
-                                            "id": "chal-" + str(int(time.time()))
-                                        }
-                                        await websocket.send(json.dumps(response_msg))
-                                    else:
-                                        msg = data["result"].get("message", "Unknown error")
-                                        print(f"[{self.layer}] !!! Handshake Aborted: Registration failed: {msg}")
-
-                                # Handle READY confirmation from Hub
-                                if "result" in data and "chal-" in str(data.get("id")):
-                                    if data["result"].get("success"):
-                                        print(f"[{self.layer}] Handshake Verified -> READY state achieved.")
-                                        self._registered.set()
-                                
-                                asyncio.create_task(self._handle_protocol(data))
-                        except Exception as e:
-                            print(f"[{self.layer}] Message loop error: {e}")
-
-                    msg_task = asyncio.create_task(message_loop())
-                    
-                    # Now register
+                    # 1. Register (Non-Blocking)
+                    # We send the registration request but do NOT await the response.
+                    # The response (challenge) will be handled by the main read loop below.
                     await self._register()
                     
-                    # Start background heartbeat
+                    # 2. Start Heartbeat
                     heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                     
-                    # Wait for message task or shutdown
-                    await msg_task
+                    # 3. Main Read Loop (Handles Handshake + Protocol)
+                    async for message in websocket:
+                        if not self._running:
+                            break
+                        try:
+                            data = json.loads(message)
+                            
+                            # Phase 1 Security: Handle Registration Guard (Challenge-Response)
+                            msg_id_str = str(data.get("id", ""))
+                            if "result" in data and "reg-" in msg_id_str:
+                                if data["result"].get("success"):
+                                    self._assigned_id = data["result"].get("assignedId")
+                                    challenge = data["result"].get("challenge")
+                                    print(f"[{self.layer}] Handshake Challenge Received (ID: {self._assigned_id})")
+                                    
+                                    # Send challenge response immediately
+                                    response_msg = {
+                                        "jsonrpc": "2.0",
+                                        "method": "starlight.challenge_response",
+                                        "params": {"response": challenge},
+                                        "id": "chal-" + str(int(time.time()))
+                                    }
+                                    await self._websocket.send(json.dumps(response_msg))
+                                else:
+                                    print(f"[{self.layer}] !!! Handshake Aborted: {data['result'].get('message')}")
+
+                            # Handle READY confirmation
+                            if "result" in data and "chal-" in msg_id_str:
+                                if data["result"].get("success"):
+                                    print(f"[{self.layer}] Handshake Verified -> READY state achieved.")
+                                    self._registered.set()
+                            
+                            asyncio.create_task(self._handle_protocol(data))
+                        except json.JSONDecodeError as e:
+                            print(f"[{self.layer}] Warning: Received malformed JSON, ignoring: {e}")
                         
             except websockets.exceptions.ConnectionClosed as e:
                 print(f"[{self.layer}] Connection closed: {e}. Retrying in {reconnect_delay}s...")
@@ -162,31 +161,33 @@ class SentinelBase(ABC):
         self._save_memory()
         print(f"[{self.layer}] Shutdown complete.")
 
+
+
     async def _register(self):
         # Security: Get auth token from config
         auth_token = self.config.get("hub", {}).get("security", {}).get("authToken")
         
+        self._reg_id = "reg-" + str(int(time.time()))
+        params = {
+            "layer": self.layer,
+            "priority": self.priority,
+            "selectors": self.selectors,
+            "capabilities": self.capabilities,
+            "version": "1.0.0"
+        }
+        if auth_token:
+            params["authToken"] = auth_token
+            
         msg = {
             "jsonrpc": "2.0",
             "method": "starlight.registration",
-            "params": {
-                "layer": self.layer,
-                "priority": self.priority,
-                "selectors": self.selectors,
-                "capabilities": self.capabilities,
-                "version": "1.0.0",
-                "authToken": auth_token
-            },
-            "id": "reg-" + str(int(time.time()))
+            "params": params,
+            "id": self._reg_id
         }
         await self._websocket.send(json.dumps(msg))
-        
-        # World-Class: Wait for transactional handshake to complete (READY state)
-        try:
-            # Increased timeout for mutual handshake round-trip
-            await asyncio.wait_for(self._registered.wait(), timeout=10.0)
-        except asyncio.TimeoutError:
-            print(f"[{self.layer}] !!! Protocol Fault: Registration/Challenge timed out. Hub may be in COLD state.")
+        # Non-blocking: We let the main loop handle the response
+        print(f"[{self.layer}] Registration sent (ID: {self._reg_id}), awaiting challenge...")
+
 
     async def _heartbeat_loop(self):
         interval = self.config.get("sentinel", {}).get("heartbeatInterval", 2)
@@ -195,7 +196,11 @@ class SentinelBase(ABC):
                 msg = {
                     "jsonrpc": "2.0",
                     "method": "starlight.pulse",
-                    "params": {"layer": self.layer},
+                    "params": {
+                        "layer": self.layer,
+                        "entropy": getattr(self, 'entropy', 0.0),
+                        "timestamp": datetime.now().isoformat()
+                    },
                     "id": "pulse-" + str(int(time.time()))
                 }
                 await self._websocket.send(json.dumps(msg))
@@ -211,8 +216,14 @@ class SentinelBase(ABC):
         params = data.get("params", {})
         msg_id = data.get("id")
 
+
+
         if method == "starlight.pre_check":
-            await self.on_pre_check(params, msg_id)
+            self._active_msg_id = msg_id
+            try:
+                await self.on_pre_check(params, msg_id)
+            finally:
+                self._active_msg_id = None
         elif method == "starlight.shutdown":
             print(f"[{self.layer}] SHUTDOWN signal received. Cleaning up...")
             self._running = False
@@ -237,17 +248,20 @@ class SentinelBase(ABC):
 
     async def send_clear(self, confidence=1.0, msg_id=None):
         """Approve execution with an optional confidence score (0.0-1.0)."""
-        await self._send_msg("starlight.clear", {"confidence": confidence}, msg_id=msg_id)
+        target_id = msg_id or getattr(self, '_active_msg_id', None)
+        await self._send_msg("starlight.clear", {"confidence": confidence}, msg_id=target_id)
 
     async def send_wait(self, retry_after_ms=1000, confidence=1.0, msg_id=None):
         """Veto execution with an optional confidence score (0.0-1.0)."""
+        target_id = msg_id or getattr(self, '_active_msg_id', None)
         await self._send_msg("starlight.wait", {
             "retryAfterMs": retry_after_ms,
             "confidence": confidence
-        }, msg_id=msg_id)
+        }, msg_id=target_id)
 
     async def send_hijack(self, reason="Handshake hijack", msg_id=None):
-        await self._send_msg("starlight.hijack", {"reason": reason}, msg_id=msg_id)
+        target_id = msg_id or getattr(self, '_active_msg_id', None)
+        await self._send_msg("starlight.hijack", {"reason": reason}, msg_id=target_id)
 
     async def send_resume(self, re_check=True, msg_id=None):
         await self._send_msg("starlight.resume", {"re_check": re_check}, msg_id=msg_id)

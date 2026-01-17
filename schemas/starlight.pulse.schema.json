@@ -37,6 +37,10 @@
                     "type": "string",
                     "format": "date-time",
                     "description": "When this pulse was generated"
+                },
+                "layer": {
+                    "type": "string",
+                    "description": "Sentinel layer name"
                 }
             },
             "required": [

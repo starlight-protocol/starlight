@@ -132,6 +132,8 @@ class CBAHub {
         this.historicalAuras = new Set();
         this.missionStartTime = null;
         this.isProcessing = false;
+        this.lastScreenshotTime = 0; // Throttle screenshots to stabilize uc driver
+        this.screenshotThrottleMs = 1500;
         this.isShuttingDown = false;
         this.recorder = new ActionRecorder();  // Phase 13.5: Test Recorder
 
@@ -147,6 +149,19 @@ class CBAHub {
         this.schemaValidator = new SchemaValidator();
         this.piiRedactor = new PIIRedactor({ enabled: this.config.hub?.security?.piiRedaction !== false });
 
+        // Phase 1: Initialize LifecycleManager for Sentinel Orchestration
+        const { LifecycleManager } = require('./src/hub/core/LifecycleManager');
+        this.lifecycleManager = new LifecycleManager({ sentinels: this.configLoader.getSentinelsConfig() });
+
+        // Phase 5 Optimization: Detect if running in integration test mode to bypass throttling
+        this.testMode = process.env.STARLIGHT_TEST === 'true' || this.port === 8080;
+        if (this.testMode) {
+            this.screenshotThrottleMs = 0; // Disable throttling for rapid integration tests
+            console.log(`[CBA Hub] 🧪 Test Mode Detected (Port: ${this.port}): Bypassing screenshot throttling`);
+        } else {
+            this.screenshotThrottleMs = 1500;
+        }
+
         if (!fs.existsSync(this.screenshotsDir)) fs.mkdirSync(this.screenshotsDir);
 
         this.cleanupScreenshots();
@@ -158,33 +173,30 @@ class CBAHub {
     }
 
     loadConfig() {
+        // Phase 0: Use robust ConfigLoader
+        const { ConfigLoader } = require('./src/hub/config/ConfigLoader');
         const configPath = path.join(process.cwd(), 'config.json');
-        try {
-            if (fs.existsSync(configPath)) {
-                const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
-                // Phase 8.5: Config Schema Validation (Issue 9)
-                try {
-                    const { validateConfig } = require('./validation/config_schema');
-                    const validation = validateConfig(config);
+        let rawConfig = {};
+        if (fs.existsSync(configPath)) {
+            try {
+                rawConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                // Phase 8.5 Validation remains if needed, but ConfigLoader handles defaults
+                // Phase 0: Use robust ConfigLoader
+                const { validateConfig } = require('./src/validation/config_schema');
+                if (validateConfig) {
+                    const validation = validateConfig(rawConfig);
                     if (!validation.valid) {
-                        console.error('[CBA Hub] Γ¥î Configuration Error(s):');
-                        validation.errors.forEach(err => console.error(`  - ${err}`));
-                        console.warn('[CBA Hub] ΓÜá∩╕Å Proceeding with potentially invalid configuration (Check config.json)');
-                        // Alternative: throw new Error('Invalid Configuration');
-                    } else {
-                        console.log('[CBA Hub] Γ£ô Configuration validated successfully');
+                        console.warn('[CBA Hub] Config Validation Warnings:', validation.errors);
                     }
-                } catch (e) {
-                    // Ignore if validation module missing during dev
                 }
-
-                return config;
+            } catch (e) {
+                console.warn('[CBA Hub] Failed to parse config.json:', e.message);
             }
-        } catch (e) {
-            console.warn('[CBA Hub] Warning: Could not load config.json:', e.message);
         }
-        return {};
+
+        this.configLoader = new ConfigLoader(rawConfig);
+        return rawConfig; // Keep returning raw for legacy props, but use loader methods later
     }
 
     cleanupScreenshots() {
@@ -254,7 +266,63 @@ class CBAHub {
             this.shutdown();
         }, missionTimeout);
 
-        // Initialize HTTP server
+        // Phase 1: Establish WebSocket Protocol Listeners BEFORE engine launch
+        // This prevents race conditions where IntentRunner connects during slow engine startup
+        this.wss.on('connection', (ws) => {
+            const id = nanoid();
+
+            // VISIBILITY FIX: Immediately inform new client of existing Sentinels
+            this.sentinels.forEach((sentinel, sentinelId) => {
+                ws.send(JSON.stringify({
+                    type: 'starlight.sentinel_active',
+                    layer: sentinel.layer,
+                    capabilities: sentinel.capabilities || []
+                }));
+            });
+
+            ws.on('message', async (data) => {
+                try {
+                    const msg = JSON.parse(data);
+                    if (msg.method === 'starlight.intent') {
+                        console.log(`[CBA Hub] RAW RECV: cmd=${msg.params.cmd} key=${msg.params.key}`);
+                    }
+                    if (!this.validateProtocol(msg)) {
+                        console.error(`[CBA Hub] RECV INVALID PROTOCOL from ${id}:`, msg);
+                        return;
+                    }
+                    // Phase 1: Security Gatekeeper (IpcBridge)
+                    // PII Redaction + Schema Validation happens HERE
+                    let safeMsg = msg;
+                    try {
+                        const { IpcBridge } = require('./src/hub/security/IpcBridge');
+                        if (!this.ipcBridge) {
+                            this.ipcBridge = new IpcBridge(this.schemaValidator, this.piiRedactor);
+                        }
+                        safeMsg = this.ipcBridge.processMessage(msg);
+                        if (safeMsg.method === 'starlight.intent') {
+                            console.log(`[CBA Hub] SECURITY DEBUG: cmd=${safeMsg.params.cmd} selector=${safeMsg.params.selector} key=${safeMsg.params.key} goal=${safeMsg.params.goal}`);
+                        }
+                    } catch (secErr) {
+                        console.error(`[CBA Hub] REJECTED Message from ${id} (Security):`, secErr.message);
+                        // Optional: send error back to client
+                        ws.send(JSON.stringify({ jsonrpc: '2.0', error: secErr, id: msg.id }));
+                        return;
+                    }
+
+                    if (safeMsg.method !== 'starlight.pulse') {
+                        console.log(`[CBA Hub] RECV: ${safeMsg.method} from ${this.sentinels.get(id)?.layer || 'Unknown'}`);
+                    }
+                    await this.recordTrace('RECV', id, safeMsg, safeMsg.method === 'starlight.intent');
+                    await this.handleMessage(id, ws, safeMsg);
+                } catch (e) {
+                    console.error(`[CBA Hub] Parse Error from ${id}:`, e.message);
+                }
+            });
+            ws.on('close', () => this.handleDisconnect(id));
+        });
+
+        // Final Phase: Open the gates (Initialize HTTP server)
+        // We do this EARLY so Hub is available to Sentinels during slow engine setup
         this.server.listen(this.port, () => {
             console.log(`[CBA Hub] Starting Starlight Hub: The Hero's Journey...`);
             console.log(`[CBA Hub] WebSocket/HTTP Server listening on port ${this.port}`);
@@ -262,11 +330,13 @@ class CBAHub {
 
         // Phase 14.1/14.2: Cross-Browser & Mobile Support via Adapter Pattern
         console.log(`[CBA Hub] Initializing browser adapter...`);
-        const browserConfig = this.config.hub?.browser || {};
+        // Phase 0 Fix: Use ConfigLoader to flattened config (resolves allowStandby prop drilling)
+        const browserConfig = this.configLoader ? this.configLoader.getBrowserConfig() : (this.config.hub?.browser || {});
+
         // Corrected Delta v1.2.2: Force SmartBrowserAdapter for hybrid engine stability
         console.log('[CBA Hub] Initializing SmartBrowserAdapter (Phase 14.1 Hybrid Engine)...');
         this.browserAdapter = new SmartBrowserAdapter(browserConfig);
-        this.browser = await this.browserAdapter.launch({ headless: this.headless });
+        this.browser = await this.browserAdapter.launch({ headless: this.headless, prewarm: true });
 
         // Phase 14.2: Create context with mobile device emulation if configured
         const contextOptions = {};
@@ -292,39 +362,11 @@ class CBAHub {
         console.log(`[CBA Hub] Capabilities:`, capabilities);
 
         // Phase 9: Traffic Sovereign - Network Interception
-        // Phase 9: Traffic Sovereign - Network Interception
         await this.setupNetworkInterception();
 
-        this.wss.on('connection', (ws) => {
-            const id = nanoid();
-
-            // VISIBILITY FIX: Immediately inform new client of existing Sentinels
-            this.sentinels.forEach((sentinel, sentinelId) => {
-                ws.send(JSON.stringify({
-                    type: 'starlight.sentinel_active',
-                    layer: sentinel.layer,
-                    capabilities: sentinel.capabilities || []
-                }));
-            });
-
-            ws.on('message', async (data) => {
-                try {
-                    const msg = JSON.parse(data);
-                    if (!this.validateProtocol(msg)) {
-                        console.error(`[CBA Hub] RECV INVALID PROTOCOL from ${id}:`, msg);
-                        return;
-                    }
-                    if (msg.method !== 'starlight.pulse') {
-                        console.log(`[CBA Hub] RECV: ${msg.method} from ${this.sentinels.get(id)?.layer || 'Unknown'}`);
-                    }
-                    await this.recordTrace('RECV', id, msg, msg.method === 'starlight.intent'); // Record snapshot for intents
-                    await this.handleMessage(id, ws, msg);
-                } catch (e) {
-                    console.error(`[CBA Hub] Parse Error from ${id}:`, e.message);
-                }
-            });
-            ws.on('close', () => this.handleDisconnect(id));
-        });
+        // Phase 2: Launch the Sentinel Constellation
+        console.log('[CBA Hub] 🚀 Launching Sentinel Constellation...');
+        await this.lifecycleManager.launchAll();
 
         setInterval(() => this.checkSystemHealth(), 1000);
 
@@ -708,132 +750,234 @@ class CBAHub {
      * This enables fillGoal('Search') to find inputs without hardcoded selectors.
      */
     async resolveFormIntent(goal) {
-        console.log(`[CBA Hub] resolveFormIntent called for goal: "${goal}"`);
+        console.log(`[CBA Hub] resolveFormIntent called for goal: "${goal}" (BFS STARTING)`);
+
+        // WORLD-CLASS HARDENING: 10s limit for semantic resolution
+        // Use Promise.race to ensure we don't hang if page.evaluate gets stuck
+        return await Promise.race([
+            this._resolveFormIntentInternal(goal),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for semantic resolution')), 10000))
+        ]).catch(e => {
+            console.warn(`[CBA Hub] Semantic resolution error: ${e.message}`);
+            return null;
+        });
+    }
+
+    async _resolveFormIntentInternal(goal) {
         const shadowEnabled = this.config.hub?.shadowDom?.enabled !== false;
         const maxDepth = this.config.hub?.shadowDom?.maxDepth || 5;
+        let target = null;
 
-        const target = await this.page.evaluate(({ goalText, shadowEnabled, maxDepth }) => {
-            const normalizedGoal = goalText.toLowerCase();
+        // OPTIMIZATION: Try Fast Light DOM Check FIRST (Heuristic Bypass)
+        // This solves "Search" stalls on well-known sites like YouTube by avoiding heavy BFS
+        try {
+            target = await this.page.evaluate((goalText) => {
+                // Common search selectors (YouTube, Google, Amazon)
+                const fallbackSelectors = [
+                    'input[name="search_query"]', // YouTube
+                    'input[id="search"]',         // Generic
+                    'input[name="q"]',            // Google
+                    'input[type="search"]',
+                    '[role="searchbox"] input',
+                    '#search-input',
+                    'input[aria-label="Search"]'
+                ];
 
-            // Collect all form inputs including shadow DOM, plus potential check triggers
-            function collectInputs(root, depth = 0) {
-                if (depth > maxDepth) return [];
-                // Phase 2: Enhanced Discovery - Include buttons/links for search toggles
-                let inputs = Array.from(root.querySelectorAll('input, textarea, select, button, a[role="button"], [role="searchbox"]'));
-
-                if (shadowEnabled) {
-                    const allElements = root.querySelectorAll('*');
-                    for (const el of allElements) {
-                        if (el.shadowRoot) {
-                            inputs = inputs.concat(collectInputs(el.shadowRoot, depth + 1));
-                        }
+                // Only try shortcuts if goal looks like "search"
+                if (goalText.toLowerCase().includes('search')) {
+                    for (const sel of fallbackSelectors) {
+                        const el = document.querySelector(sel);
+                        if (el) return {
+                            selector: sel,
+                            tagName: el.tagName.toLowerCase(),
+                            type: el.type,
+                            id: el.id,
+                            hasFocus: document.activeElement === el
+                        };
                     }
                 }
-                return inputs;
+                return null;
+            }, goal);
+            if (target) {
+                console.log(`[CBA Hub] Fast-Path Heuristic resolved "${goal}" -> ${target.selector}`);
+                return { ...target, selfHealed: false };
             }
+        } catch (e) {
+            console.warn(`[CBA Hub] Fast-Path check failed: ${e.message}`);
+        }
 
-            const inputs = collectInputs(document);
+        try {
+            // SYNCHRONOUS PROTOCOL ALIGNMENT (Phase 13)
+            // Removed async/await and time-slicing to ensure compatibility with Selenium execute_script
+            const semanticResult = await this.page.evaluate(({ goalText, shadowEnabled }) => {
+                const normalizedGoal = goalText.toLowerCase();
 
-            // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
-            // UNIVERSAL FORM RESOLVER - Works on ANY form structure
-            // ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+                // Synchronous Stack-based BFS
+                // We use a stack for DFS or Queue for BFS. Standard BFS is safer for finding "closest" matches.
+                const queue = [document];
+                let queueIndex = 0;
 
-            // Extract ALL possible text associations for an input
-            function extractFormText(input) {
-                const texts = [];
+                const inputs = [];
+                const MAX_NODES = 2000; // Node limit instead of time limit for sync safety
+                let nodesProcessed = 0;
 
-                // 1. Associated <label> by for attribute
-                if (input.id) {
-                    const label = document.querySelector(`label[for="${input.id}"]`);
-                    if (label) texts.push((label.innerText || label.textContent || '').trim());
+                const interactors = 'input, textarea, select, button, a[role="button"], [role="searchbox"]';
+
+                while (queueIndex < queue.length) {
+                    if (nodesProcessed++ > MAX_NODES) break;
+                    const root = queue[queueIndex++];
+
+                    // 1. Collect candidates in current root
+                    try {
+                        const candidates = root.querySelectorAll(interactors);
+                        for (let i = 0; i < candidates.length; i++) {
+                            inputs.push(candidates[i]);
+                        }
+                    } catch (e) { }
+
+                    // 2. Discover Shadow Roots (Linear Traversal)
+                    try {
+                        // Use TreeWalker to find shadow hosts efficiently if possible, 
+                        // or just iterate all elements in this root once.
+                        const all = root.querySelectorAll('*');
+                        for (let i = 0; i < all.length; i++) {
+                            const node = all[i];
+                            if (node.shadowRoot) {
+                                // Depth control
+                                queue.push(node.shadowRoot);
+                            }
+                        }
+                    } catch (e) { }
                 }
 
-                // 2. Wrapping <label> element
-                const parentLabel = input.closest('label');
-                if (parentLabel) texts.push((parentLabel.innerText || parentLabel.textContent || '').trim());
+                // --- SCORING LOGIC (Pure Sync) ---
+                let bestMatch = null;
+                let bestScore = 0;
 
-                // 3. Preceding sibling text (common pattern: "Email: [input]")
-                const prevSibling = input.previousElementSibling;
-                if (prevSibling && (prevSibling.tagName === 'LABEL' || prevSibling.tagName === 'SPAN')) {
-                    texts.push((prevSibling.innerText || prevSibling.textContent || '').trim());
+                for (let i = 0; i < inputs.length; i++) {
+                    const el = inputs[i];
+
+                    // Skip hidden/disabled
+                    if (el.disabled || el.getAttribute('aria-hidden') === 'true') continue;
+
+                    // Visibility Check (Heuristic only, computed style is expensive but usually ok for batch)
+                    // We skip exhaustive visibility check in sync mode to save time
+
+                    let score = 0;
+                    const attrText = [
+                        el.getAttribute('aria-label'),
+                        el.getAttribute('placeholder'),
+                        el.name,
+                        el.id,
+                        el.className
+                    ].join(' ').toLowerCase();
+
+                    // Exact/Partial Text matches
+                    if (attrText.includes(normalizedGoal)) score += 10;
+                    if (attrText === normalizedGoal) score += 20;
+
+                    // Label association
+                    if (el.id) {
+                        const label = document.querySelector(`label[for="${el.id}"]`);
+                        if (label && label.innerText.toLowerCase().includes(normalizedGoal)) {
+                            score += 15;
+                        }
+                    }
+
+                    // Contextual Clues (Parent text)
+                    if (el.parentElement && el.parentElement.innerText && el.parentElement.innerText.toLowerCase().includes(normalizedGoal)) {
+                        score += 5;
+                    }
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMatch = el;
+                    }
                 }
 
-                // 4. Standard attributes
-                ['placeholder', 'aria-label', 'name', 'title', 'id', 'data-label', 'data-placeholder', 'autocomplete'].forEach(attr => {
-                    const val = input.getAttribute(attr);
-                    if (val) texts.push(val.replace(/[-_]/g, ' '));
-                });
+                if (bestMatch) {
+                    // Start generating a CSS selector
+                    let selector = '';
+                    let tempEl = bestMatch;
+                    const path = [];
 
-                // 5. aria-labelledby reference
-                const labelledBy = input.getAttribute('aria-labelledby');
-                if (labelledBy) {
-                    const ref = document.getElementById(labelledBy);
-                    if (ref) texts.push((ref.innerText || ref.textContent || '').trim());
+                    while (tempEl && tempEl.nodeType === Node.ELEMENT_NODE) {
+                        let comp = tempEl.tagName.toLowerCase();
+                        if (tempEl.id) {
+                            comp += `#${tempEl.id}`;
+                            path.unshift(comp);
+                            break; // ID is usually unique enough
+                        } else if (tempEl.className && typeof tempEl.className === 'string' && tempEl.className.trim() !== '') {
+                            comp += `.${tempEl.className.trim().split(/\s+/).join('.')}`;
+                        }
+                        // Add nth-of-type if needed for uniqueness (simplified)
+                        path.unshift(comp);
+
+                        // Handle Shadow Root boundary
+                        if (tempEl.parentNode instanceof ShadowRoot) {
+                            tempEl = tempEl.parentNode.host;
+                        } else {
+                            tempEl = tempEl.parentNode;
+                        }
+                    }
+                    selector = path.join(' > ');
+
+                    return {
+                        selector: selector,
+                        tagName: bestMatch.tagName.toLowerCase(),
+                        type: bestMatch.type,
+                        id: bestMatch.id,
+                        inShadow: false // Simplified for sync return
+                    };
                 }
+                return null;
 
-                // 6. Parent fieldset legend
-                const fieldset = input.closest('fieldset');
-                if (fieldset) {
-                    const legend = fieldset.querySelector('legend');
-                    if (legend) texts.push((legend.innerText || '').trim());
-                }
+            }, { goalText: goal, shadowEnabled }); // Pass args via evaluate
 
-                return texts.map(t => t.toLowerCase()).filter(t => t.length > 0);
+            if (semanticResult) {
+                console.log(`[CBA Hub] Phase 9: Sync BFS Resolved "${goal}" -> ${semanticResult.selector}`);
+                // Cache it (in memory map already set via historicalMemory.set in logic if restored, or here)
+                this.historicalMemory.set(goal, semanticResult.selector);
+                return { selector: semanticResult.selector, selfHealed: false };
             }
+        } catch (e) {
+            console.error(`[CBA Hub] Semantic resolution error: ${e.message}`);
+        }
 
-            // Fuzzy matching with scoring
-            function fuzzyMatchForm(goal, texts) {
-                const goalWords = goal.split(/[\s\/]+/).filter(w => w.length > 1);
 
-                for (const text of texts) {
-                    if (text === goal) return { score: 100 };
-                    if (text.includes(goal)) return { score: 95 };
-                    if (goal.includes(text) && text.length > 2) return { score: 90 };
+
+
+        // FALLBACK: Light DOM Fast Check (YouTube specific heuristic included)
+        if (!target) {
+            target = await this.page.evaluate((goalText) => {
+                const nHook = goalText.toLowerCase();
+                // Common search selectors
+                const fallbackSelectors = [
+                    'input[name="search_query"]', // YouTube
+                    'input[id="search"]',
+                    'input[name="q"]', // Google
+                    'input[type="search"]',
+                    '[role="searchbox"] input' // YouTube new
+                ];
+
+                for (const sel of fallbackSelectors) {
+                    const el = document.querySelector(sel);
+                    if (el) return {
+                        selector: sel,
+                        tagName: el.tagName.toLowerCase(),
+                        type: el.type,
+                        id: el.id,
+                        hasFocus: document.activeElement === el
+                    };
                 }
-
-                for (const text of texts) {
-                    if (goalWords.every(w => text.includes(w))) return { score: 85 };
-                    const matched = goalWords.filter(w => text.includes(w));
-                    if (matched.length > 0) return { score: 50 + (30 * matched.length / goalWords.length) };
-                }
-
-                return { score: 0 };
-            }
-
-            // Find best matching input
-            let bestMatch = null;
-            let bestScore = 0;
-
-            for (const input of inputs) {
-                const texts = extractFormText(input);
-                const result = fuzzyMatchForm(normalizedGoal, texts);
-
-                if (result.score > bestScore) {
-                    bestScore = result.score;
-                    bestMatch = input;
-                    if (result.score >= 95) break;
-                }
-            }
-
-            const match = bestMatch;
-
-
-            if (match) {
-                // Generate selector
-                if (match.id) return { selector: `#${match.id}` };
-                if (match.name) return { selector: `[name="${match.name}"]` };
-                if (match.placeholder) return { selector: `[placeholder="${match.placeholder}"]` };
-                if (match.className && typeof match.className === 'string') {
-                    return { selector: `.${match.className.split(' ').filter(c => c).join('.')}` };
-                }
-                return { selector: match.tagName.toLowerCase() };
-            }
-            return null;
-        }, { goalText: goal, shadowEnabled, maxDepth });
+                return null;
+            }, goal);
+            if (target) console.log(`[CBA Hub] Light DOM Fallback found target: ${target.selector}`);
+        }
 
         if (target) {
-            console.log(`[CBA Hub] Form input resolved for "${goal}" -> ${target.selector}`);
-            return { selector: target.selector, selfHealed: false };
+            console.log(`[CBA Hub] Form input resolved for "${goal}" -> ${target.selector} (${target.tagName})`);
+            return { ...target, selfHealed: false };
         } else {
             console.log(`[CBA Hub] Form resolution FAILED for "${goal}" - no matching input found`);
         }
@@ -1384,6 +1528,10 @@ class CBAHub {
     }
 
     async handleMessage(id, ws, msg) {
+        // Debug: Log RECV but filter noise
+        if (msg.method !== 'starlight.pulse') {
+            console.log(`[CBA Hub] RECV [${id}]: ${msg.method} (${msg.id})`);
+        }
         // Phase 1 Security: Validate message against schema
         const validation = this.schemaValidator.validate(msg);
         if (!validation.valid) {
@@ -1402,8 +1550,8 @@ class CBAHub {
         // Phase 1 Security: Enforce Registration Guard State Machine
         if (msg.method !== 'starlight.registration' && msg.method !== 'starlight.challenge_response') {
             if (!sentinel || sentinel.state !== SentinelState.READY) {
-                // Allow heartbeats and Controller intents (from UI/Runner) to bypass early guard
-                const isPulse = msg.method === 'starlight.pulse' || msg.method === 'starlight.pong';
+                // Allow heartbeats, context updates and Controller intents (from UI/Runner) to bypass early guard
+                const isPulse = ['starlight.pulse', 'starlight.pong', 'starlight.context_update'].includes(msg.method);
                 const isControllerIntent = ['starlight.intent', 'starlight.finish', 'starlight.getPageContext', 'starlight.getNLIStatus'].includes(msg.method);
 
                 if (!isPulse && !isControllerIntent) {
@@ -1442,13 +1590,6 @@ class CBAHub {
 
                 console.log(`[CBA Hub] Handshake Started: ${params.layer} (ID: ${id})`);
 
-                // VISIBILITY: Broadcast presence to IntentRunner (User Console)
-                this.broadcastToClients({
-                    type: 'starlight.sentinel_active',
-                    sentinelId: id,
-                    layer: params.layer
-                });
-
                 // Corrected Delta v1.2.2: Mandatory registration acknowledgment with cryptographic challenge
                 ws.send(JSON.stringify({
                     jsonrpc: '2.0',
@@ -1468,6 +1609,15 @@ class CBAHub {
                     if (params.response === sentinel.challenge) {
                         sentinel.state = SentinelState.READY;
                         console.log(`[CBA Hub] Handshake Verified: ${sentinel.layer} is now READY`);
+
+                        // VISIBILITY: Broadcast presence to IntentRunner (User Console) after READY
+                        this.broadcastToClients({
+                            type: 'starlight.sentinel_active',
+                            sentinelId: id,
+                            layer: sentinel.layer,
+                            capabilities: sentinel.capabilities || []
+                        });
+
                         ws.send(JSON.stringify({
                             jsonrpc: '2.0',
                             result: { success: true, message: 'Protocol state: READY' },
@@ -1539,6 +1689,7 @@ class CBAHub {
                 this.handleResume(id, params);
                 break;
             case 'starlight.intent':
+                console.log(`[CBA Hub] ROUTING intent: ${msg.params.cmd} (Goal: ${msg.params.goal})`);
                 // Phase 5: Handle Semantic Intent (Goal-based)
                 // Only run default click resolver if cmd is 'click' or not set
                 if (msg.params.goal && (!msg.params.cmd || msg.params.cmd === 'click')) {
@@ -1642,6 +1793,23 @@ class CBAHub {
                         return;
                     }
                 }
+                // Handle goal-based press commands (semantic keyboard targeting)
+                if (msg.params.cmd === 'press' && msg.params.goal && !msg.params.selector) {
+                    console.log(`[CBA Hub] Resolving Press Goal: "${msg.params.goal}"`);
+                    const result = await this.resolveFormIntent(msg.params.goal);
+                    if (result) {
+                        msg.params.selector = result.selector;
+                        msg.params.selfHealed = result.selfHealed;
+                        if (result.selfHealed) this.totalSavedTime += 120;
+                    } else {
+                        console.error(`[CBA Hub] FAILED to resolve press goal: ${msg.params.goal}`);
+                        this.broadcastToClient(id, {
+                            type: 'COMMAND_COMPLETE', id: msg.id, success: false,
+                            error: `Could not find element matching "${msg.params.goal}" for press`
+                        });
+                        return;
+                    }
+                }
                 // Handle goal-based check/uncheck commands
                 if ((msg.params.cmd === 'check' || msg.params.cmd === 'uncheck') && msg.params.goal && !msg.params.selector) {
                     console.log(`[CBA Hub] Resolving Checkbox Goal: "${msg.params.goal}"`);
@@ -1693,7 +1861,7 @@ class CBAHub {
                         return;
                     }
                 }
-                this.enqueueCommand(id, { ...msg.params, id: msg.id });
+                this.enqueueCommand(id, msg);
                 break;
             case 'starlight.action':
                 await this.executeSentinelAction(id, params);
@@ -1922,6 +2090,22 @@ class CBAHub {
         await new Promise(r => setTimeout(r, 500));
 
         console.log("[CBA Hub] Generating Hero Story Report...");
+        // Create final mission event if error occurred
+        if (reason && (reason.includes('failed') || reason.includes('Timeout') || reason.includes('Error'))) {
+            this.reportData.push({
+                type: 'MISSION_FAILURE',
+                id: 'shutdown-err',
+                cmd: 'Mission Check',
+                selector: null,
+                success: false,
+                forcedProceed: false,
+                selfHealed: false,
+                predictiveWait: false,
+                timestamp: new Date().toLocaleTimeString(),
+                error: reason
+            });
+        }
+
         await this.generateReport();
         await this.saveMissionTrace();
         await this.saveTemporalMetrics(); // Phase 17.4: Temporal Ghosting
@@ -1961,13 +2145,30 @@ class CBAHub {
     }
 
     async takeScreenshot(name) {
+        // Phase 12 stability: Throttle screenshots to prevent CDP crash
+        const now = Date.now();
+        if (now - this.lastScreenshotTime < this.screenshotThrottleMs) {
+            console.log(`[CBA Hub] Throttling screenshot "${name}" (interval too short)`);
+            return null;
+        }
+        this.lastScreenshotTime = now;
+
         const filename = `${Date.now()}_${name}.png`;
         const filepath = path.join(this.screenshotsDir, filename);
         if (this.page && !this.page.isClosed()) {
             try {
-                await this.page.screenshot({ path: filepath });
+                // Stability: Add timeout to prevent mission stall on heavy pages (like YouTube)
+                const screenshotPromise = this.page.screenshot({ path: filepath, timeout: 8000 });
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Screenshot Timeout')), 10000)
+                );
+
+                await Promise.race([screenshotPromise, timeoutPromise]);
                 return filename;
-            } catch (e) { return null; }
+            } catch (e) {
+                console.warn(`[CBA Hub] Screenshot "${name}" failed/timed out:`, e.message);
+                return null;
+            }
         }
         return null;
     }
@@ -2055,43 +2256,36 @@ class CBAHub {
         this.processQueue();
     }
 
-    enqueueCommand(clientId, msg) {
+    async enqueueCommand(clientId, msg) {
+        console.log(`[CBA Hub] QUEUE: ${msg.params?.cmd} from ${clientId}`);
         this.commandQueue.push({ clientId, ...msg });
-        this.processQueue();
+        await this.processQueue();
     }
 
     async processQueue() {
-        // Don't process if shutting down
         if (this.isShuttingDown) return;
         if (this.isLocked || this.commandQueue.length === 0 || !this.systemHealthy || this.isProcessing) return;
 
         if (!this.missionStartTime) this.missionStartTime = Date.now();
-
         this.isProcessing = true;
+
         try {
             const msg = this.commandQueue.shift();
-            this.currentCommand = msg; // Track for failure reporting on shutdown
-            if (msg.internal && msg.cmd === 'nop') {
-                console.log("[CBA Hub] Processing RE_CHECK settling (500ms)...");
-                await new Promise(r => setTimeout(r, 500));
-                this.isProcessing = false;
-                this.processQueue();
-                return;
-            }
+            this.currentCommand = msg;
+            const params = msg.params || {};
+            const cmdName = params.cmd || 'unknown';
 
-            // Phase 17.4: Temporal Optimization (Ghost-Based Pacing)
-            const ghostKey = `ghost:${msg.cmd}:${msg.selector || ''}`;
+            // Phase 17.4: Ghost-Based Pacing
+            const ghostKey = `ghost:${cmdName}:${params.selector || ''}`;
             if (this.historicalMemory.has(ghostKey)) {
                 const ghostLatency = this.historicalMemory.get(ghostKey);
-                msg.stabilityHint = Math.max(msg.stabilityHint || 0, ghostLatency);
-                console.log(`[CBA Hub] TEMPORAL OPTIMIZATION: Applying Ghost Hint (${ghostLatency}ms) for ${msg.cmd}`);
+                params.stabilityHint = Math.max(params.stabilityHint || 0, ghostLatency);
             }
 
-            // Phase 7.2: Aura-Based Throttling (Predictive Pacing)
+            // Phase 7.2: Aura-Based Throttling
             let predictiveWait = false;
             if (this.isHistoricallyUnstable()) {
                 const auraWait = this.config.aura?.predictiveWaitMs || 1500;
-                console.log(`[CBA Hub] Aura Detected: Proactively slowing down for historical jitter...`);
                 await new Promise(r => setTimeout(r, auraWait));
                 predictiveWait = true;
                 this.totalSavedTime += 30;
@@ -2100,86 +2294,86 @@ class CBAHub {
             const clear = await this.broadcastPreCheck(msg);
             let forcedProceed = false;
             if (!clear) {
-                // Track pre-check retries for animation tolerance
                 msg._preCheckRetries = (msg._preCheckRetries || 0) + 1;
                 const maxRetries = this.config.hub?.maxPreCheckRetries || 3;
 
                 if (msg._preCheckRetries >= maxRetries) {
-                    console.log(`[CBA Hub] ANIMATION TOLERANCE: Max pre-check retries (${maxRetries}) reached. Force proceeding with ${msg.cmd}...`);
+                    console.log(`[CBA Hub] ANIMATION TOLERANCE reached. Force proceeding with ${cmdName}...`);
                     forcedProceed = true;
-                    // Continue execution despite veto (animation tolerance)
                 } else {
-                    console.log(`[CBA Hub] Pre-check failed (${msg._preCheckRetries}/${maxRetries}) for ${msg.cmd}. Retrying in 1s...`);
+                    console.log(`[CBA Hub] Pre-check failed for ${cmdName}. Retrying in 1s...`);
                     this.commandQueue.unshift(msg);
-                    // Stability: Reset isProcessing before scheduling retry
-                    // (early exit before try/finally completes)
                     this.isProcessing = false;
-                    setTimeout(() => {
-                        if (this.isShuttingDown) return;
-                        this.processQueue();
-                    }, 1000);
+                    setTimeout(() => { if (!this.isShuttingDown) this.processQueue(); }, 1000);
                     return;
                 }
             }
 
-            // v2.1: Robust Screenshot Timing (Wait for settlement)
-            const beforeScreenshot = await this.takeScreenshot(`BEFORE_${msg.cmd}`);
-            const originalSelector = msg.selector;
+            // v2.1: Robust Screenshot Timing
+            const reportingEnabled = this.config.hub?.reporting?.screenshots !== false;
+            const beforeScreenshot = reportingEnabled ? await this.takeScreenshot(`BEFORE_${cmdName}`) : null;
+            const originalSelector = params.selector;
             let success = false;
             let commandError = null;
+
             try {
                 success = await this.executeCommand(msg);
             } catch (e) {
                 success = false;
                 commandError = e.message;
-                console.error(`[CBA Hub] Command execution error: ${commandError}`);
-            }
-            const selfHealed = originalSelector !== msg.selector;
-
-            // Learn successful goalΓåÆselector mappings
-            if (success && msg.goal && msg.selector) {
-                this.learnMapping(msg.goal, msg.selector, msg.cmd);
             }
 
-            // Brief wait for UI to reflect change before "AFTER" capture
+            const selfHealed = originalSelector !== params.selector;
+
+            // Learn successful mappings
+            if (success && params.goal && params.selector) {
+                this.learnMapping(params.goal, params.selector, cmdName);
+            }
+
             await new Promise(r => setTimeout(r, 500));
-            const afterScreenshot = await this.takeScreenshot(`AFTER_${msg.cmd}`);
+            const afterScreenshot = reportingEnabled ? await this.takeScreenshot(`AFTER_${cmdName}`) : null;
 
             this.reportData.push({
                 type: 'COMMAND',
                 id: msg.id,
-                cmd: msg.cmd,
-                goal: msg.goal,
-                selector: msg.selector,
-                url: msg.url,
+                cmd: cmdName,
+                goal: params.goal,
+                selector: params.selector,
+                url: params.url,
                 success,
                 forcedProceed,
-                selfHealed: selfHealed || msg.selfHealed,
-                learned: success && msg.goal && msg.selector, // Track that we learned from this
+                selfHealed: selfHealed || params.selfHealed,
+                learned: success && params.goal && params.selector,
                 predictiveWait,
                 timestamp: new Date().toLocaleTimeString(),
                 beforeScreenshot,
                 afterScreenshot,
-                error: commandError
+                error: commandError || (success ? null : `Command "${cmdName}" failed on ${params.goal || params.selector || 'Global'}`)
             });
 
             this.broadcastToClient(null, {
                 type: 'COMMAND_COMPLETE',
                 id: msg.id,
                 success,
-                error: commandError || (success ? null : `Command "${msg.cmd}" failed on ${msg.goal || msg.selector}`),
-                context: this.sovereignState // Phase 4: Return shared context to Intent
+                error: commandError || (success ? null : `Command "${cmdName}" failed on ${params.goal || params.selector || 'Global'}`),
+                context: this.sovereignState
             });
         } finally {
-            this.currentCommand = null; // Clear tracking
+            this.currentCommand = null;
             this.isProcessing = false;
+            this.processQueue();
         }
-        this.processQueue();
     }
 
     async broadcastPreCheck(msg) {
         // Exit early if shutting down to prevent page.evaluate after browser closes
         if (this.isShuttingDown) return true;
+
+        // CRITICAL FIX: Guard against null page (Hub startup race condition or engine swap)
+        if (!this.page) {
+            console.warn('[CBA Hub] Skipping Pre-Check: Browser page not ready');
+            return true;
+        }
 
         const syncBudget = this.config.hub?.syncBudget || 30000;
         const hint = msg.stabilityHint ? ` (Hint: ${msg.stabilityHint}ms)` : '';
@@ -2195,12 +2389,18 @@ class CBAHub {
         // v2.0 Phase 2: Add AI context (screenshot) if deep analysis is capability-flagged
         let screenshotB64 = null;
         if (relevantSentinels.some(([id, s]) => s.capabilities?.includes('vision'))) {
-            try {
-                const screenshotBuffer = await this.page.screenshot({ type: 'jpeg', quality: 80 });
-                screenshotB64 = screenshotBuffer.toString('base64');
-                console.log(`[CBA Hub] Screenshot captured for AI analysis (${Math.round(screenshotB64.length / 1024)}KB)`);
-            } catch (e) {
-                console.warn('[CBA Hub] Screenshot capture failed:', e.message);
+            const now = Date.now();
+            if (now - this.lastScreenshotTime < this.screenshotThrottleMs) {
+                console.log(`[CBA Hub] Throttling pre-check screenshot (interval too short)`);
+            } else {
+                this.lastScreenshotTime = now;
+                try {
+                    const screenshotBuffer = await this.page.screenshot({ type: 'jpeg', quality: 80 });
+                    screenshotB64 = screenshotBuffer.toString('base64');
+                    console.log(`[CBA Hub] Screenshot captured for AI analysis (${Math.round(screenshotB64.length / 1024)}KB)`);
+                } catch (e) {
+                    console.warn('[CBA Hub] Screenshot capture failed:', e.message);
+                }
             }
         }
 
@@ -2442,113 +2642,98 @@ class CBAHub {
         });
     }
 
-    async executeCommand(msg, retry = true) {
-        const startTime = Date.now();
-        try {
-            // Ensure browser is launched
-            if (!this.browser) {
-                console.log('[CBA Hub] Launching browser for execution...');
+    /**
+     * Normalize keyboard actions at the protocol level to ensure cross-engine reliability.
+     * This handles focus, click-to-activate, and standard event dispatch.
+     */
+    async _normalizeKeyboardAction(method, selector, key, text) {
+        console.log(`[CBA Hub] 🔠 Normalizing keyboard ${method} on ${selector || 'focused element'}`);
 
-                // Phase 15: Use BrowserAdapter for Polymorphism
-                if (!this.browserAdapter) {
-                    this.browserAdapter = await BrowserAdapter.create(this.config.hub?.browser || {});
-                }
-                this.browser = await this.browserAdapter.launch({ headless: this.headless });
-
-                const context = await this.browser.newContext();
-                this.page = await context.newPage();
-            }
-
-            // Phase 15: Normalize Selectors (e.g. remove >>> for Firefox)
-            if (this.browserAdapter && msg.selector && typeof msg.selector === 'string') {
-                const originalSelector = msg.selector;
-                msg.selector = this.browserAdapter.normalizeSelector(msg.selector);
-                if (msg.selector !== originalSelector) {
-                    console.log(`[CBA Hub] Normalized selector for ${this.browserAdapter.engine}: "${originalSelector}" -> "${msg.selector}"`);
+        // Phase 1: Force Focus & State Update via JS
+        await this.page.evaluate((sel) => {
+            const el = sel ? document.querySelector(sel) : document.activeElement;
+            if (el) {
+                el.focus();
+                // For dynamic frameworks (React/Vue), a click often triggers hydration/event listeners
+                if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                    el.click();
                 }
             }
+        }, selector);
 
-            if (this.config.hub?.ghostMode && msg.cmd !== 'goto' && msg.cmd !== 'checkpoint') {
-                console.log(`[CBA Hub] GHOST MODE: Timed ${msg.cmd} on ${msg.selector || 'target'}. Observation only.`);
-                await new Promise(r => setTimeout(r, 50));
-            } else {
-                if (msg.cmd === 'goto') await this.page.goto(msg.url);
-                else if (msg.cmd === 'click') await this.page.click(msg.selector);
-                else if (msg.cmd === 'fill') {
-                    // Phase 7: Autonomous Intent Resolution - Handle Click-to-Fill (e.g. Search buttons)
-                    const tagName = await this.page.evaluate(s => document.querySelector(s)?.tagName.toLowerCase(), msg.selector);
-                    if (tagName && (tagName === 'button' || tagName === 'a' || tagName === 'span' || tagName === 'div')) {
-                        console.log(`[CBA Hub] ⚠️ Fill target is ${tagName}, assuming Search Toggle. Clicking...`);
-                        await this.page.click(msg.selector);
-                        await this.page.waitForTimeout(500); // Wait for overlay
-                        // Retry semantic resolution for the goal on the NEW state
-                        if (msg.goal) {
-                            console.log(`[CBA Hub] Retrying fill resolution for "${msg.goal}" after toggle...`);
-                            // Recursively retry ONLY resolution logic (simplified for now: just try to find input again)
-                            // Ideally we'd call resolveFormIntent again here, but we are inside executeCommand.
-                            // Let's assume the user will have to rely on the retry logic or we can do a quick check.
-                            // For this "Boss Level" fix, let's just click and hope the *next* instruction handles it OR the user provided a fallback? 
-                            // method: we can just focus the new input? 
-                            // Actually, let's try to type into the focused element if it appeared?
-                            await this.page.keyboard.type(msg.text);
-                            return true;
-                        }
-                    } else {
-                        await this.page.fill(msg.selector, msg.text);
-                    }
-                }
-                else if (msg.cmd === 'select') await this.page.selectOption(msg.selector, msg.value);
-                else if (msg.cmd === 'hover') await this.page.hover(msg.selector);
-                else if (msg.cmd === 'check') await this.page.check(msg.selector);
-                else if (msg.cmd === 'uncheck') await this.page.uncheck(msg.selector);
-                else if (msg.cmd === 'scroll') {
-                    if (msg.selector) {
-                        await this.page.locator(msg.selector).scrollIntoViewIfNeeded();
-                    } else {
-                        await this.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-                    }
-                }
-                else if (msg.cmd === 'press') await this.page.keyboard.press(msg.key);
-                else if (msg.cmd === 'type') await this.page.keyboard.type(msg.text);
-                else if (msg.cmd === 'upload') {
-                    // Handle file upload - msg.files can be single path string or array of paths
-                    const files = Array.isArray(msg.files) ? msg.files : [msg.files];
-                    await this.page.setInputFiles(msg.selector, files);
-                }
-                else if (msg.cmd === 'checkpoint') {
-                    console.log(`[CBA Hub] ≡ƒÜ⌐ Checkpoint reached: ${msg.name}`);
-                    this.recordTrace('CHECKPOINT', 'System', {
-                        method: 'starlight.checkpoint',
-                        params: { name: msg.name }
+        // Phase 2: Dispatch standard events for critical keys (like Enter)
+        if (method === 'press' && (key === 'Enter' || key === 'Return')) {
+            await this.page.evaluate((sel) => {
+                const el = sel ? document.querySelector(sel) : document.activeElement;
+                if (el) {
+                    ['keydown', 'keypress', 'keyup'].forEach(type => {
+                        el.dispatchEvent(new KeyboardEvent(type, {
+                            key: 'Enter',
+                            code: 'Enter',
+                            keyCode: 13,
+                            which: 13,
+                            bubbles: true,
+                            cancelable: true
+                        }));
                     });
                 }
+            }, selector);
+        }
+
+        return { normalized: true };
+    }
+
+    async executeCommand(msg, retry = true) {
+        const startTime = Date.now();
+        const params = msg.params || msg;
+        const cmdName = params.cmd;
+        if (this.testMode) console.log(`[CBA Hub] EXECUTE: ${cmdName} on ${params.selector || "Global"} (Goal: ${params.goal}, Key: ${params.key})`);
+        try {
+            if (!this.browser) {
+                const browserConfig = this.configLoader ? this.configLoader.getBrowserConfig() : (this.config.hub?.browser || {});
+                const { SmartBrowserAdapter } = require('./src/smart_browser_adapter');
+                this.browserAdapter = new SmartBrowserAdapter(browserConfig);
+                this.browser = await this.browserAdapter.launch({ headless: this.headless, prewarm: true });
+                await this.browserAdapter.newContext({});
+                this.page = await this.browserAdapter.newPage();
             }
-
-            // Phase 17.4: Track temporal ghosting metrics
-            if (this.config.hub?.ghostMode) {
-                this.recordTemporalGhosting(msg, Date.now() - startTime);
-            }
-
-            return true;
-        } catch (e) {
-            console.warn(`[CBA Hub] Command failure on ${msg.selector}: ${e.message}`);
-
-            // Phase 7: Predictive Self-Healing
-            if (retry && msg.goal && this.historicalMemory.has(msg.goal)) {
-                const altSelector = this.historicalMemory.get(msg.goal);
-                if (altSelector !== msg.selector) {
-                    console.log(`[CBA Hub] SELF-HEALING: Attempting historical substitute for "${msg.goal}" -> ${altSelector}`);
-                    msg.selector = altSelector;
-                    const success = await this.executeCommand(msg, false);
-                    if (success) {
-                        this.totalSavedTime += 180; // ROI: 3 mins manual debugging avoided
-                    }
-                    return success;
+            if (this.page && !this.page.isClosed()) {
+                if (cmdName === "goto") await this.page.goto(params.url);
+                else if (cmdName === "click") await this.page.click(params.selector);
+                else if (cmdName === "fill") await this.page.fill(params.selector, params.text);
+                else if (cmdName === "press") {
+                    const key = params.key;
+                    if (!key) throw new Error("Missing key");
+                    if (params.selector) await this.page.press(params.selector, key);
+                    else await this.page.keyboard.press(key);
+                }
+                else if (cmdName === "type") {
+                    const text = params.text;
+                    if (!text) throw new Error("Missing text");
+                    if (params.selector) await this.page.type(params.selector, text);
+                    else await this.page.keyboard.type(text);
+                }
+                else if (cmdName === "scroll") {
+                    if (params.selector) await this.page.locator(params.selector).scrollIntoViewIfNeeded();
+                    else await this.page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+                }
+                else if (cmdName === "select") await this.page.selectOption(params.selector, params.value);
+                else if (cmdName === "hover") await this.page.hover(params.selector);
+                else if (cmdName === "check") await this.page.check(params.selector);
+                else if (cmdName === "uncheck") await this.page.uncheck(params.selector);
+                else if (cmdName === "upload") {
+                    const files = Array.isArray(params.files) ? params.files : [params.files];
+                    await this.page.setInputFiles(params.selector, files);
+                }
+                else if (cmdName === "checkpoint") {
+                    console.log(`[CBA Hub] 🚩 Checkpoint reached: ${params.name}`);
                 }
             }
-
+            return true;
+        } catch (e) {
+            console.warn(`[CBA Hub] Command failure: ${e.message}`);
             if (retry) {
-                await new Promise(r => setTimeout(r, 100));
+                await new Promise(r => setTimeout(r, 200));
                 return await this.executeCommand(msg, false);
             }
             return false;
@@ -3279,7 +3464,7 @@ class CBAHub {
                                     <div class="tag tag-command">Intent</div>
                                     <div class="meta">${escapeHtml(item.timestamp)} | ID: ${escapeHtml(item.id)}</div>
                                     <div class="card-title">
-                                        <span>${escapeHtml(item.cmd).toUpperCase()}: ${item.cmd === 'goto' ? escapeHtml(item.url) : escapeHtml(item.goal || item.selector)}</span>
+                                        <span>${escapeHtml(item.cmd).toUpperCase()}${(item.goal || item.selector || item.url || item.key || item.text) ? ': ' + escapeHtml(item.goal || item.selector || item.url || item.key || item.text) : ''}</span>
                                         <span class="badge ${badgeClass}">${status}</span>
                                     </div>
                                     <p>Resolved Selector: <code>${escapeHtml(item.selector) || 'N/A'}</code></p>
@@ -3289,11 +3474,11 @@ class CBAHub {
                                     <div class="flex">
                                         <div>
                                             <div class="meta">Before State</div>
-                                            <img src="screenshots/${item.beforeScreenshot}" alt="Before State">
+                                            <img src="screenshots/${escapeHtml(item.beforeScreenshot || 'none.png')}" alt="Before State" onerror="this.src='https://placehold.co/400x300?text=No+Before+State'">
                                         </div>
                                         <div>
                                             <div class="meta">After State</div>
-                                            <img src="screenshots/${item.afterScreenshot}" alt="After State">
+                                            <img src="screenshots/${escapeHtml(item.afterScreenshot || 'none.png')}" alt="After State" onerror="this.src='https://placehold.co/400x300?text=No+After+State'">
                                         </div>
                                     </div>
                                 </div>

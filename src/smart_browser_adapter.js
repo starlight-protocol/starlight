@@ -408,20 +408,27 @@ class SmartBrowserAdapter extends EventEmitter {
                 this.circuitBreaker.playwright.recordFailure();
             }
 
-            // Pre-warm Stealth (cold standby) - DISABLED by default to prevent dual windows
-            if (options.prewarm) {
+
+            // Pre-warm Stealth (cold standby) - STRICT CONFIG ENFORCEMENT
+            // Only pre-warm if configuration EXPLICITLY allows standby-warmup or hot-swapping
+            // AND we haven't forced a single-engine mode via config.
+            const allowStandby = this.config.allowStandby !== false;
+
+            if (options.prewarm && allowStandby) {
                 try {
+                    // Start Stealth only if not explicitly disabled
                     this.stealthAdapter = new StealthBrowserAdapter(this.config);
                     await this.stealthAdapter.launch({ headless });
-                    // Initialize the browser
-                    await this.stealthAdapter._sendCommand('initialize', { headless });
-                    await this.stealthAdapter.newPage(); // Initialize stealth page proxy
-                    console.log('[SmartAdapter] ✓ Stealth engine pre-warmed and proxied');
+                    console.log('[SmartAdapter] ✓ Stealth engine pre-warmed');
                 } catch (e) {
                     console.error('[SmartAdapter] Stealth pre-warm failed:', e.message);
                     this.circuitBreaker.stealth.recordFailure();
+                    // Do not fail the main launch if pre-warm fails
                 }
+            } else {
+                console.log(`[SmartAdapter] Skipping Stealth pre-warm (Active Engine: ${this.activeEngine})`);
             }
+
 
             // Set initial active page
             this._initializePageProxy();
@@ -434,9 +441,6 @@ class SmartBrowserAdapter extends EventEmitter {
             try {
                 this.stealthAdapter = new StealthBrowserAdapter(this.config);
                 await this.stealthAdapter.launch({ headless });
-                // Initialize the browser
-                await this.stealthAdapter._sendCommand('initialize', { headless });
-                await this.stealthAdapter.newPage(); // Initialize stealth page proxy
                 console.log('[SmartAdapter] ✓ Stealth engine ready');
             } catch (e) {
                 console.error('[SmartAdapter] Stealth launch failed:', e.message);
@@ -479,8 +483,27 @@ class SmartBrowserAdapter extends EventEmitter {
             goto: async (url, options) => self._executeWithDetection('goto', url, options),
             click: async (selector, options) => self._executeWithDetection('click', selector, options),
             fill: async (selector, value, options) => self._executeWithDetection('fill', selector, value, options),
+            selectOption: async (selector, value, options) => self._execute('selectOption', selector, value, options),
+            check: async (selector, options) => self._execute('check', selector, options),
+            uncheck: async (selector, options) => self._execute('uncheck', selector, options),
+            hover: async (selector, options) => self._execute('hover', selector, options),
+            setInputFiles: async (selector, files, options) => self._execute('setInputFiles', selector, files, options),
+            waitForSelector: async (selector, options) => self._execute('waitForSelector', selector, options),
+            waitForLoadState: async (state, options) => self._execute('waitForLoadState', state, options),
             type: async (selector, text, options) => self._executeWithDetection('type', selector, text, options),
-            press: async (key) => self._execute('press', key),
+            press: async (selector, key) => {
+                // Handle overloaded call: press(key) vs press(selector, key)
+                if (key === undefined) {
+                    return self._execute('keyboard_press', selector);
+                }
+                return self._execute('press', selector, key);
+            },
+            keyboard: {
+                press: async (key) => self._execute('keyboard_press', key),
+                type: async (text) => self._execute('keyboard_type', text),
+                down: async (key) => self._execute('evaluate', `(k) => document.dispatchEvent(new KeyboardEvent('keydown', {key: k}))`, key),
+                up: async (key) => self._execute('evaluate', `(k) => document.dispatchEvent(new KeyboardEvent('keyup', {key: k}))`, key),
+            },
             screenshot: async (options) => self._execute('screenshot', options),
             evaluate: async (fn, ...args) => self._execute('evaluate', fn, ...args),
             $: async (selector) => self._execute('$', selector),
@@ -506,12 +529,6 @@ class SmartBrowserAdapter extends EventEmitter {
 
             // Compatibility: Add dispatchEvent support
             dispatchEvent: async (selector, event, detail) => self._execute('dispatchEvent', selector, event, detail),
-
-            // Compatibility: Add keyboard support
-            keyboard: {
-                press: async (key) => self._execute('press', key),
-                type: async (text) => self._execute('type', text),
-            },
 
             // Compatibility: Add EventListener support
             on: (event, fn) => {
@@ -612,15 +629,33 @@ class SmartBrowserAdapter extends EventEmitter {
                 case 'click':
                     return await page.click(args[0], { timeout: 10000, ...args[1] });
                 case 'fill':
-                    return await page.fill(args[0], args[1], args[2]);
+                    return await page.fill(args[0], args[1], { timeout: 10000, ...args[2] });
+                case 'selectOption':
+                    return await page.selectOption(args[0], args[1], args[2]);
+                case 'check':
+                    return await page.check(args[0], args[1]);
+                case 'uncheck':
+                    return await page.uncheck(args[0], args[1]);
+                case 'hover':
+                    return await page.hover(args[0], args[1]);
+                case 'setInputFiles':
+                    return await page.setInputFiles(args[0], args[1], args[2]);
                 case 'type':
                     return await page.type(args[0], args[1], args[2]);
+                case 'keyboard_type':
+                    return await page.keyboard.type(args[0], args[1]);
                 case 'press':
-                    return await page.keyboard.press(args[0]);
+                    return await page.press(args[0], args[1], args[2]);
+                case 'keyboard_press':
+                    return await page.keyboard.press(args[0], args[1]);
                 case 'screenshot':
                     return await page.screenshot(args[0]);
                 case 'evaluate':
-                    return await page.evaluate(args[0], ...args.slice(1));
+                    // Added 10s safety timeout to prevent Hub hangs on frozen pages
+                    return await Promise.race([
+                        page.evaluate(args[0], ...args.slice(1)),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for evaluate')), 10000))
+                    ]);
                 case '$':
                     return await page.$(args[0]);
                 case '$$':
@@ -660,9 +695,13 @@ class SmartBrowserAdapter extends EventEmitter {
                 case 'fill':
                     return await adapter.page.fill(args[0], args[1]);
                 case 'type':
-                    return await adapter.page.fill(args[0], args[1]); // Same as fill for Selenium
+                    return await adapter.page.type(args[0], args[1]);
+                case 'keyboard_type':
+                    return await adapter.page.keyboard.type(args[0]);
                 case 'press':
-                    return await adapter._sendCommand('press', { key: args[0] });
+                    return await adapter.page.press(args[0], args[1]);
+                case 'keyboard_press':
+                    return await adapter.page.keyboard.press(args[0]);
                 case 'screenshot':
                     return await adapter._sendCommand('screenshot', {});
                 case 'evaluate':

@@ -15,8 +15,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sdk.starlight_sdk import SentinelBase
 
 class DataSentinel(SentinelBase):
-    def __init__(self):
-        super().__init__(layer_name="DataSentinel", priority=20)
+    def __init__(self, uri=None):
+        print(f"[{'DataSentinel'}] Initializing with Hub URI: {uri}")
+        super().__init__(layer_name="DataSentinel", priority=5, uri=uri)
         self.capabilities = ["context-injection", "data-extraction"]
         self.selectors = []  # No blocking patterns to watch
         self.last_extraction = 0
@@ -41,7 +42,7 @@ class DataSentinel(SentinelBase):
             print(f"[{self.layer}] Injected context: cmd={command.get('cmd')}, goal={command.get('goal')}")
         
         # Always clear - we don't block commands
-        await self.send_clear()
+        await self.send_clear(msg_id=msg_id)
 
     async def on_entropy(self, params):
         """Periodically extract and inject environmental state."""
@@ -59,5 +60,10 @@ class DataSentinel(SentinelBase):
             print(f"[{self.layer}] Received context update: {list(context.keys())}")
 
 if __name__ == "__main__":
-    sentinel = DataSentinel()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
+    args = parser.parse_args()
+    
+    sentinel = DataSentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())

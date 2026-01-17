@@ -27,7 +27,7 @@ class SentinelState:
 class PulseSentinel(SentinelBase):
     def __init__(self, uri=None):
         super().__init__(layer_name="PulseSentinel", priority=1, uri=uri)
-        self.capabilities = ["temporal-stability", "settling", "network-idle"]
+        self.capabilities = ["stability"]
         self.settlement_window = self.config.get("sentinel", {}).get("settlementWindow", 0.5)
         self.max_veto_count = self.config.get("sentinel", {}).get("maxVetoCount", 3)
         self.state = SentinelState.IDLE

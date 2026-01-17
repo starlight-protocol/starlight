@@ -24,6 +24,7 @@ class SentinelState:
 class JanitorSentinel(SentinelBase):
     def __init__(self, uri=None):
         super().__init__(layer_name="JanitorSentinel", priority=5, uri=uri)
+        self.capabilities = ["obstacle-removal"]
         # Load janitor config
         janitor_config = self.config.get("janitor", {})
         self.exploration_delay = janitor_config.get("explorationDelayMs", 300) / 1000.0
@@ -47,8 +48,9 @@ class JanitorSentinel(SentinelBase):
             ".cookie-notice", "#cookie-notice", ".cookie-modal", "#cookie-modal",
             ".consent-banner", "#consent-banner", ".consent-modal", "#consent-modal",
             ".gdpr-banner", "#gdpr-banner", ".privacy-banner", "#privacy-banner",
+            "ytd-consent-bump-v2-lightbox", "#consent-bump",
             # Wildcards
-            "cookie-accept", "cookie-dismiss", "consent-accept",
+            "cookie-accept", "cookie-dismiss", "consent-accept", "consent-reject",
             # CAPTCHA
             ".g-recaptcha", "#recaptcha", ".recaptcha-checkbox",
             "data-sitekey", "#captcha", ".captcha", "#challenge-form"

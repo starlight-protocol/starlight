@@ -1,60 +1,60 @@
 {
-  "totalMissions": 244,
-  "successfulMissions": 184,
-  "totalSavedSeconds": 29310,
+  "totalMissions": 301,
+  "successfulMissions": 215,
+  "totalSavedSeconds": 31740,
   "totalInterventions": 45,
   "avgRecoveryTimeMs": 906.4644587030384,
-  "lastMissionTimestamp": "2026-01-17T08:27:34.179Z",
+  "lastMissionTimestamp": "2026-01-17T21:39:38.783Z",
   "missionHistory": [
     {
-      "timestamp": "2026-01-17T07:11:37.103Z",
-      "success": false,
+      "timestamp": "2026-01-17T20:54:57.064Z",
+      "success": true,
+      "savedSeconds": 0
+    },
+    {
+      "timestamp": "2026-01-17T21:02:52.240Z",
+      "success": true,
+      "savedSeconds": 270
+    },
+    {
+      "timestamp": "2026-01-17T21:06:33.541Z",
+      "success": true,
       "savedSeconds": 30
     },
     {
-      "timestamp": "2026-01-17T07:31:46.961Z",
+      "timestamp": "2026-01-17T21:10:28.868Z",
+      "success": true,
+      "savedSeconds": 0
+    },
+    {
+      "timestamp": "2026-01-17T21:17:27.319Z",
+      "success": true,
+      "savedSeconds": 30
+    },
+    {
+      "timestamp": "2026-01-17T21:21:56.288Z",
+      "success": true,
+      "savedSeconds": 30
+    },
+    {
+      "timestamp": "2026-01-17T21:28:47.451Z",
+      "success": true,
+      "savedSeconds": 30
+    },
+    {
+      "timestamp": "2026-01-17T21:31:28.479Z",
       "success": false,
       "savedSeconds": 0
     },
     {
-      "timestamp": "2026-01-17T07:46:45.082Z",
-      "success": true,
-      "savedSeconds": 60
-    },
-    {
-      "timestamp": "2026-01-17T07:49:55.618Z",
-      "success": true,
-      "savedSeconds": 150
-    },
-    {
-      "timestamp": "2026-01-17T07:53:47.915Z",
-      "success": true,
-      "savedSeconds": 180
-    },
-    {
-      "timestamp": "2026-01-17T08:03:14.972Z",
-      "success": true,
-      "savedSeconds": 210
-    },
-    {
-      "timestamp": "2026-01-17T08:12:49.805Z",
-      "success": true,
-      "savedSeconds": 390
-    },
-    {
-      "timestamp": "2026-01-17T08:17:15.266Z",
-      "success": true,
-      "savedSeconds": 570
-    },
-    {
-      "timestamp": "2026-01-17T08:19:36.649Z",
-      "success": true,
+      "timestamp": "2026-01-17T21:33:21.139Z",
+      "success": false,
       "savedSeconds": 0
     },
     {
-      "timestamp": "2026-01-17T08:27:34.179Z",
-      "success": true,
-      "savedSeconds": 0
+      "timestamp": "2026-01-17T21:39:38.783Z",
+      "success": false,
+      "savedSeconds": 30
     }
   ]
 }

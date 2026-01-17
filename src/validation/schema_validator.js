@@ -1,3 +1,4 @@
+
 /**
  * Starlight Protocol - Schema Validator
  * 
@@ -7,87 +8,47 @@
  * Prevents malformed or malicious payloads from being processed.
  */
 
-// JSON Schema definitions for Starlight Protocol messages
-const SCHEMAS = {
-    // Base JSON-RPC 2.0 message structure
-    'starlight.base': {
-        type: 'object',
-        required: ['jsonrpc', 'method', 'id'],
-        properties: {
-            jsonrpc: { const: '2.0' },
-            method: { type: 'string', pattern: '^starlight\\.[a-zA-Z_][a-zA-Z0-9_]*$' },
-            id: { type: 'string', maxLength: 100 },
-            params: { type: 'object' }
-        },
-        additionalProperties: false
-    },
-
-    // Registration message
-    'starlight.registration': {
-        type: 'object',
-        required: ['layer', 'priority'],
-        properties: {
-            layer: { type: 'string', maxLength: 50, pattern: '^[a-zA-Z][a-zA-Z0-9_-]*$' },
-            priority: { type: 'integer', minimum: 1, maximum: 10 },
-            capabilities: { type: 'array', items: { type: 'string', maxLength: 50 } },
-            selectors: { type: 'array', items: { type: 'string', maxLength: 500 } },
-            authToken: { type: 'string', maxLength: 500 }
-        }
-    },
-
-    // Intent message
-    'starlight.intent': {
-        type: 'object',
-        properties: {
-            cmd: {
-                type: 'string',
-                enum: ['goto', 'click', 'fill', 'select', 'hover', 'check', 'uncheck',
-                    'scroll', 'press', 'type', 'upload', 'screenshot', 'checkpoint', 'clear']
-            },
-            goal: { type: 'string', maxLength: 200 },
-            selector: { type: 'string', maxLength: 500 },
-            url: { type: 'string', maxLength: 2000 },
-            text: { type: 'string', maxLength: 5000 },
-            value: { type: 'string', maxLength: 1000 },
-            key: { type: 'string', maxLength: 50 },
-            direction: { type: 'string', enum: ['top', 'bottom', 'left', 'right'] },
-            stabilityHint: { type: 'integer', minimum: 0, maximum: 60000 }
-        }
-    },
-
-    // Action message (Sentinel -> Hub during hijack)
-    'starlight.action': {
-        type: 'object',
-        required: ['cmd', 'selector'],
-        properties: {
-            cmd: { type: 'string', enum: ['click', 'fill', 'hide', 'remove'] },
-            selector: { type: 'string', maxLength: 500 },
-            text: { type: 'string', maxLength: 5000 }
-        }
-    },
-
-    // Context update
-    'starlight.context_update': {
-        type: 'object',
-        required: ['context'],
-        properties: {
-            context: { type: 'object' }
-        }
-    },
-
-    // Hijack message
-    'starlight.hijack': {
-        type: 'object',
-        required: ['reason'],
-        properties: {
-            reason: { type: 'string', maxLength: 500 }
-        }
-    }
-};
+const fs = require('fs');
+const path = require('path');
 
 class SchemaValidator {
-    constructor() {
-        this.schemas = SCHEMAS;
+    /**
+     * @param {string} [schemaDir] - Directory containing schema JSON files
+     */
+    constructor(schemaDir) {
+        this.schemas = {};
+        // Default to project root schemas if not provided
+        const dir = schemaDir || path.resolve(__dirname, '../../schemas');
+        this._loadSchemas(dir);
+    }
+
+    _loadSchemas(dir) {
+        if (!fs.existsSync(dir)) {
+            console.warn(`[SchemaValidator] Schema directory not found: ${dir}`);
+            return;
+        }
+
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+            if (file.endsWith('.json')) {
+                try {
+                    const content = fs.readFileSync(path.join(dir, file), 'utf8');
+                    const schema = JSON.parse(content);
+                    // Map by both filename (starlight.intent) and explicit title
+                    const key = file.replace('.schema.json', '');
+                    this.schemas[key] = schema;
+                    if (schema.title) {
+                        this.schemas[schema.title] = schema;
+                    }
+                } catch (e) {
+                    console.error(`[SchemaValidator] Failed to load ${file}:`, e);
+                }
+            }
+        }
+    }
+
+    getSchema(method) {
+        return this.schemas[method];
     }
 
     /**
@@ -96,24 +57,17 @@ class SchemaValidator {
      * @returns {object} { valid: boolean, errors: string[] }
      */
     validate(msg) {
-        const errors = [];
-
-        // Step 1: Validate base structure
-        const baseResult = this._validateAgainst(msg, this.schemas['starlight.base']);
-        if (!baseResult.valid) {
-            return { valid: false, errors: baseResult.errors };
+        if (!msg || !msg.method) {
+            return { valid: false, errors: ['Message missing method field'] };
         }
 
-        // Step 2: Validate method-specific params
-        const methodSchema = this.schemas[msg.method];
-        if (methodSchema && msg.params) {
-            const paramsResult = this._validateAgainst(msg.params, methodSchema);
-            if (!paramsResult.valid) {
-                return { valid: false, errors: paramsResult.errors };
-            }
+        const schema = this.schemas[msg.method];
+        if (!schema) {
+            // If no schema found, strict security says REJECT (or warn if permissive)
+            return { valid: false, errors: [`No schema definition found for method: ${msg.method}`] };
         }
 
-        return { valid: true, errors: [] };
+        return this._validateAgainst(msg, schema);
     }
 
     /**
@@ -123,12 +77,18 @@ class SchemaValidator {
     _validateAgainst(obj, schema) {
         const errors = [];
 
-        // Check type
-        if (schema.type === 'object' && (typeof obj !== 'object' || obj === null)) {
-            return { valid: false, errors: ['Expected object'] };
+        // 1. Type Check
+        if (schema.type) {
+            if (schema.type === 'object' && (typeof obj !== 'object' || obj === null)) errors.push('Expected object');
+            else if (schema.type === 'string' && typeof obj !== 'string') errors.push('Expected string');
+            else if (schema.type === 'integer' && !Number.isInteger(obj)) errors.push('Expected integer');
+            else if (schema.type === 'number' && typeof obj !== 'number') errors.push('Expected number');
+            else if (schema.type === 'array' && !Array.isArray(obj)) errors.push('Expected array');
         }
 
-        // Check required fields
+        if (errors.length > 0) return { valid: false, errors };
+
+        // 2. Required Fields
         if (schema.required) {
             for (const field of schema.required) {
                 if (!(field in obj)) {
@@ -137,82 +97,48 @@ class SchemaValidator {
             }
         }
 
-        // Check properties
-        if (schema.properties) {
+        // 3. Properties (Recursion)
+        if (schema.properties && typeof obj === 'object' && obj !== null) {
             for (const [key, propSchema] of Object.entries(schema.properties)) {
                 if (key in obj) {
-                    const fieldErrors = this._validateField(obj[key], propSchema, key);
-                    errors.push(...fieldErrors);
+                    const result = this._validateAgainst(obj[key], propSchema);
+                    if (!result.valid) {
+                        // contextualize error path
+                        errors.push(...result.errors.map(e => `${key}.${e}`));
+                    }
                 }
             }
         }
 
-        // Check additionalProperties
-        if (schema.additionalProperties === false && schema.properties) {
-            const allowedKeys = new Set(Object.keys(schema.properties));
-            for (const key of Object.keys(obj)) {
-                if (!allowedKeys.has(key)) {
-                    errors.push(`Unexpected field: ${key}`);
+        // 4. Constants & Enums
+        if (schema.const !== undefined && obj !== schema.const) errors.push(`Must be ${schema.const}`);
+        if (schema.enum && !schema.enum.includes(obj)) errors.push(`Must be one of [${schema.enum.join(', ')}]`);
+
+        // 5. String Constraints
+        if (typeof obj === 'string') {
+            if (schema.maxLength && obj.length > schema.maxLength) errors.push(`Exceeds max length ${schema.maxLength}`);
+            if (schema.pattern && !new RegExp(schema.pattern).test(obj)) errors.push(`Pattern mismatch ${schema.pattern}`);
+            if (schema.format === 'uri') { /* basic check */ }
+        }
+
+        // 6. oneOf Support (Critical for Intent Params)
+        if (schema.oneOf) {
+            let matched = false;
+            for (const subSchema of schema.oneOf) {
+                // We only check against the subSchema constraints
+                const result = this._validateAgainst(obj, subSchema);
+                if (result.valid) {
+                    matched = true;
+                    break;
                 }
+            }
+            if (!matched) {
+                errors.push('Failed to match any oneOf conditions');
             }
         }
 
         return { valid: errors.length === 0, errors };
     }
-
-    /**
-     * Validate a single field.
-     * @private
-     */
-    _validateField(value, schema, fieldName) {
-        const errors = [];
-
-        // Skip validation for null/undefined optional fields
-        if (value === null || value === undefined) {
-            return errors;  // Optional field not provided - that's OK
-        }
-
-        // Type check
-        if (schema.type === 'string' && typeof value !== 'string') {
-            errors.push(`${fieldName}: expected string`);
-        } else if (schema.type === 'integer' && (!Number.isInteger(value))) {
-            errors.push(`${fieldName}: expected integer`);
-        } else if (schema.type === 'array' && !Array.isArray(value)) {
-            errors.push(`${fieldName}: expected array`);
-        }
-
-        // Const check
-        if (schema.const !== undefined && value !== schema.const) {
-            errors.push(`${fieldName}: must be "${schema.const}"`);
-        }
-
-        // Enum check
-        if (schema.enum && !schema.enum.includes(value)) {
-            errors.push(`${fieldName}: must be one of [${schema.enum.join(', ')}]`);
-        }
-
-        // String constraints
-        if (typeof value === 'string') {
-            if (schema.maxLength && value.length > schema.maxLength) {
-                errors.push(`${fieldName}: exceeds max length of ${schema.maxLength}`);
-            }
-            if (schema.pattern && !new RegExp(schema.pattern).test(value)) {
-                errors.push(`${fieldName}: does not match pattern ${schema.pattern}`);
-            }
-        }
-
-        // Number constraints
-        if (typeof value === 'number') {
-            if (schema.minimum !== undefined && value < schema.minimum) {
-                errors.push(`${fieldName}: below minimum of ${schema.minimum}`);
-            }
-            if (schema.maximum !== undefined && value > schema.maximum) {
-                errors.push(`${fieldName}: above maximum of ${schema.maximum}`);
-            }
-        }
-
-        return errors;
-    }
 }
 
-module.exports = { SchemaValidator, SCHEMAS };
+module.exports = { SchemaValidator };

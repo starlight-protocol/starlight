@@ -17,7 +17,7 @@ from sdk.starlight_sdk import SentinelBase
 
 class VisionSentinel(SentinelBase):
     def __init__(self, uri=None):
-        super().__init__(layer_name="VisionSentinel", priority=3, uri=uri)
+        super().__init__(layer_name="VisionSentinel", priority=7, uri=uri)
         self.capabilities = ["vision"]
         
         # Load from config
@@ -25,6 +25,25 @@ class VisionSentinel(SentinelBase):
         self.model = vision_config.get("model", "moondream")
         self.timeout = vision_config.get("timeout", 25)
         self.ollama_url = vision_config.get("ollamaUrl", "http://localhost:11434/api/generate")
+
+    async def start(self):
+        """Phase 8: Check for AI backend before registering."""
+        print(f"[{self.layer}] Verifying AI dependencies (Ollama)...")
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                # Use base URL to check if service is up
+                base_url = self.ollama_url.replace('/api/generate', '')
+                response = await client.get(base_url)
+                if response.status_code == 200:
+                    print(f"[{self.layer}] AI Backend Online. Initializing...")
+                else:
+                    print(f"[{self.layer}] WARNING: AI Backend degraded (Status: {response.status_code})")
+                    await self.update_context({"vision_health": "degraded"})
+        except Exception:
+            print(f"[{self.layer}] CRITICAL: AI Backend OFFLINE. Model '{self.model}' will not be available.")
+            await self.update_context({"vision_health": "offline"})
+        
+        await super().start()
 
     async def on_pre_check(self, params, msg_id):
         screenshot_b64 = params.get("screenshot")
@@ -99,9 +118,8 @@ class VisionSentinel(SentinelBase):
             print(f"[{self.layer}] HINT: Run 'ollama serve' to start the AI backend")
             await self.update_context({"vision_status": "OFFLINE", "reason": "Ollama unavailable"})
         except Exception as e:
-            print(f"[{self.layer}] AI Analysis failed: {type(e).__name__}: {e}")
+            print(f"[{self.layer}] AI Analysis failed: {e}")
             await self.update_context({"vision_status": "ERROR", "reason": str(e)})
-        
         return None
 
 if __name__ == "__main__":
@@ -109,6 +127,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--hub_url", default=None, help="Starlight Hub WebSocket URL")
     args = parser.parse_args()
-
+    
     sentinel = VisionSentinel(uri=args.hub_url)
     asyncio.run(sentinel.start())
