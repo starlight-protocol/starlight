@@ -201,8 +201,8 @@ impl<H: SentinelHandler + 'static> Sentinel<H> {
         client.connect().await?;
         self.client = Some(client);
 
-        // Send registration
-        self.register().await?;
+        // Send registration and handle mutual handshake (Registration Guard)
+        self.handshake().await?;
 
         // Notify handler
         self.handler.on_connect().await;
@@ -210,10 +210,12 @@ impl<H: SentinelHandler + 'static> Sentinel<H> {
         Ok(())
     }
 
-    /// Send registration message to Hub.
-    async fn register(&self) -> Result<()> {
+    /// Perform mutual handshake with Hub (Registration Guard).
+    async fn handshake(&self) -> Result<()> {
         let client = self.client.as_ref().ok_or(Error::NotConnected)?;
+        let reg_id = format!("reg-{}", Uuid::new_v4());
 
+        // 1. Send Registration
         let mut params = RegistrationParams::new(&self.config.name, self.config.priority)
             .with_capabilities(self.config.capabilities.clone())
             .with_selectors(self.config.selectors.clone());
@@ -227,13 +229,65 @@ impl<H: SentinelHandler + 'static> Sentinel<H> {
         let request = JsonRpcRequest::new(
             methods::REGISTRATION,
             params,
-            format!("reg-{}", Uuid::new_v4()),
+            &reg_id,
         );
 
         client.send_json(&request).await?;
-        info!("{} registered with Hub", self.config.name);
+        info!("{} registration sent, waiting for handshake challenge...", self.config.name);
 
-        Ok(())
+        // 2. Wait for challenge as response to registration
+        let timeout = Duration::from_secs(10);
+        let start = std::time::Instant::now();
+
+        loop {
+            if start.elapsed() > timeout {
+                return Err(Error::Handshake("Timed out waiting for registration_ack".to_string()));
+            }
+
+            if let Some(msg) = client.receive().await? {
+                if msg.id == Some(reg_id.clone()) {
+                    // This is our registration response
+                    let result: RegistrationResult = serde_json::from_value(msg.result.ok_or_else(|| {
+                        Error::Handshake("Registration response missing result".to_string())
+                    })?)?;
+
+                    if !result.success {
+                        return Err(Error::Handshake("Registration rejected by Hub".to_string()));
+                    }
+
+                    if let Some(challenge) = result.challenge {
+                        info!("Handshake challenge received, verifying...");
+                        let chal_id = format!("chal-{}", Uuid::new_v4());
+                        let response_params = ChallengeResponseParams { response: challenge };
+                        let response_request = JsonRpcRequest::new(
+                            methods::CHALLENGE_RESPONSE,
+                            response_params,
+                            &chal_id,
+                        );
+
+                        client.send_json(&response_request).await?;
+
+                        // 3. Wait for READY confirmation
+                        loop {
+                            if start.elapsed() > timeout {
+                                return Err(Error::Handshake("Timed out waiting for handshake verification".to_string()));
+                            }
+
+                            if let Some(confirm) = client.receive().await? {
+                                if confirm.id == Some(chal_id.clone()) {
+                                    info!("Handshake Verified -> Protocol State: READY");
+                                    return Ok(());
+                                }
+                            }
+                            sleep(Duration::from_millis(50)).await;
+                        }
+                    } else {
+                        return Err(Error::Handshake("Hub failed to issue mutual challenge".to_string()));
+                    }
+                }
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
     }
 
     /// Run the Sentinel message loop.

@@ -125,6 +125,21 @@ impl RegistrationParams {
     }
 }
 
+/// Registration result from Hub → Sentinel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistrationResult {
+    pub success: bool,
+    #[serde(rename = "assignedId")]
+    pub assigned_id: Option<String>,
+    pub challenge: Option<String>,
+}
+
+/// Challenge response parameters (Sentinel → Hub).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChallengeResponseParams {
+    pub response: String,
+}
+
 /// Pre-check parameters from Hub → Sentinel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PreCheckParams {
@@ -261,6 +276,7 @@ pub mod methods {
     pub const ENTROPY: &str = "starlight.entropy";
     pub const CONTEXT_UPDATE: &str = "starlight.context_update";
     pub const INTENT: &str = "starlight.intent";
+    pub const CHALLENGE_RESPONSE: &str = "starlight.challenge_response";
 }
 
 // =============================================================================

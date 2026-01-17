@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-01-17T07:32:48.219Z",
+  "version": "v1.2.2-Hardened",
+  "status": "FAIL",
+  "results": {
+    "js": [
+      {
+        "file": "test_browser_adapter.js",
+        "passed": true
+      },
+      {
+        "file": "test_circuit_breaker.js",
+        "passed": true
+      },
+      {
+        "file": "test_cli.js",
+        "passed": true
+      },
+      {
+        "file": "test_detection_engine.js",
+        "passed": true
+      },
+      {
+        "file": "test_device_emulation.js",
+        "passed": true
+      },
+      {
+        "file": "test_hub_core.js",
+        "passed": true
+      },
+      {
+        "file": "test_intent_runner.js",
+        "passed": true
+      },
+      {
+        "file": "test_nli.js",
+        "passed": true
+      },
+      {
+        "file": "test_recorder.js",
+        "passed": true
+      },
+      {
+        "file": "test_sentinels.js",
+        "passed": true
+      },
+      {
+        "file": "test_sentinel_sdk.js",
+        "passed": true
+      },
+      {
+        "file": "test_shadow_utils.js",
+        "passed": true
+      },
+      {
+        "file": "test_telemetry.js",
+        "passed": true
+      },
+      {
+        "file": "test_warp.js",
+        "passed": true
+      },
+      {
+        "file": "test_webhook.js",
+        "passed": true
+      }
+    ],
+    "python": [
+      {
+        "file": "test_sentinels_structural.py",
+        "passed": true
+      }
+    ],
+    "compliance": [
+      {
+        "file": "intent_hm_challenge.js",
+        "passed": false,
+        "error": "Command failed: node \"C:\\cba\\test\\intent_hm_challenge.js\""
+      },
+      {
+        "file": "intent_saucedemo.js",
+        "passed": false,
+        "error": "Command failed: node \"C:\\cba\\test\\intent_saucedemo.js\""
+      },
+      {
+        "file": "intent_youtube_robustness.js",
+        "passed": false,
+        "error": "Command failed: node \"C:\\cba\\test\\intent_youtube_robustness.js\""
+      },
+      {
+        "file": "intent_google_search.js",
+        "passed": false,
+        "error": "Command failed: node \"C:\\cba\\test\\intent_google_search.js\""
+      },
+      {
+        "file": "intent_chaos_gauntlet.js",
+        "passed": false,
+        "error": "Command failed: node \"C:\\cba\\test\\intent_chaos_gauntlet.js\""
+      },
+      {
+        "file": "intent_portfolio_v2.js",
+        "passed": false,
+        "error": "Command failed: node \"C:\\cba\\test\\intent_portfolio_v2.js\""
+      }
+    ]
+  },
+  "compliance": {
+    "registrationGuard": true,
+    "syncBudget": true,
+    "shadowPiercing": true
+  }
+}

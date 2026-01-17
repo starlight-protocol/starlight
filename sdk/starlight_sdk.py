@@ -25,8 +25,10 @@ class SentinelBase(ABC):
         self.priority = priority
         self.selectors = []
         self.capabilities = []
+        self._running = True
         self._websocket = None
-        self._running = False
+        self._registered = asyncio.Event()
+        self._assigned_id = None
         self.memory = {}
         self.last_action = None
         # Stability: Use absolute path in project root, not relative CWD
@@ -98,20 +100,53 @@ class SentinelBase(ABC):
                 print(f"[{self.layer}] Connecting to Starlight Hub...")
                 async with websockets.connect(self.uri) as websocket:
                     self._websocket = websocket
+                    
+                    # Start message handler loop as a task BEFORE registration
+                    async def message_loop():
+                        try:
+                            async for message in websocket:
+                                if not self._running:
+                                    break
+                                data = json.loads(message)
+                                # Phase 1 Security: Handle Registration Guard (Challenge-Response)
+                                if "result" in data and "reg-" in str(data.get("id")):
+                                    if data["result"].get("success"):
+                                        self._assigned_id = data["result"].get("assignedId")
+                                        challenge = data["result"].get("challenge")
+                                        print(f"[{self.layer}] Handshake Challenge Received (ID: {self._assigned_id})")
+                                        
+                                        # Send challenge response immediately to complete transactional handshake
+                                        response_msg = {
+                                            "jsonrpc": "2.0",
+                                            "method": "starlight.challenge_response",
+                                            "params": {"response": challenge},
+                                            "id": "chal-" + str(int(time.time()))
+                                        }
+                                        await websocket.send(json.dumps(response_msg))
+                                    else:
+                                        msg = data["result"].get("message", "Unknown error")
+                                        print(f"[{self.layer}] !!! Handshake Aborted: Registration failed: {msg}")
+
+                                # Handle READY confirmation from Hub
+                                if "result" in data and "chal-" in str(data.get("id")):
+                                    if data["result"].get("success"):
+                                        print(f"[{self.layer}] Handshake Verified -> READY state achieved.")
+                                        self._registered.set()
+                                
+                                asyncio.create_task(self._handle_protocol(data))
+                        except Exception as e:
+                            print(f"[{self.layer}] Message loop error: {e}")
+
+                    msg_task = asyncio.create_task(message_loop())
+                    
+                    # Now register
                     await self._register()
                     
-                    # Start background tasks
+                    # Start background heartbeat
                     heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                     
-                    async for message in websocket:
-                        if not self._running:
-                            break
-                        try:
-                            data = json.loads(message)
-                            asyncio.create_task(self._handle_protocol(data))
-                        except json.JSONDecodeError as e:
-                            print(f"[{self.layer}] Warning: Received malformed JSON, ignoring: {e}")
-                            # Continue processing - don't crash on bad input
+                    # Wait for message task or shutdown
+                    await msg_task
                         
             except websockets.exceptions.ConnectionClosed as e:
                 print(f"[{self.layer}] Connection closed: {e}. Retrying in {reconnect_delay}s...")
@@ -145,6 +180,13 @@ class SentinelBase(ABC):
             "id": "reg-" + str(int(time.time()))
         }
         await self._websocket.send(json.dumps(msg))
+        
+        # World-Class: Wait for transactional handshake to complete (READY state)
+        try:
+            # Increased timeout for mutual handshake round-trip
+            await asyncio.wait_for(self._registered.wait(), timeout=10.0)
+        except asyncio.TimeoutError:
+            print(f"[{self.layer}] !!! Protocol Fault: Registration/Challenge timed out. Hub may be in COLD state.")
 
     async def _heartbeat_loop(self):
         interval = self.config.get("sentinel", {}).get("heartbeatInterval", 2)
@@ -171,6 +213,13 @@ class SentinelBase(ABC):
 
         if method == "starlight.pre_check":
             await self.on_pre_check(params, msg_id)
+        elif method == "starlight.shutdown":
+            print(f"[{self.layer}] SHUTDOWN signal received. Cleaning up...")
+            self._running = False
+            if self._websocket:
+                await self._websocket.close()
+            self._save_memory()
+            sys.exit(0)
         elif method == "starlight.entropy_stream":
             await self.on_entropy(params)
         elif method == "starlight.sovereign_update":
@@ -186,79 +235,79 @@ class SentinelBase(ABC):
 
     # --- Communication Methods ---
 
-    async def send_clear(self, confidence=1.0):
+    async def send_clear(self, confidence=1.0, msg_id=None):
         """Approve execution with an optional confidence score (0.0-1.0)."""
-        await self._send_msg("starlight.clear", {"confidence": confidence})
+        await self._send_msg("starlight.clear", {"confidence": confidence}, msg_id=msg_id)
 
-    async def send_wait(self, retry_after_ms=1000, confidence=1.0):
+    async def send_wait(self, retry_after_ms=1000, confidence=1.0, msg_id=None):
         """Veto execution with an optional confidence score (0.0-1.0)."""
         await self._send_msg("starlight.wait", {
             "retryAfterMs": retry_after_ms,
             "confidence": confidence
-        })
+        }, msg_id=msg_id)
 
-    async def send_hijack(self, reason):
-        await self._send_msg("starlight.hijack", {"reason": reason})
+    async def send_hijack(self, reason="Handshake hijack", msg_id=None):
+        await self._send_msg("starlight.hijack", {"reason": reason}, msg_id=msg_id)
 
-    async def send_resume(self, re_check=True):
-        await self._send_msg("starlight.resume", {"re_check": re_check})
+    async def send_resume(self, re_check=True, msg_id=None):
+        await self._send_msg("starlight.resume", {"re_check": re_check}, msg_id=msg_id)
 
-    async def send_action(self, cmd, selector, text=None, value=None, key=None):
+    async def send_action(self, cmd, selector, text=None, value=None, key=None, msg_id=None):
         """Execute a healing action via the Hub."""
         params = {"cmd": cmd, "selector": selector}
         if text: params["text"] = text
         if value: params["value"] = value
         if key: params["key"] = key
-        await self._send_msg("starlight.action", params)
+        await self._send_msg("starlight.action", params, msg_id=msg_id)
 
     # === Extended Action Methods (v1.2.0) ===
     
-    async def send_click(self, selector):
+    async def send_click(self, selector, msg_id=None):
         """Click an element."""
-        await self.send_action("click", selector)
+        await self.send_action("click", selector, msg_id=msg_id)
     
-    async def send_fill(self, selector, text):
+    async def send_fill(self, selector, text, msg_id=None):
         """Fill an input field."""
-        await self.send_action("fill", selector, text=text)
+        await self.send_action("fill", selector, text=text, msg_id=msg_id)
     
-    async def send_select(self, selector, value):
+    async def send_select(self, selector, value, msg_id=None):
         """Select a dropdown option by value."""
-        await self.send_action("select", selector, value=value)
+        await self.send_action("select", selector, value=value, msg_id=msg_id)
     
-    async def send_hover(self, selector):
+    async def send_hover(self, selector, msg_id=None):
         """Hover over an element."""
-        await self.send_action("hover", selector)
+        await self.send_action("hover", selector, msg_id=msg_id)
     
-    async def send_check(self, selector):
+    async def send_check(self, selector, msg_id=None):
         """Check a checkbox."""
-        await self.send_action("check", selector)
+        await self.send_action("check", selector, msg_id=msg_id)
     
-    async def send_uncheck(self, selector):
+    async def send_uncheck(self, selector, msg_id=None):
         """Uncheck a checkbox."""
-        await self.send_action("uncheck", selector)
+        await self.send_action("uncheck", selector, msg_id=msg_id)
     
-    async def send_scroll(self, selector=None):
+    async def send_scroll(self, selector=None, msg_id=None):
         """Scroll to an element, or scroll to bottom if no selector."""
-        await self.send_action("scroll", selector or "")
+        await self.send_action("scroll", selector or "", msg_id=msg_id)
     
-    async def send_press(self, key):
+    async def send_press(self, key, msg_id=None):
         """Press a keyboard key."""
         params = {"cmd": "press", "key": key}
-        await self._send_msg("starlight.action", params)
+        await self._send_msg("starlight.action", params, msg_id=msg_id)
     
-    async def send_type(self, text):
+    async def send_type(self, text, msg_id=None):
         """Type text using keyboard."""
         params = {"cmd": "type", "text": text}
-        await self._send_msg("starlight.action", params)
+        await self._send_msg("starlight.action", params, msg_id=msg_id)
     
-    async def send_upload(self, selector, files):
+    async def send_upload(self, selector, files, msg_id=None):
         """Upload file(s) to file input. Files can be single path or list of paths."""
         params = {
             "cmd": "upload",
             "selector": selector,
             "files": files
         }
-        await self._send_msg("starlight.action", params)
+        await self._send_msg("starlight.action", params, msg_id=msg_id)
 
     async def update_context(self, context_data):
         """Inject data into the Hub's sovereign state."""
@@ -294,10 +343,11 @@ class SentinelBase(ABC):
             "timestamp": time.time()
         })
 
-    async def _send_msg(self, method, params):
+    async def _send_msg(self, method, params, msg_id=None):
         if self._websocket:
             try:
-                msg = self._format_message(method, params, str(int(time.time() * 1000)))
+                final_id = msg_id or str(int(time.time() * 1000))
+                msg = self._format_message(method, params, final_id)
                 await self._websocket.send(json.dumps(msg))
             except websockets.exceptions.ConnectionClosed:
                 print(f"[{self.layer}] Cannot send {method}: connection closed")

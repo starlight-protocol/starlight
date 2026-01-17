@@ -10,7 +10,7 @@
 const IntentRunner = require('../src/intent_runner');
 
 async function runChaosGauntlet() {
-    const runner = new IntentRunner();
+    const runner = new IntentRunner('ws://127.0.0.1:8095');
 
     try {
         await runner.connect();
@@ -23,7 +23,7 @@ async function runChaosGauntlet() {
 
         // GOAL 2: Start the gauntlet (Sentinels clear popups automatically)
         console.log('[Intent] Goal: INITIATE_CHAOS');
-        await runner.clickGoal('INITIATE_CHAOS');
+        await runner.clickGoal('INITIATE_CHAOS', { stabilityHint: 2000 });
         console.log('[Intent] ✅ Gauntlet started\n');
 
         // GOAL 3: Complete mission (Hub pierces Shadow DOM automatically)

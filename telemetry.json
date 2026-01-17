@@ -1,58 +1,58 @@
 {
-  "totalMissions": 185,
-  "successfulMissions": 146,
-  "totalSavedSeconds": 26790,
+  "totalMissions": 244,
+  "successfulMissions": 184,
+  "totalSavedSeconds": 29310,
   "totalInterventions": 45,
   "avgRecoveryTimeMs": 906.4644587030384,
-  "lastMissionTimestamp": "2026-01-14T13:31:32.006Z",
+  "lastMissionTimestamp": "2026-01-17T08:27:34.179Z",
   "missionHistory": [
     {
-      "timestamp": "2026-01-11T09:09:09.423Z",
+      "timestamp": "2026-01-17T07:11:37.103Z",
       "success": false,
-      "savedSeconds": 150
+      "savedSeconds": 30
     },
     {
-      "timestamp": "2026-01-11T09:24:27.468Z",
+      "timestamp": "2026-01-17T07:31:46.961Z",
       "success": false,
-      "savedSeconds": 120
+      "savedSeconds": 0
     },
     {
-      "timestamp": "2026-01-11T09:26:20.521Z",
-      "success": false,
-      "savedSeconds": 150
-    },
-    {
-      "timestamp": "2026-01-11T09:29:08.793Z",
-      "success": false,
-      "savedSeconds": 120
-    },
-    {
-      "timestamp": "2026-01-11T09:31:33.394Z",
-      "success": true,
-      "savedSeconds": 150
-    },
-    {
-      "timestamp": "2026-01-11T09:37:59.373Z",
-      "success": false,
-      "savedSeconds": 120
-    },
-    {
-      "timestamp": "2026-01-11T09:40:32.059Z",
-      "success": true,
-      "savedSeconds": 180
-    },
-    {
-      "timestamp": "2026-01-11T11:12:54.919Z",
+      "timestamp": "2026-01-17T07:46:45.082Z",
       "success": true,
       "savedSeconds": 60
     },
     {
-      "timestamp": "2026-01-11T11:15:17.885Z",
+      "timestamp": "2026-01-17T07:49:55.618Z",
       "success": true,
-      "savedSeconds": 240
+      "savedSeconds": 150
     },
     {
-      "timestamp": "2026-01-14T13:31:32.006Z",
+      "timestamp": "2026-01-17T07:53:47.915Z",
+      "success": true,
+      "savedSeconds": 180
+    },
+    {
+      "timestamp": "2026-01-17T08:03:14.972Z",
+      "success": true,
+      "savedSeconds": 210
+    },
+    {
+      "timestamp": "2026-01-17T08:12:49.805Z",
+      "success": true,
+      "savedSeconds": 390
+    },
+    {
+      "timestamp": "2026-01-17T08:17:15.266Z",
+      "success": true,
+      "savedSeconds": 570
+    },
+    {
+      "timestamp": "2026-01-17T08:19:36.649Z",
+      "success": true,
+      "savedSeconds": 0
+    },
+    {
+      "timestamp": "2026-01-17T08:27:34.179Z",
       "success": true,
       "savedSeconds": 0
     }

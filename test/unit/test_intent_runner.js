@@ -5,18 +5,20 @@
 
 const path = require('path');
 
+const EventEmitter = require('events');
+
 // Mock WebSocket class for Node environment
-class MockWebSocket {
+class MockWebSocket extends EventEmitter {
     constructor(url) {
+        super();
         this.url = url;
         this.readyState = 1; // OPEN
-        this.handlers = {};
         this.sent = [];
 
         // Auto-emit 'open' in next tick
         setTimeout(() => {
             if (this.onopen) this.onopen();
-            if (this.handlers['open']) this.handlers['open']();
+            this._trigger('open');
         }, 0);
     }
 
@@ -25,9 +27,17 @@ class MockWebSocket {
     set onmessage(cb) { this._onmessage = cb; }
     get onmessage() { return this._onmessage; }
 
-    on(event, cb) {
-        this.handlers[event] = cb;
+    addEventListener(event, cb) {
+        this.on(event, cb);
         return this;
+    }
+
+    removeEventListener(event, cb) {
+        this.removeListener(event, cb);
+    }
+
+    _trigger(event, data) {
+        this.emit(event, data);
     }
 
     send(data) {
@@ -42,29 +52,39 @@ class MockWebSocket {
 
     // Helper to simulate Hub response
     mockResponse(id, result) {
-        const msg = JSON.stringify({
+        const msgStr = JSON.stringify({
             jsonrpc: '2.0',
             id: id,
-            result: result
+            type: 'COMMAND_COMPLETE',
+            ...result
         });
-        if (this.onmessage) this.onmessage({ data: msg });
-        if (this.handlers['message']) this.handlers['message'](msg);
+
+        const msgEvent = { data: msgStr };
+        // SDK style: passes data directly to 'message' listeners
+        // Browser/Native style: passes event object to addEventListener listeners
+
+        if (this.onmessage) this.onmessage(msgEvent);
+        this._trigger('message', msgEvent);
     }
 }
 
 // Inject Mock into require cache AND global
-try {
-    const wsPath = require.resolve('ws');
-    require.cache[wsPath] = {
-        id: wsPath,
-        filename: wsPath,
-        loaded: true,
-        exports: MockWebSocket
-    };
-} catch (e) { }
+const injectMock = () => {
+    try {
+        const wsPath = require.resolve('ws');
+        require.cache[wsPath] = {
+            id: wsPath,
+            filename: wsPath,
+            loaded: true,
+            exports: MockWebSocket
+        };
+    } catch (e) { }
 
-global.WebSocket = MockWebSocket;
-global.WebSocket.isMock = true;
+    global.WebSocket = MockWebSocket;
+    global.WebSocket.isMock = true;
+};
+
+injectMock();
 
 const IntentRunner = require('../../src/intent_runner');
 
@@ -145,7 +165,7 @@ class TestIntentRunnerStructural {
         this.assert(sent.params.cmd === 'checkpoint', 'Command is checkpoint');
         this.assert(sent.params.name === 'PAGE_LOADED', 'Checkpoint name is correct');
 
-        runner.ws.mockResponse(sent.id, { acknowledged: true });
+        runner.ws.mockResponse(sent.id, { success: true });
         await cpPromise;
         this.assert(true, 'Checkpoint completes after ACK');
     }

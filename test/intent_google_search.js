@@ -18,7 +18,7 @@
 const IntentRunner = require('../src/intent_runner');
 
 async function runMission() {
-    const runner = new IntentRunner();
+    const runner = new IntentRunner('ws://127.0.0.1:8095');
 
     try {
         await runner.connect();

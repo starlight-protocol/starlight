@@ -47,4 +47,8 @@ pub enum Error {
     /// Channel send error
     #[error("Internal channel error")]
     ChannelError,
+
+    /// Mutual handshake failure
+    #[error("Handshake error: {0}")]
+    Handshake(String),
 }
