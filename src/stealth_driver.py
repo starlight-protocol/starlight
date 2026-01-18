@@ -257,8 +257,9 @@ class StealthDriver:
             except Exception as e:
                 logger.warning(f"SANITIZER: Failed to kill {target}: {e}")
         
-        # Mandatory cool-down to allow OS to release TCP ports
-        time.sleep(2.0)
+        # OS Port release is handled by child process closure; a 2s hard sleep is non-performant.
+        # Reducing to minimal stabilization buffer.
+        time.sleep(0.5)
 
     def initialize(self, headless: bool = False) -> dict:
         """Launch browser with robust retry & self-healing logic."""
@@ -492,17 +493,16 @@ class StealthDriver:
                 # Perform JS-based Event Dispatch for Enter (React/Vue compatibility)
                 if normalized_key in ["enter", "return"]:
                     logger.info("Using JS keyboard event polyfill for Enter")
-                    self._dispatch_keyboard_event(selector, 'keydown', 'Enter')
-                    self._dispatch_keyboard_event(selector, 'keypress', 'Enter')
                     self._dispatch_keyboard_event(selector, 'keyup', 'Enter')
-                    time.sleep(1.0) # Wait for processing
+                    # Performance Fix: Replaced 1.0s sleep with mission-context aware wait if needed,
+                    # but usually, the Hub's networkidle wait handles this better.
                 else:
                     # Fallback to native send_keys for other keys
                     self._safe_driver_call(target_elem.send_keys, selenium_key)
                 
                 # Semantic Verification for Search Flow
                 if normalized_key in ["enter", "return"] and (tag == "input" or selector and "search" in selector.lower()):
-                    time.sleep(1.5) # Wait for animation/navigation
+                    # Performance Fix: The Hub handles the navigation state; double sleeping here is redundant.
                     try:
                         # If still on same page and search button remains, click it
                         search_btns = self.sb.find_elements("#search-icon-legacy, button[aria-label*='search' i]")

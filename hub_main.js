@@ -151,7 +151,7 @@ class CBAHub {
 
         // Phase 1: Initialize LifecycleManager for Sentinel Orchestration
         const { LifecycleManager } = require('./src/hub/core/LifecycleManager');
-        this.lifecycleManager = new LifecycleManager({ sentinels: this.configLoader.getSentinelsConfig() });
+        this.lifecycleManager = new LifecycleManager({ sentinels: this.configLoader.getSentinelsConfig() }, `ws://localhost:${this.port}`);
 
         // Phase 5 Optimization: Detect if running in integration test mode to bypass throttling
         this.testMode = process.env.STARLIGHT_TEST === 'true' || this.port === 8080;
@@ -159,7 +159,7 @@ class CBAHub {
             this.screenshotThrottleMs = 0; // Disable throttling for rapid integration tests
             console.log(`[CBA Hub] 🧪 Test Mode Detected (Port: ${this.port}): Bypassing screenshot throttling`);
         } else {
-            this.screenshotThrottleMs = 1500;
+            this.screenshotThrottleMs = 0; // Phase 12: Professional-grade responsiveness (Verification Baseline)
         }
 
         if (!fs.existsSync(this.screenshotsDir)) fs.mkdirSync(this.screenshotsDir);
@@ -3748,8 +3748,9 @@ module.exports = { CBAHub };
 if (require.main === module) {
     const args = process.argv.slice(2);
     const headless = args.includes('--headless');
-    const port = args.find(a => a.startsWith('--port='))?.split('=')[1] || 8080;
+    const port = args.find(a => a.startsWith('--port='))?.split('=')[1] || 8095;
 
     const hub = new CBAHub(parseInt(port), headless);
     hub.init();
 }
+

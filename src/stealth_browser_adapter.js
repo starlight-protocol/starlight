@@ -325,6 +325,17 @@ class StealthBrowserAdapter extends EventEmitter {
                 return buffer;
             },
 
+            inputValue: async (selector, options = {}) => {
+                const normalized = this.normalizeSelector(selector);
+                return await this.page.evaluate((sel) => {
+                    const el = document.querySelector(sel);
+                    if (!el) return '';
+                    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+                        return el.value || '';
+                    }
+                    return (el.innerText || el.textContent || '').trim();
+                }, normalized);
+            },
             url: () => this._sendCommand('get_url', {}).then(r => r.url),
 
             evaluate: async (fn, ...args) => {

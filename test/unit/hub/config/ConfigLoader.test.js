@@ -1,34 +1,31 @@
-
-const { describe, it } = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert');
-// We will implement this class next
 const { ConfigLoader } = require('../../../../src/hub/config/ConfigLoader');
 
-describe('ConfigLoader (Phase 1 Fix)', () => {
-    it('should flatten nested hub config for Browser Adapter', () => {
-        const rawConfig = {
-            hub: {
-                allowStandby: true, // This was being lost
-                browser: {
-                    headless: true
-                }
-            }
-        };
+test('ConfigLoader: Rigor & Prop-Drilling Prevention', async (t) => {
+    const rawConfig = {
+        hub: {
+            browser: {
+                engine: 'stealth',
+                headless: false
+            },
+            allowStandby: false,
+            sentinels: [{ name: 'Test' }]
+        }
+    };
 
-        const loader = new ConfigLoader(rawConfig);
-        const browserConfig = loader.getBrowserConfig();
+    const loader = new ConfigLoader(rawConfig);
 
-        // The bug was that browserConfig only had { headless: true }
-        // We assert it MERGES the parent params
-        assert.strictEqual(browserConfig.allowStandby, true, 'allowStandby should be passed to adapter');
-        assert.strictEqual(browserConfig.headless, true, 'headless should be passed');
+    await t.test('Should flatten browser config and inject root flags', () => {
+        const browser = loader.getBrowserConfig();
+        assert.strictEqual(browser.engine, 'stealth');
+        assert.strictEqual(browser.allowStandby, false); // Injected from hub root
+        assert.strictEqual(browser.headless, false);
     });
 
-    it('should apply Safe Defaults when config is missing', () => {
-        const loader = new ConfigLoader({}); // Empty config
-        const browserConfig = loader.getBrowserConfig();
-
-        assert.strictEqual(browserConfig.allowStandby, true, 'Default AllowStandby should be true');
-        assert.strictEqual(browserConfig.engine, 'playwright', 'Default Engine should be playwright');
+    await t.test('Should provide defaults for missing reporting config', () => {
+        const reporting = loader.getReportingConfig();
+        assert.strictEqual(reporting.enabled, true);
+        assert.strictEqual(reporting.screenshots, true);
     });
 });

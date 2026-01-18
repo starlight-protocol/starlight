@@ -25,7 +25,7 @@ const TEST_USER = 'standard_user';
 const TEST_PASSWORD = 'secret_sauce';
 
 async function runMission() {
-    const runner = new IntentRunner('ws://127.0.0.1:8080');
+    const runner = new IntentRunner('ws://127.0.0.1:8095');
 
     try {
         await runner.connect();

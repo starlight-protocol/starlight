@@ -29,7 +29,8 @@ if (!fs.existsSync(absoluteMissionPath)) {
 const processes = {};
 
 function log(source, msg) {
-    if (isVerbose || source === 'System') {
+    // ALWAYS show System and Hub logs for transparency. Sentinel logs require --verbose.
+    if (isVerbose || source === 'System' || source === 'Hub') {
         const timestamp = new Date().toLocaleTimeString();
         console.log(`[${timestamp}] [${source}] ${msg}`);
     }
@@ -57,7 +58,8 @@ async function waitForHub(timeout = 30000) {
 
 async function spawnProcess(name, cmd, args, options = {}) {
     log('System', `Spawning ${name}...`);
-    const proc = spawn(cmd, args, { shell: true, stdio: 'pipe', ...options });
+    // Security: Remove shell: true to prevent command injection warnings
+    const proc = spawn(cmd, args, { stdio: 'pipe', ...options });
     processes[name] = proc;
 
     proc.stdout.on('data', (data) => log(name, data.toString().trim()));
@@ -80,16 +82,15 @@ async function main() {
         await waitForHub();
         log('System', 'Hub is ONLINE.');
 
-        // 3. Start Sentinels
-        await spawnProcess('Pulse', 'python', ['sentinels/pulse_sentinel.py']);
-        await spawnProcess('Janitor', 'python', ['sentinels/janitor.py']);
-
-        // Give sentinels a moment to register
-        await new Promise(r => setTimeout(r, 2000));
+        // 3. (REMOVED) Sentinel spawning moved to Hub LifecycleManager for architectural purity.
+        // log('System', 'Awaiting Sentinels (Managed by Hub)...');
 
         // 4. Run Mission
         log('System', `Launching Mission: ${path.basename(absoluteMissionPath)}`);
-        const missionProc = spawn('node', [absoluteMissionPath], { shell: true, stdio: 'inherit' });
+        const missionProc = spawn('node', [absoluteMissionPath], {
+            stdio: 'inherit',
+            env: { ...process.env, HUB_URL: `ws://localhost:8095` }
+        });
 
         missionProc.on('exit', (code) => {
             log('System', `Mission exited with code ${code}`);
@@ -111,7 +112,7 @@ function cleanup(exitCode) {
             log('System', `Stopping ${name}...`);
             // On Windows taskkill is more reliable for children
             if (process.platform === 'win32') {
-                spawn('taskkill', ['/pid', proc.pid, '/f', '/t'], { shell: true });
+                spawn('taskkill', ['/pid', proc.pid, '/f', '/t']);
             } else {
                 proc.kill('SIGTERM');
             }

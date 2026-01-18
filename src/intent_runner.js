@@ -89,7 +89,8 @@ class IntentRunner {
                     pending.resolve(msg);
                 } else {
                     const desc = pending.cmdDesc || msg.id;
-                    const reason = msg.error || 'Unknown error';
+                    const errorObj = (typeof msg.error === 'object') ? msg.error : { message: msg.error };
+                    const reason = errorObj.message || 'Unknown error';
                     pending.reject(new Error(`Failed: ${desc} - ${reason}`));
                 }
             }

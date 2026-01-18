@@ -13,30 +13,33 @@
 class DomWalker {
     /**
      * Traverses the DOM tree efficiently, piercing Shadow DOMs.
+     * Complexity: O(N) - Visits each node exactly once.
+     * Strategy: Native TreeWalker for fast linear traversal, 
+     * recursive roots for Shadow DOM entry.
      * @param {Node} root 
      * @param {Function} callback 
      */
     static walk(root, callback) {
-        // Optimization: FILTER_ACCEPT is 1
+        if (!root) return;
+
         const walker = document.createTreeWalker(
             root,
             NodeFilter.SHOW_ELEMENT,
-            { acceptNode: (node) => 1 }
+            { acceptNode: () => NodeFilter.FILTER_ACCEPT }
         );
 
-        let currentNode = walker.currentNode;
-        while (currentNode) {
-            // 1. Process Node
-            callback(currentNode);
+        let node = walker.currentNode;
+        while (node) {
+            callback(node);
 
-            // 2. Pierce Shadow DOM (Recursive Step)
-            if (currentNode.shadowRoot) {
-                // Ensure we pass the ShadowRoot itself, not the host, to avoid infinite loop
-                // But typically shadowRoot IS a DocumentFragment, which TreeWalker accepts.
-                DomWalker.walk(currentNode.shadowRoot, callback);
+            // Pierce Shadow DOM
+            // Note: We use the native walker for the sub-tree, 
+            // but we must manually enter shadow roots.
+            if (node.shadowRoot) {
+                DomWalker.walk(node.shadowRoot, callback);
             }
 
-            currentNode = walker.nextNode();
+            node = walker.nextNode();
         }
     }
 }

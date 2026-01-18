@@ -98,17 +98,29 @@ class DetectionEngine {
                 scripts: ['_cf_chl_opt', 'cf-challenge'],
                 headers: ['cf-ray', 'cf-cache-status']
             },
+            cloudflare: {
+                dom: ['cf-challenge', 'cf-browser-verification', '_cf_chl_opt'],
+                scripts: ['/cdn-cgi/challenge-platform'],
+                headers: ['cf-ray', 'cf-cache-status']
+            },
             akamai: {
-                dom: ['#ak-challenge', '.ak-challenge'],
+                dom: ['ak-challenge', 'akamai_sensor_data'],
                 scripts: ['_akamai', 'akamai_sensor_data'],
                 headers: ['x-akamai-transformed']
             },
             generic: {
-                dom: ['.captcha', '#captcha', '.recaptcha', '.g-recaptcha', 'Access Denied', 'You don\'t have permission'],
+                dom: [
+                    '#captcha-container',
+                    '.g-recaptcha',
+                    'Access Denied',
+                    'You don\'t have permission',
+                    'Checking your browser',
+                    'Enable JavaScript and cookies to continue'
+                ],
                 status: [403, 429, 503]
             },
             onetrust: {
-                dom: ['#onetrust-consent-sdk', '#onetrust-banner-sdk', 'onetrust-banner-overlay'],
+                dom: ['onetrust-consent-sdk', 'onetrust-banner-sdk'],
                 scripts: ['onetrust']
             }
         };
@@ -123,12 +135,15 @@ class DetectionEngine {
         const { dom = '', headers = {}, statusCode = 200 } = context;
         let signals = [];
 
-        // DOM-based detection
+        // DOM-based detection (Surgical accuracy v4.0)
         for (const [type, patterns] of Object.entries(this.detectionPatterns)) {
             if (patterns.dom) {
-                for (const selector of patterns.dom) {
-                    if (dom.includes(selector.replace(/[#.]/g, ''))) {
-                        signals.push({ type, source: 'dom', selector, confidence: 0.8 });
+                for (const pattern of patterns.dom) {
+                    // Only match if the pattern is a significant blocking indicator
+                    // or a known bot-control DOM ID/Class
+                    if (dom.includes(pattern)) {
+                        const baseConfidence = (statusCode === 403 || statusCode === 429) ? 0.95 : 0.4;
+                        signals.push({ type, source: 'dom', pattern, confidence: baseConfidence });
                     }
                 }
             }
@@ -153,10 +168,12 @@ class DetectionEngine {
             }
         }
 
-        // Explicit Text Detection (for bare 403 pages)
+        // Explicit Text Detection (refined for false positives)
         const pageText = (dom || '').toLowerCase();
-        if (pageText.includes('access denied') || pageText.includes('permission denied') || pageText.includes('you don\'t have permission')) {
-            signals.push({ type: 'generic', source: 'text', confidence: 1.0 });
+        if (statusCode === 403 || statusCode === 429) {
+            if (pageText.includes('access denied') || pageText.includes('permission denied') || pageText.includes('you don\'t have permission')) {
+                signals.push({ type: 'generic', source: 'text', confidence: 1.0 });
+            }
         }
 
         // Status code detection
@@ -171,9 +188,10 @@ class DetectionEngine {
 
         const avgConfidence = signals.reduce((sum, s) => sum + s.confidence, 0) / signals.length;
 
-        // WORLD-CLASS: Swapping should be proactive. If we see ONE high-confidence signal, swap.
+        // WORLD-CLASS: Swapping should be proactive but accurate.
+        // Require high confidence (>0.8) OR multiple signals
         return {
-            detected: signals.some(s => s.confidence >= 0.8) || signals.length >= 2,
+            detected: (avgConfidence > 0.8) || (signals.length >= 2),
             type: signals[0]?.type || 'unknown',
             confidence: avgConfidence,
             signals
@@ -348,7 +366,8 @@ class SmartBrowserAdapter extends EventEmitter {
         this.metrics = {
             swapCount: 0,
             swapLatencies: [],
-            detectionHits: { cloudflare: 0, akamai: 0, generic: 0 }
+            detectionHits: { cloudflare: 0, akamai: 0, generic: 0 },
+            missionStatus: 'pending' // 'pending', 'success', 'failed'
         };
 
         // The unified page interface
@@ -519,6 +538,22 @@ class SmartBrowserAdapter extends EventEmitter {
                 return !self.stealthAdapter || !self.stealthAdapter.isReady;
             },
             close: async () => self.close(),
+            waitForTimeout: async (timeout) => self._execute('waitForTimeout', timeout),
+            waitForFunction: async (fn, options, ...args) => self._execute('waitForFunction', fn, options, ...args),
+            waitForURL: async (url, options) => self._execute('waitForURL', url, options),
+            screenshot: async (options) => self._execute('screenshot', options),
+            inputValue: async (selector, options) => {
+                const val = await self._execute('evaluate', (sel) => {
+                    const el = document.querySelector(sel);
+                    console.log(`[SmartAdapter] inputValue: querySelector("${sel}") -> ${el ? el.tagName : 'NOT_FOUND'}`);
+                    if (!el) return '';
+                    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+                        return el.value || '';
+                    }
+                    return (el.innerText || el.textContent || '').trim();
+                }, selector);
+                return String(val ?? '');
+            },
             context: self.playwrightContext,
 
             // Compatibility: Add locator support for scrolling/complex actions
@@ -531,8 +566,14 @@ class SmartBrowserAdapter extends EventEmitter {
 
             // Compatibility: Add dispatchEvent support
             dispatchEvent: async (selector, event, detail) => self._execute('dispatchEvent', selector, event, detail),
-
-            // Compatibility: Add EventListener support
+            click: async (selector, options) => self._execute('click', selector, options),
+            fill: async (selector, value, options) => self._execute('fill', selector, value, options),
+            type: async (selector, text, options) => self._execute('type', selector, text, options),
+            press: async (selector, key, options) => self._execute('press', selector, key, options),
+            keyboard: {
+                type: async (text, options) => self._execute('keyboard_type', text, options),
+                press: async (key, options) => self._execute('keyboard_press', key, options),
+            },
             on: (event, fn) => {
                 if (self.activeEngine === 'playwright') return self.playwrightPage.on(event, fn);
                 // Stealth: No-op for events for now
@@ -569,9 +610,6 @@ class SmartBrowserAdapter extends EventEmitter {
         };
     }
 
-    /**
-     * Execute command with automatic detection and swap
-     */
     async _executeWithDetection(method, ...args) {
         if (this.config.verbose) {
             console.log(`[SmartAdapter] Executing "${method}" with detection (Engine: ${this.activeEngine})`);
@@ -588,18 +626,20 @@ class SmartBrowserAdapter extends EventEmitter {
         } catch (e) {
             console.warn(`[SmartAdapter] Command "${method}" failed on ${this.activeEngine}: ${e.message}`);
 
-            // If playwright failed, try to swap and retry ONCE
+            // If playwright failed, verify if it's likely bot detection before swapping
             if (this.activeEngine === 'playwright') {
-                console.log(`[SmartAdapter] Playwright failed on "${method}". High probability of bot-detection. Attempting engine swap...`);
+                const dom = await this.playwrightPage.content().catch(() => '');
+                // Note: status code extraction is best-effort
+                const statusCode = 200; // Default
 
-                // Verify hot-swap with screenshot (Disabled for stability - See Issue #10061)
-                // await this._execute('screenshot', { fullPage: false });
+                const detection = this.detectionEngine.analyze({ dom, statusCode });
 
-                console.log(`[SmartAdapter] Swapped to Stealth. Retrying "${method}"...`);
-                await this.hotSwap('stealth');
-                return await this._execute(method, ...args);
+                if (detection.detected) {
+                    console.log(`[SmartAdapter] Execution failed AND detection confirmed (${detection.type}). Swapping to Stealth...`);
+                    await this.hotSwap('stealth');
+                    return await this._execute(method, ...args); // Retry on stealth
+                }
             }
-
             throw e;
         }
     }
@@ -673,6 +713,12 @@ class SmartBrowserAdapter extends EventEmitter {
                     return await page.locator(args[0]).scrollIntoViewIfNeeded();
                 case 'dispatchEvent':
                     return await page.dispatchEvent(args[0], args[1], args[2]);
+                case 'waitForTimeout':
+                    return await page.waitForTimeout(args[0]);
+                case 'waitForFunction':
+                    return await page.waitForFunction(args[0], args[1], ...args.slice(2));
+                case 'waitForURL':
+                    return await page.waitForURL(args[0], args[1]);
                 default:
                     throw new Error(`Unknown method: ${method}`);
             }
@@ -740,6 +786,23 @@ class SmartBrowserAdapter extends EventEmitter {
                     return await adapter._sendCommand('scroll', { selector: args[0] });
                 case 'dispatchEvent':
                     return await adapter._sendCommand('dispatch_event', { selector: args[0], event_type: args[1], detail: args[2] });
+                case 'waitForTimeout':
+                    await new Promise(r => setTimeout(r, args[0]));
+                    return true;
+                case 'waitForFunction':
+                    // Stealth Graceful Degradation: 500ms stabilization
+                    // Poll-based waiting over JSON-RPC is non-performant; 
+                    // Protocol v4.0.24 uses 500ms as a safe architectural buffer for Stealth.
+                    await new Promise(r => setTimeout(r, 500));
+                    return true;
+                case 'waitForURL':
+                    // Best-effort URL wait for Stealth
+                    const targetUrl = args[0];
+                    for (let i = 0; i < 10; i++) {
+                        if (adapter.currentUrl && adapter.currentUrl.includes(targetUrl)) return true;
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                    return true;
                 default:
                     throw new Error(`Unknown method for Stealth: ${method}`);
             }
@@ -816,34 +879,33 @@ class SmartBrowserAdapter extends EventEmitter {
             // Switch active engine
             this.activeEngine = targetEngine;
 
-            // Inject state into target engine
-            if (encryptedState) {
+            // 1. Navigate to domain (Required for cookie/storage bridge)
+            if (oldUrl && oldUrl !== 'about:blank') {
+                console.log(`[SmartAdapter] Target Engine navigating to domain for state injection: ${oldUrl}`);
                 if (targetEngine === 'stealth') {
-                    // Lazy-init Stealth adapter if needed - CHECK READINESS
+                    // Lazy-init Stealth if needed
                     if (!this.stealthAdapter || !this.stealthAdapter.isReady) {
-                        console.log('[SmartAdapter] Lazy-initializing Stealth engine for swap (Fresh Instance)...');
-                        // Ensure old one is closed if it exists but isn't ready
-                        if (this.stealthAdapter) {
-                            try { await this.stealthAdapter.close(); } catch (e) { }
-                        }
                         this.stealthAdapter = new StealthBrowserAdapter(this.config);
                         await this.stealthAdapter.launch({ headless: this.config.headless });
-                        await this.stealthAdapter.newPage();
                     }
-                    await this.stateManager.injectToStealth(this.stealthAdapter, encryptedState);
+                    await this.stealthAdapter.goto(oldUrl);
                 } else {
-                    await this.stateManager.injectToPlaywright(
-                        this.playwrightContext,
-                        this.playwrightPage,
-                        encryptedState
-                    );
+                    await this.playwrightPage.goto(oldUrl, { waitUntil: 'commit' });
                 }
             }
 
-            // Compatibility: removed reassignment of this.page to maintain stable references
-            // Re-navigate to maintain context if not about:blank
-            if (oldUrl && !oldUrl.includes('about:blank')) {
-                console.log(`[SmartAdapter] Re-navigating ${targetEngine} to ${oldUrl}`);
+            // 2. Inject state into target engine
+            if (encryptedState) {
+                console.log(`[SmartAdapter] Injecting state bridge (Domain: ${oldUrl})...`);
+                if (targetEngine === 'stealth') {
+                    await this.stateManager.injectToStealth(this.stealthAdapter, encryptedState);
+                } else {
+                    await this.stateManager.injectToPlaywright(this.playwrightContext, this.playwrightPage, encryptedState);
+                }
+            }
+
+            // 3. Final navigation/reload to apply state
+            if (oldUrl && oldUrl !== 'about:blank') {
                 if (targetEngine === 'stealth') {
                     await this.stealthAdapter.goto(oldUrl);
                 } else {
