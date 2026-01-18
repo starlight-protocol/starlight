@@ -1,0 +1,36 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "starlight.context_update",
+    "description": "Sovereign state update from Sentinel to Hub",
+    "type": "object",
+    "required": [
+        "jsonrpc",
+        "method",
+        "params",
+        "id"
+    ],
+    "properties": {
+        "jsonrpc": {
+            "const": "2.0"
+        },
+        "method": {
+            "const": "starlight.context_update"
+        },
+        "params": {
+            "type": "object",
+            "properties": {
+                "context": {
+                    "type": "object",
+                    "description": "Context data to merge into sovereign state",
+                    "additionalProperties": true
+                }
+            },
+            "required": [
+                "context"
+            ]
+        },
+        "id": {
+            "type": "string"
+        }
+    }
+}

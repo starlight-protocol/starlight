@@ -13,7 +13,7 @@ const IntentRunner = require('../src/intent_runner');
 const SITE_URL = 'https://www.dhirajdas.dev';
 
 async function runMission() {
-    const runner = new IntentRunner('ws://127.0.0.1:8095');
+    const runner = new IntentRunner('ws://127.0.0.1:8080');
 
     try {
         await runner.connect();

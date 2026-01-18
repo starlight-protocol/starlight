@@ -3,6 +3,7 @@
         "port": 8095,
         "browser": {
             "engine": "playwright",
+            "headless": false,
             "mobile": {
                 "enabled": false,
                 "device": null

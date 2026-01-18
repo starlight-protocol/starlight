@@ -1,0 +1,91 @@
+﻿--- SHUTDOWN STRESS TEST ---
+[CBA Hub] Γ£ô Configuration validated successfully
+node : [JWTHandler] No JWT secret provided - using random secret (not 
+for production)
+At line:1 char:1
++ node test_shutdown_race.js 2>&1 | Out-File -FilePath crash_log.txt 
+-E ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([JWTHandler] No...for pr 
+   oduction):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[CBA Hub] ≡ƒºá Loaded 26 learned mappings from starlight_memory.json
+[CBA Hub] Phase 7 Intelligence Audit:
+  - Learned Selectors: 26
+  - Temporal Auras: 0
+  - Temporal Ghosting: 1 observations loaded.
+[Test] Initializing Hub...
+[CBA Hub] Initializing browser adapter...
+[BrowserAdapter] ≡ƒò╡∩╕Å STEALTH MODE enabled - using SeleniumBase UC
+[CBA Hub] Starting Starlight Hub: The Hero's Journey...
+[CBA Hub] WebSocket/HTTP Server listening on port 8081
+[StealthBrowserAdapter] Launching SeleniumBase UC driver...
+[StealthAdapter] Writing to stdin: initialize
+[StealthDriver] World-Class Stealth Driver Ready.
+[StealthDriver] Executing: initialize
+[StealthDriver] Initializing SeleniumBase (headless=True)...
+[StealthBrowserAdapter] Γ£ô SeleniumBase ready: { status: 'ok' }
+[StealthBrowserAdapter] Γ£ô Page proxy created
+[CBA Hub] Browser Engine: seleniumbase-uc
+[CBA Hub] Capabilities: {
+  shadowDomPiercing: false,
+  cdpAccess: false,
+  touchEvents: true,
+  deviceEmulation: true,
+  stealthMode: true
+}
+[StealthBrowserAdapter] Registered handler for 'dialog' (no-op in stealth mode)
+[StealthBrowserAdapter] Registered handler for 'request' (no-op in stealth mode)
+[StealthBrowserAdapter] Registered handler for 'requestfinished' (no-op in stealth mode)
+[StealthBrowserAdapter] Registered handler for 'requestfailed' (no-op in stealth mode)
+[StealthBrowserAdapter] addInitScript registered
+[StealthAdapter] Writing to stdin: evaluate
+[StealthDriver] Executing: evaluate
+[StealthBrowserAdapter] exposeFunction polyfill for 'onMutation'
+[StealthAdapter] Writing to stdin: evaluate
+[StealthDriver] Executing: evaluate
+[StealthAdapter] Starting RPC poller for exposeFunction...
+[StealthAdapter] Writing to stdin: evaluate
+[Test] Navigating to google.com...
+[StealthAdapter] Writing to stdin: goto
+[StealthDriver] Executing: evaluate
+[StealthDriver] Executing: goto
+[StealthDriver] Navigating to: https://www.google.com
+[StealthDriver] open() in UC Mode now always activates CDP Mode.
+[StealthAdapter] Writing to stdin: evaluate
+[StealthDriver] Successfully arrived at: https://www.google.com/
+[StealthDriver] Executing: evaluate
+[StealthAdapter] Writing to stdin: evaluate
+[StealthDriver] Executing: evaluate
+[StealthAdapter] Writing to stdin: evaluate
+[StealthDriver] Executing: evaluate
+[Test] Taking a screenshot (to engage worker)...
+[StealthAdapter] Writing to stdin: screenshot
+[Test] ΓÜí IMMEDIATE SHUTDOWN ΓÜí
+[CBA Hub] Shutdown initiated. Reason: Normal
+[CBA Hub] Safety-First Shutdown: Generating reports...
+[StealthDriver] Executing: screenshot
+[CBA Hub] Generating Hero Story Report...
+[CBA Hub] Hero Story saved to report.html
+[CBA Hub]Saving Mission Trace(0 events)...
+[CBA Hub] Mission Trace saved to mission_trace.json
+[CBA Hub] ≡ƒºá Memory saved: 26 mappings
+[CBA Hub] Γ£ô Mission data safe. Shutdown signal written.
+[CBA Hub] Closing browser and server...
+[StealthBrowserAdapter] Closing...
+[StealthAdapter] Writing to stdin: close
+[StealthDriver] Graceful close requested via pipe.
+[StealthDriver] Draining command queue...
+[StealthAdapter] Writing to stdin: evaluate
+[StealthDriver] Screenshot failed: 
+HTTPConnectionPool(host='localhost', port=60487): Max retries 
+exceeded with url: 
+/session/e82d4f57754ee34a72c3bbb43abd8d51/screenshot (Caused by 
+NewConnectionError('<urllib3.connection.HTTPConnection object at 
+0x000002364E03CC00>: Failed to establish a new connection: [WinError 
+10061] No connection could be made because the target machine 
+actively refused it'))
+[StealthAdapter] Python driver returned empty screenshot data
+[StealthBrowserAdapter] Γ£ô Closed
+[Test] Γ£à Shutdown complete.

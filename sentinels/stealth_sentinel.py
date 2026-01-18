@@ -127,7 +127,7 @@ class StealthSentinel(SentinelBase):
             self.detection_count += 1
             self.last_detection = detected_system
             
-            print(f"[{self.layer}] ⚠️  ANTI-BOT DETECTED: {detected_system}")
+            print(f"[{self.layer}] [WARNING] ANTI-BOT DETECTED: {detected_system}")
             print(f"[{self.layer}] Detection count: {self.detection_count}")
             
             # Check if this is a challenge page we can wait out

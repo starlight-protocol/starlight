@@ -1,0 +1,22 @@
+[CBA Hub] Config Validation Warnings: [
+  "hub.browser.engine: Value 'playwright' not in allowed values: chromium, firefox, webkit",
+  'hub.browser.mobile.device: Expected string, got object'
+]
+[JWTHandler] No JWT secret provided - using random secret (not for production)
+[CBA Hub] ⚠️ VisionSentinel reports: AI OFFLINE (Ollama unavailable) - Bypassing analysis
+[SmartAdapter] Command "goto" failed on playwright: page.goto: net::ERR_ABORTED at https://www.youtube.com/
+Call log:
+[2m  - navigating to "https://www.youtube.com/", waiting until "load"[22m
+
+[CBA Hub] Fast-Path check failed: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Semantic resolution error: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Fast-Path check failed: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Semantic resolution error: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Fast-Path check failed: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Semantic resolution error: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Fast-Path check failed: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Semantic resolution error: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Fast-Path check failed: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Semantic resolution error: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Fast-Path check failed: page.evaluate: Target page, context or browser has been closed
+[CBA Hub] Semantic resolution error: page.evaluate: Target page, context or browser has been closed

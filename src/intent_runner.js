@@ -227,6 +227,15 @@ class IntentRunner {
     }
 
     /**
+     * Take a named screenshot.
+     * @param {string} name - Screenshot name (without extension)
+     * @returns {Promise<object>} Command result
+     */
+    async screenshot(name) {
+        return this._sendCommand({ cmd: 'screenshot', name });
+    }
+
+    /**
      * Record a logical checkpoint in the mission trace.
      * @param {string} name - Checkpoint name
      * @returns {Promise<object>} Command result

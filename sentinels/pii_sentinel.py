@@ -76,8 +76,8 @@ class PIISentinel(SentinelBase):
         self.detected_pii = []
         
         # Get page text from blocking elements or request page scan
-        blocking = params.get("blocking", [])
-        page_text = params.get("page_text", "")
+        blocking = params.get("blocking") or []
+        page_text = params.get("page_text") or ""
         
         # Scan any text content we have access to
         all_text = page_text

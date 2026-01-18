@@ -18,6 +18,7 @@
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
 const path = require('path');
+const fs = require('fs');
 
 // Lazy-load heavy dependencies to allow unit testing of core classes
 let chromium = null;
@@ -402,6 +403,7 @@ class SmartBrowserAdapter extends EventEmitter {
                 this.playwrightBrowser = await chromium.launch({ headless });
                 this.playwrightContext = await this.playwrightBrowser.newContext();
                 this.playwrightPage = await this.playwrightContext.newPage();
+                this.playwrightPage.on('console', msg => console.log(`[Browser] ${msg.type().toUpperCase()}: ${msg.text()}`));
                 console.log('[SmartAdapter] ✓ Playwright engine ready');
             } catch (e) {
                 console.error('[SmartAdapter] Playwright launch failed:', e.message);
@@ -594,6 +596,7 @@ class SmartBrowserAdapter extends EventEmitter {
                 // await this._execute('screenshot', { fullPage: false });
 
                 console.log(`[SmartAdapter] Swapped to Stealth. Retrying "${method}"...`);
+                await this.hotSwap('stealth');
                 return await this._execute(method, ...args);
             }
 
@@ -703,7 +706,25 @@ class SmartBrowserAdapter extends EventEmitter {
                 case 'keyboard_press':
                     return await adapter.page.keyboard.press(args[0]);
                 case 'screenshot':
-                    return await adapter._sendCommand('screenshot', {});
+                    const response = await adapter._sendCommand('screenshot', {});
+                    // Driver returns { status: 'ok', data: 'base64...' }
+                    // We must return a buffer to match Playwright API
+                    const buffer = Buffer.from(response.data || '', 'base64');
+
+                    // Support schema-compliant 'name' param or legacy 'path' param
+                    let savePath = args[0] ? args[0].path : null;
+                    if (!savePath && args[0] && args[0].name) {
+                        savePath = path.join(__dirname, '../screenshots', `${args[0].name}.png`);
+                    }
+
+                    if (savePath) {
+                        // Emulate Playwright: Ensure directory exists and write file
+                        const dir = path.dirname(savePath);
+                        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                        fs.writeFileSync(savePath, buffer);
+                        console.log(`[SmartAdapter] Saved screenshot to: ${savePath}`);
+                    }
+                    return buffer;
                 case 'evaluate':
                     return await adapter.page.evaluate(args[0], ...args.slice(1));
                 case 'waitForSelector':
@@ -778,6 +799,8 @@ class SmartBrowserAdapter extends EventEmitter {
         }
 
         console.log(`[SmartAdapter] 🔄 HOT-SWAP: ${this.activeEngine} → ${targetEngine}`);
+        this.emit('swap_started', { from: this.activeEngine, to: targetEngine });
+
         const swapStart = Date.now();
         const oldUrl = this._getUrl();
 
@@ -796,12 +819,15 @@ class SmartBrowserAdapter extends EventEmitter {
             // Inject state into target engine
             if (encryptedState) {
                 if (targetEngine === 'stealth') {
-                    // Lazy-init Stealth adapter if needed
-                    if (!this.stealthAdapter) {
-                        console.log('[SmartAdapter] Lazy-initializing Stealth engine for swap...');
+                    // Lazy-init Stealth adapter if needed - CHECK READINESS
+                    if (!this.stealthAdapter || !this.stealthAdapter.isReady) {
+                        console.log('[SmartAdapter] Lazy-initializing Stealth engine for swap (Fresh Instance)...');
+                        // Ensure old one is closed if it exists but isn't ready
+                        if (this.stealthAdapter) {
+                            try { await this.stealthAdapter.close(); } catch (e) { }
+                        }
                         this.stealthAdapter = new StealthBrowserAdapter(this.config);
                         await this.stealthAdapter.launch({ headless: this.config.headless });
-                        await this.stealthAdapter._sendCommand('initialize', { headless: this.config.headless });
                         await this.stealthAdapter.newPage();
                     }
                     await this.stateManager.injectToStealth(this.stealthAdapter, encryptedState);
@@ -834,6 +860,15 @@ class SmartBrowserAdapter extends EventEmitter {
 
         } catch (e) {
             console.error('[SmartAdapter] Hot-swap failed:', e.message);
+
+            // CLEANUP: If Stealth failed to swap, kill the reference so we retry fresh next time
+            if (targetEngine === 'stealth') {
+                if (this.stealthAdapter) {
+                    try { await this.stealthAdapter.close(); } catch (e) { }
+                    this.stealthAdapter = null;
+                }
+            }
+
             // Revert to original
             this.activeEngine = this.activeEngine === 'playwright' ? 'playwright' : 'stealth';
             throw e;

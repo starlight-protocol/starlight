@@ -1,0 +1,34 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "starlight.challenge_response",
+    "type": "object",
+    "required": [
+        "jsonrpc",
+        "method",
+        "params",
+        "id"
+    ],
+    "properties": {
+        "jsonrpc": {
+            "const": "2.0"
+        },
+        "method": {
+            "const": "starlight.challenge_response"
+        },
+        "params": {
+            "type": "object",
+            "required": [
+                "response"
+            ],
+            "properties": {
+                "response": {
+                    "type": "string",
+                    "description": "The answered challenge string from the Hub"
+                }
+            }
+        },
+        "id": {
+            "type": "string"
+        }
+    }
+}

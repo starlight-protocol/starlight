@@ -266,14 +266,19 @@ class StealthDriver:
             self.headless = headless
             user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             
-            # ATTEMPT 1: Optimistic Launch
+            # ATTEMPT 1: Optimistic Launch (WORKAROUND: Force uc=False for Chrome 144+)
             try:
                 logger.info(f"Initializing SeleniumBase (headless={headless})...")
-                self._sb_cm = SB(uc=True, headless2=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
+                # CRITICAL FIX: Chrome 144+ breaks with uc=True. Forcing Standard Mode.
+                self._sb_cm = SB(uc=False, headless2=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
                 self.sb = self._sb_cm.__enter__()
+                
+                # VERIFY CONNECTION: Fail fast if driver is dead
+                _ = self.sb.driver.current_url
+                
                 self.driver_initialized = True
                 self.state = "IDLE"
-                logger.info("SeleniumBase Initialization Successful.")
+                logger.info("SeleniumBase Initialization Successful (Standard Mode).")
                 return {"status": "ok"}
             except Exception as e:
                 err_str = str(e)
@@ -297,10 +302,21 @@ class StealthDriver:
                         self.state = "ZOMBIE"
                         return {"status": "error", "message": f"Critical Failure after Sanitation: {retry_e}"}
                 else:
-                    # Non-recoverable error
-                    logger.error(f"Initialization failed (Non-Recoverable): {e}")
-                    self.state = "ZOMBIE"
-                    return {"status": "error", "message": str(e)}
+                    # ATTEMPT 3: Fallback to Standard Driver (UC=False)
+                    logger.warning("Recovery Failed. Attempting Fallback to Standard Driver (UC=False)...")
+                    self._sanitize_environment()
+                    
+                    try:
+                        self._sb_cm = SB(uc=False, headless2=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
+                        self.sb = self._sb_cm.__enter__()
+                        self.driver_initialized = True
+                        self.state = "IDLE"
+                        logger.warning("Fallback Successful: Running in Standard Mode (Detected).")
+                        return {"status": "ok", "mode": "standard"}
+                    except Exception as fallback_e:
+                        logger.error(f"CRITICAL: Fallback Failed: {fallback_e}")
+                        self.state = "ZOMBIE"
+                        return {"status": "error", "message": str(e)}
 
     def goto(self, url: str) -> dict:
         """Navigate to URL with autonomous safety wrappers."""
@@ -324,8 +340,11 @@ class StealthDriver:
             self.state = "EXECUTING"
             logger.info(f"Clicking: {selector}")
             try:
-                by = "xpath" if selector.startswith("//") or selector.startswith("(") else "css selector"
-                self._safe_driver_call(self.sb.click, selector, by=by, timeout=15)
+                if " >>> " in selector:
+                    self._safe_driver_call(self.sb.shadow_click, selector, timeout=15)
+                else:
+                    by = "xpath" if selector.startswith("//") or selector.startswith("(") else "css selector"
+                    self._safe_driver_call(self.sb.click, selector, by=by, timeout=15)
                 self.state = "IDLE"
                 return {"status": "ok"}
             except Exception as e:
@@ -338,10 +357,14 @@ class StealthDriver:
             self.state = "EXECUTING"
             logger.info(f"Filling: {selector}")
             try:
-                by = "xpath" if selector.startswith("//") or selector.startswith("(") else "css selector"
-                # Robust Pattern: Focus -> Clear -> Type
-                self._safe_driver_call(self.sb.click, selector, by=by, timeout=10)
-                self._safe_driver_call(self.sb.update_text, selector, value, by=by, timeout=10)
+                if " >>> " in selector:
+                    self._safe_driver_call(self.sb.shadow_click, selector, timeout=10)
+                    self._safe_driver_call(self.sb.shadow_type, selector, value, timeout=10)
+                else:
+                    by = "xpath" if selector.startswith("//") or selector.startswith("(") else "css selector"
+                    # Robust Pattern: Focus -> Clear -> Type
+                    self._safe_driver_call(self.sb.click, selector, by=by, timeout=10)
+                    self._safe_driver_call(self.sb.update_text, selector, value, by=by, timeout=10)
                 self.last_filled_selector = selector
                 self.state = "IDLE"
                 return {"status": "ok"}

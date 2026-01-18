@@ -170,6 +170,16 @@ class CBAHub {
         this.webhooks = new WebhookNotifier(this.config.webhooks);
         this.recoveryTimes = []; // Track recovery times for MTTR
         this.temporalMetrics = []; // Phase 17.4: Temporal Ghosting metrics
+
+        // Phase 2: Load DomWalker Source for Injection
+        try {
+            const domWalkerPath = path.join(process.cwd(), 'src', 'hub', 'analysis', 'DomWalker.js');
+            this.domWalkerSource = fs.readFileSync(domWalkerPath, 'utf8')
+                .replace(/module\.exports.*/, ''); // Strip Node.js export for browser
+        } catch (e) {
+            console.error('[CBA Hub] Failed to load DomWalker:', e.message);
+            this.domWalkerSource = '';
+        }
     }
 
     loadConfig() {
@@ -336,6 +346,12 @@ class CBAHub {
         // Corrected Delta v1.2.2: Force SmartBrowserAdapter for hybrid engine stability
         console.log('[CBA Hub] Initializing SmartBrowserAdapter (Phase 14.1 Hybrid Engine)...');
         this.browserAdapter = new SmartBrowserAdapter(browserConfig);
+
+        // Phase 14.1: Seamless Cross-Engine Intelligence Bridge
+        this.browserAdapter.on('swap_started', async () => {
+            await this.preSwapSemanticHarvest();
+        });
+
         this.browser = await this.browserAdapter.launch({ headless: this.headless, prewarm: true });
 
         // Phase 14.2: Create context with mobile device emulation if configured
@@ -746,21 +762,72 @@ class CBAHub {
     }
 
     /**
+     * Harvest common semantic goals from the current page before a hot-swap.
+     * This populates the historicalMemory to bridge the transition to Stealth.
+     */
+    async preSwapSemanticHarvest() {
+        if (!this.page || this.isLocked) return;
+        console.log('[CBA Hub] ≡ƒºá Initiating Pre-Swap Semantic Harvest...');
+
+        const commonGoals = ['Search', 'login', 'username', 'password', 'submit', 'query'];
+        for (const goal of commonGoals) {
+            try {
+                // We don't use retries here, just a quick one-shot probe
+                const result = await this._resolveFormIntentInternal(goal);
+                if (result) {
+                    console.log(`[CBA Hub] ≡ƒºá Harvested: "${goal}" -> ${result.selector}`);
+                    this.historicalMemory.set(goal, result.selector);
+                    // We don't save to disk yet to keep it fast, memory Map is enough for the swap
+                }
+            } catch (e) {
+                // Ignore errors during harvest
+            }
+        }
+    }
+
+    /**
      * Resolve a form input by semantic goal (label text, placeholder, aria-label).
      * This enables fillGoal('Search') to find inputs without hardcoded selectors.
      */
     async resolveFormIntent(goal) {
         console.log(`[CBA Hub] resolveFormIntent called for goal: "${goal}" (BFS STARTING)`);
 
-        // WORLD-CLASS HARDENING: 10s limit for semantic resolution
-        // Use Promise.race to ensure we don't hang if page.evaluate gets stuck
-        return await Promise.race([
-            this._resolveFormIntentInternal(goal),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for semantic resolution')), 10000))
-        ]).catch(e => {
-            console.warn(`[CBA Hub] Semantic resolution error: ${e.message}`);
-            return null;
-        });
+        // Trans-Engine Memory Bridge: Check persistent memory first
+        if (this.historicalMemory.has(goal)) {
+            const cachedSelector = this.historicalMemory.get(goal);
+            console.log(`[CBA Hub] ≡ƒºá Memory Hit: Goal "${goal}" -> ${cachedSelector}`);
+            return { selector: cachedSelector, selfHealed: true };
+        }
+
+        // World-Class Robustness: Retry up to 3 times for "Search" goal
+        const maxRetries = goal.toLowerCase().includes('search') ? 3 : 1;
+        let lastResult = null;
+
+        for (let i = 0; i < maxRetries; i++) {
+            if (i > 0) {
+                console.log(`[CBA Hub] Retry ${i} for goal "${goal}"...`);
+                await new Promise(r => setTimeout(r, 3000)); // Wait for hydration
+            }
+
+            lastResult = await Promise.race([
+                this._resolveFormIntentInternal(goal),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for semantic resolution')), 15000))
+            ]).catch(e => {
+                console.warn(`[CBA Hub] Semantic resolution error: ${e.message}`);
+                return null;
+            });
+
+            if (lastResult) {
+                console.log(`[CBA Hub] Successfully resolved "${goal}" on attempt ${i + 1}`);
+
+                // CRITICAL HARDENING: Save to persistent memory immediately to bridge hot-swaps
+                this.historicalMemory.set(goal, lastResult.selector);
+                this.saveHistoricalMemory().catch(() => { });
+
+                return lastResult;
+            }
+        }
+        return null;
     }
 
     async _resolveFormIntentInternal(goal) {
@@ -769,30 +836,82 @@ class CBAHub {
         let target = null;
 
         // OPTIMIZATION: Try Fast Light DOM Check FIRST (Heuristic Bypass)
-        // This solves "Search" stalls on well-known sites like YouTube by avoiding heavy BFS
+        // This solves common stalls by avoiding heavy BFS for clear-cut light-DOM elements
         try {
             target = await this.page.evaluate((goalText) => {
-                // Common search selectors (YouTube, Google, Amazon)
                 const fallbackSelectors = [
-                    'input[name="search_query"]', // YouTube
                     'input[id="search"]',         // Generic
-                    'input[name="q"]',            // Google
                     'input[type="search"]',
                     '[role="searchbox"] input',
-                    '#search-input',
                     'input[aria-label="Search"]'
                 ];
 
                 // Only try shortcuts if goal looks like "search"
                 if (goalText.toLowerCase().includes('search')) {
-                    for (const sel of fallbackSelectors) {
-                        const el = document.querySelector(sel);
-                        if (el) return {
-                            selector: sel,
+                    const getShadowSelector = (el) => {
+                        let path = [];
+                        let curr = el;
+                        while (curr && curr !== document.body && curr !== document.documentElement) {
+                            let tag = curr.tagName.toLowerCase();
+                            let part = curr.id ? `#${curr.id}` : tag;
+                            if (curr.getAttribute('name')) part += `[name="${curr.getAttribute('name')}"]`;
+                            path.unshift(part);
+
+                            const root = curr.getRootNode();
+                            if (root && (root instanceof ShadowRoot || root.nodeType === 11)) {
+                                path.unshift('>>>');
+                                curr = root.host;
+                            } else {
+                                curr = curr.parentElement;
+                            }
+                            // Optimization: ID in light DOM is usually unique enough
+                            if (part.startsWith('#') && !path.includes('>>>')) break;
+                        }
+                        return path.join(' ');
+                    };
+
+                    const findBFS = (startNode) => {
+                        console.log('Starting BFS for goal: search');
+                        const queue = [startNode];
+                        const visited = new Set();
+                        let count = 0;
+                        while (queue.length > 0) {
+                            const root = queue.shift();
+                            if (!root || visited.has(root)) continue;
+                            visited.add(root);
+                            count++;
+
+                            const candidates = root.querySelectorAll('input, textarea, [role="searchbox"], [contenteditable="true"]');
+                            for (const el of candidates) {
+                                const label = (el.placeholder || el.getAttribute('aria-label') || el.name || el.id || el.getAttribute('title') || el.innerText || '').toLowerCase();
+                                if (label.includes('search')) {
+                                    console.log('Found candidate:', el.tagName, 'Label:', label);
+                                    return el;
+                                }
+                            }
+
+                            const all = root.querySelectorAll('*');
+                            for (const node of all) {
+                                if (node.shadowRoot) {
+                                    queue.push(node.shadowRoot);
+                                }
+                            }
+                        }
+                        console.log('BFS finished. Visited roots:', count);
+                        return null;
+                    };
+
+                    const el = findBFS(document);
+                    if (el) {
+                        const resolvedSelector = getShadowSelector(el);
+                        return {
+                            selector: resolvedSelector,
                             tagName: el.tagName.toLowerCase(),
                             type: el.type,
                             id: el.id,
-                            hasFocus: document.activeElement === el
+                            hasFocus: document.activeElement === el,
+                            value: el.value,
+                            selfHealed: false
                         };
                     }
                 }
@@ -800,7 +919,7 @@ class CBAHub {
             }, goal);
             if (target) {
                 console.log(`[CBA Hub] Fast-Path Heuristic resolved "${goal}" -> ${target.selector}`);
-                return { ...target, selfHealed: false };
+                return target;
             }
         } catch (e) {
             console.warn(`[CBA Hub] Fast-Path check failed: ${e.message}`);
@@ -809,45 +928,63 @@ class CBAHub {
         try {
             // SYNCHRONOUS PROTOCOL ALIGNMENT (Phase 13)
             // Removed async/await and time-slicing to ensure compatibility with Selenium execute_script
-            const semanticResult = await this.page.evaluate(({ goalText, shadowEnabled }) => {
+            const semanticResult = await this.page.evaluate(({ goalText, shadowEnabled, domWalkerSource }) => {
                 const normalizedGoal = goalText.toLowerCase();
 
-                // Synchronous Stack-based BFS
-                // We use a stack for DFS or Queue for BFS. Standard BFS is safer for finding "closest" matches.
-                const queue = [document];
-                let queueIndex = 0;
+                // Inject DomWalker
+                // We use eval to define the class in the current scope
+                if (domWalkerSource) {
+                    try {
+                        eval(domWalkerSource);
+                    } catch (e) {
+                        console.error('DomWalker injection failed:', e);
+                    }
+                }
+
+                const getShadowSelector = (element) => {
+                    const path = [];
+                    let current = element;
+                    while (current && current !== document.body && current !== document.documentElement) {
+                        let part = current.tagName.toLowerCase();
+                        if (current.id) {
+                            part = `#${current.id}`;
+                            path.unshift(part);
+                            if (current.getRootNode() instanceof ShadowRoot) {
+                                const host = current.getRootNode().host;
+                                path.unshift('>>>');
+                                current = host;
+                                continue;
+                            }
+                            break;
+                        }
+                        path.unshift(part);
+                        if (current.getRootNode() instanceof ShadowRoot) {
+                            const host = current.getRootNode().host;
+                            path.unshift('>>>');
+                            current = host;
+                        } else {
+                            current = current.parentElement;
+                        }
+                    }
+                    return path.join(' ');
+                };
 
                 const inputs = [];
-                const MAX_NODES = 2000; // Node limit instead of time limit for sync safety
-                let nodesProcessed = 0;
-
                 const interactors = 'input, textarea, select, button, a[role="button"], [role="searchbox"]';
 
-                while (queueIndex < queue.length) {
-                    if (nodesProcessed++ > MAX_NODES) break;
-                    const root = queue[queueIndex++];
-
-                    // 1. Collect candidates in current root
-                    try {
-                        const candidates = root.querySelectorAll(interactors);
-                        for (let i = 0; i < candidates.length; i++) {
-                            inputs.push(candidates[i]);
+                // Phase 2: Hybrid TreeWalker (O(N) Traversal)
+                if (typeof DomWalker !== 'undefined') {
+                    DomWalker.walk(document, (node) => {
+                        // We filter for interactors manually since TreeWalker visits all elements
+                        if (node.matches && node.matches(interactors)) {
+                            inputs.push(node);
                         }
-                    } catch (e) { }
-
-                    // 2. Discover Shadow Roots (Linear Traversal)
-                    try {
-                        // Use TreeWalker to find shadow hosts efficiently if possible, 
-                        // or just iterate all elements in this root once.
-                        const all = root.querySelectorAll('*');
-                        for (let i = 0; i < all.length; i++) {
-                            const node = all[i];
-                            if (node.shadowRoot) {
-                                // Depth control
-                                queue.push(node.shadowRoot);
-                            }
-                        }
-                    } catch (e) { }
+                    });
+                } else {
+                    // Fallback to legacy behavior if injection failed (Safety Net)
+                    console.warn('DomWalker not defined, falling back to querySelectorAll');
+                    const candidates = document.querySelectorAll(interactors);
+                    for (let i = 0; i < candidates.length; i++) inputs.push(candidates[i]);
                 }
 
                 // --- SCORING LOGIC (Pure Sync) ---
@@ -899,28 +1036,57 @@ class CBAHub {
                     // Start generating a CSS selector
                     let selector = '';
                     let tempEl = bestMatch;
-                    const path = [];
+                    let currentSegment = '';
 
                     while (tempEl && tempEl.nodeType === Node.ELEMENT_NODE) {
                         let comp = tempEl.tagName.toLowerCase();
                         if (tempEl.id) {
                             comp += `#${tempEl.id}`;
-                            path.unshift(comp);
-                            break; // ID is usually unique enough
+                            // ID is strong, but inside shadow it's only unique to the shadow.
+                            // We continue up to finding the path to the shadow host.
                         } else if (tempEl.className && typeof tempEl.className === 'string' && tempEl.className.trim() !== '') {
-                            comp += `.${tempEl.className.trim().split(/\s+/).join('.')}`;
+                            const classes = tempEl.className.trim().split(/\s+/).join('.');
+                            if (classes.length > 0) comp += `.${classes}`;
                         }
-                        // Add nth-of-type if needed for uniqueness (simplified)
-                        path.unshift(comp);
 
-                        // Handle Shadow Root boundary
+                        // Add basic uniqueness (nth-of-type) if needed - simplified for speed
+                        // In a robust implementation we might check siblings here, but for now we rely on the ID/Class + path strength.
+
+                        if (currentSegment) {
+                            currentSegment = comp + ' > ' + currentSegment;
+                        } else {
+                            currentSegment = comp;
+                        }
+
+                        // Traverse Up
                         if (tempEl.parentNode instanceof ShadowRoot) {
+                            // Shadow Boundary Detected!
+                            // We need to attach the current segment to the host with >>>
+                            // But first we move to the host
                             tempEl = tempEl.parentNode.host;
+                            if (tempEl) {
+                                // The relationship between HOST and SEGMENT is '>>>'
+                                if (selector) {
+                                    selector = currentSegment + ' >>> ' + selector;
+                                } else {
+                                    selector = currentSegment;
+                                }
+                                currentSegment = ''; // Reset for the next light-dom chunk
+                            }
                         } else {
                             tempEl = tempEl.parentNode;
+                            // Regular parent, loop continues to prepend to currentSegment
                         }
                     }
-                    selector = path.join(' > ');
+
+                    // Final flush
+                    if (currentSegment) {
+                        if (selector) {
+                            selector = currentSegment + ' >>> ' + selector;
+                        } else {
+                            selector = currentSegment;
+                        }
+                    }
 
                     return {
                         selector: selector,
@@ -932,7 +1098,9 @@ class CBAHub {
                 }
                 return null;
 
-            }, { goalText: goal, shadowEnabled }); // Pass args via evaluate
+                return null;
+
+            }, { goalText: goal, shadowEnabled, domWalkerSource: this.domWalkerSource }); // Pass args via evaluate
 
             if (semanticResult) {
                 console.log(`[CBA Hub] Phase 9: Sync BFS Resolved "${goal}" -> ${semanticResult.selector}`);

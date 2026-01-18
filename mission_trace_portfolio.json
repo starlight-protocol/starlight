@@ -1,0 +1,200 @@
+[
+  {
+    "timestamp": 1768590902268,
+    "humanTime": "12:45:02 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "PulseSentinel",
+      "priority": 1,
+      "selectors": [],
+      "capabilities": [
+        "temporal-stability",
+        "settling",
+        "network-idle"
+      ],
+      "version": "1.0.0",
+      "authToken": null
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590902368,
+    "humanTime": "12:45:02 am",
+    "method": "starlight.registration",
+    "params": {
+      "layer": "JanitorSentinel",
+      "priority": 5,
+      "selectors": [
+        ".modal",
+        ".popup",
+        "#overlay",
+        ".obstacle",
+        "#stabilize-btn",
+        ".shadow-overlay",
+        ".shadow-close-btn",
+        ".newsletter",
+        "#newsletter",
+        ".subscribe-popup",
+        "#subscribe-modal",
+        ".email-popup",
+        ".signup-modal",
+        ".newsletter-modal",
+        ".newsletter-popup",
+        "#onetrust-consent-sdk",
+        "#onetrust-banner-sdk",
+        ".onetrust-pc-dark-filter",
+        "#onetrust-pc-btn-handler",
+        ".onetrust-banner-overlay",
+        "#CybotCookiebotDialog",
+        ".CybotCookiebotDialogActive",
+        ".qc-cmp2-container",
+        ".qc-cmp2-summary-section",
+        "#truste-consent-track",
+        ".truste-banner",
+        "#didomi-host",
+        ".didomi-popup-container",
+        ".cookie-consent",
+        "#cookie-consent",
+        ".cookie-banner",
+        "#cookie-banner",
+        ".cookie-notice",
+        "#cookie-notice",
+        ".cookie-modal",
+        "#cookie-modal",
+        ".consent-banner",
+        "#consent-banner",
+        ".consent-modal",
+        "#consent-modal",
+        ".gdpr-banner",
+        "#gdpr-banner",
+        ".privacy-banner",
+        "#privacy-banner",
+        "[class*='cookie-accept']",
+        "[class*='cookie-dismiss']",
+        "[id*='cookie']",
+        "[id*='consent']",
+        ".dismiss-btn",
+        "[data-dismiss]",
+        ".btn-close",
+        ".close-btn",
+        ".accept-btn",
+        ".accept-all",
+        ".btn-accept",
+        ".g-recaptcha",
+        "#recaptcha",
+        ".recaptcha-checkbox",
+        "[data-sitekey]",
+        "#captcha",
+        ".captcha",
+        ".captcha-container",
+        "#challenge-form",
+        ".challenge-form",
+        "#captcha-form",
+        ".rc-anchor",
+        ".rc-imageselect"
+      ],
+      "capabilities": [],
+      "version": "1.0.0",
+      "authToken": null
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590906643,
+    "humanTime": "12:45:06 am",
+    "method": "starlight.intent",
+    "params": {
+      "cmd": "goto",
+      "url": "https://www.hm.com/en_gb/index.html"
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590907277,
+    "humanTime": "12:45:07 am",
+    "method": "starlight.context_update",
+    "params": {
+      "context": {
+        "pulse_telemetry": {
+          "state": "ANALYZING",
+          "metrics": {
+            "pre_checks": 1,
+            "vetoes": 0,
+            "clearances": 0
+          },
+          "layer": "PulseSentinel"
+        }
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590907278,
+    "humanTime": "12:45:07 am",
+    "method": "starlight.context_update",
+    "params": {
+      "context": {
+        "pulse_telemetry": {
+          "state": "CLEARED",
+          "metrics": {
+            "pre_checks": 1,
+            "vetoes": 0,
+            "clearances": 1
+          },
+          "layer": "PulseSentinel"
+        }
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590907278,
+    "humanTime": "12:45:07 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590907282,
+    "humanTime": "12:45:07 am",
+    "method": "starlight.clear",
+    "params": {
+      "confidence": 1
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590908030,
+    "humanTime": "12:45:08 am",
+    "method": "SEND",
+    "params": {
+      "type": "COMMAND_COMPLETE",
+      "id": "cmd-1",
+      "success": false,
+      "error": "Command \"goto\" failed on target",
+      "context": {
+        "pulse_telemetry": {
+          "state": "CLEARED",
+          "metrics": {
+            "pre_checks": 1,
+            "vetoes": 0,
+            "clearances": 1
+          },
+          "layer": "PulseSentinel"
+        }
+      }
+    },
+    "snapshot": null
+  },
+  {
+    "timestamp": 1768590908034,
+    "humanTime": "12:45:08 am",
+    "method": "starlight.finish",
+    "params": {
+      "reason": "Challenge failed: Failed: Navigate to \"https://www.hm.com/en_gb/index.html\" - Command \"goto\" failed on target"
+    },
+    "snapshot": null
+  }
+]

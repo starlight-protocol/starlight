@@ -21,6 +21,9 @@ async function runYouTubeMission() {
         await runner.goto('https://www.youtube.com');
         console.log('[Mission] ✅ YouTube loaded (or proceeding after consent bypass)\n');
 
+        console.log('[Mission] ⏳ Waiting 5s for SPA hydration...');
+        await new Promise(r => setTimeout(r, 5000));
+
         // Step 2: Search for Starlight Protocol
         console.log('[Mission] Step 2: Searching for "Starlight Protocol"...');
         console.time('Targeting: Search');
