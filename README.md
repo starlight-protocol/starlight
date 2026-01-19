@@ -44,22 +44,35 @@ await hub.send({ goal: 'Submit Form' });
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture (v4.0 Refinement)
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/starlight-protocol/starlight/main/assets/architecture.png" alt="Architecture" width="600">
-</p>
+Starlight v4.0 follows a rigorous, domain-driven architectural pattern designed for zero-defect reliability and protocol integrity.
 
-| Component | Role |
-|-----------|------|
-| **Hub** | Central orchestrator, manages Playwright browser |
-| **JWT Handler** | Authentication & authorization system |
-| **Schema Validator** | Input validation & message verification |
-| **PII Redactor** | Data protection & privacy compliance |
-| **Pulse Sentinel** | Monitors DOM/Network stability |
-| **Janitor Sentinel** | Clears popups, modals, banners |
-| **Vision Sentinel** | AI-powered obstacle detection (Moondream) |
-| **Data Sentinel** | Context extraction & injection |
+```text
+src/hub/
+├── core/
+│   ├── HubServer.js          # Main Entry & Process Orchestrator
+│   └── LifecycleManager.js   # State Machine (PRE_CHECK -> CLEAR -> ACTION)
+├── analysis/
+│   ├── DomWalker.js          # High-Performance O(N) Traversal
+│   ├── SemanticResolver.js   # Intent-Aware "Goal" -> "Selector" Logic
+│   └── HistoryEngine.js      # Learning & Memory (starlight_memory.json)
+├── security/
+│   ├── IpcBridge.js          # The Gatekeeper (Schema & PII Redaction)
+│   └── AuditLogger.js        # SOC 2 Compliant Structured Logging
+└── config/
+    └── ConfigLoader.js       # Strict Typed Config (No Prop Drilling)
+```
+
+### Core Components
+
+| Component | Role | Logic |
+|-----------|------|-------|
+| **HubServer** | Orchestrator | Reactive interaction verification (Effect-based) |
+| **IpcBridge** | Gatekeeper | JSON-RPC 2.0 Schema Enforcement & PII Scrubbing |
+| **SemanticResolver** | Intelligence | Precision Intent Mapping (intent-weighted heuristics) |
+| **DomWalker** | Vision | O(N) Shadow-piercing tree traversal |
+| **Sentinels** | Constellation | Pulse, Janitor, Vision (Autonomous Coordination) |
 
 ---
 

@@ -53,6 +53,7 @@ async function runMission() {
         await runner.fillGoal('Password', TEST_PASSWORD);
 
         // Using clickGoal - the Hub finds button by text content
+
         await runner.clickGoal('Login');
         console.log('[SauceDemo] ✅ Logged in as standard_user\n');
 

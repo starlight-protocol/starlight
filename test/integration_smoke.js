@@ -1,7 +1,7 @@
 const IntentRunner = require('../src/intent_runner');
 
 async function runSmoke() {
-    const runner = new IntentRunner('ws://127.0.0.1:8080');
+    const runner = new IntentRunner('ws://127.0.0.1:8095');
 
     try {
         await runner.connect();

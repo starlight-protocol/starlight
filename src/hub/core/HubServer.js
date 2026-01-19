@@ -231,7 +231,7 @@ class HubServer {
         let resolvedSelector = null;
 
         if (!isNavigation && goal && !msg.params.selector) {
-            resolvedSelector = await this.semanticResolver.resolve(goal, contextUrl);
+            resolvedSelector = await this.semanticResolver.resolve(goal, contextUrl, msg.params?.cmd);
             if (resolvedSelector) {
                 msg.params.selector = resolvedSelector;
                 console.log(`[HubServer] Resolved goal "${goal}" to ${resolvedSelector}`);
@@ -511,7 +511,7 @@ class HubServer {
                         await this.page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => { });
 
                         // Effect-based verification: Did the page actually change?
-                        const norm = (u) => u.replace(/\/$/, '');
+                        const norm = (u) => String(u || '').replace(/\/$/, '');
                         const finalUrl = await this.page.url();
                         const finalContent = await this.page.evaluate(() => document.body.innerText.length);
 
@@ -520,17 +520,16 @@ class HubServer {
 
                         if (!inventoryMarker && norm(finalUrl) === norm(initialUrl) && Math.abs(finalContent - initialContent) < 10 && !lowerGoal.includes('add to cart')) {
                             // High-Performance Reactive Wait: Resolve as soon as state changes
-                            console.log(`[HubServer] Interaction effect not immediate. Reactively waiting for state evolution...`);
                             const stateEvolution = await Promise.race([
                                 this.page.waitForFunction((oldUrl, oldLen, sel) => {
-                                    const norm = (u) => u.replace(/\/$/, '');
+                                    const norm = (u) => String(u || '').replace(/\/$/, '');
                                     const elDisappeared = sel ? !document.querySelector(sel) : false;
                                     const inventoryLoaded = !!document.querySelector('.inventory_list, #inventory_container');
                                     const urlChanged = norm(window.location.href) !== norm(oldUrl);
-                                    const contentChanged = Math.abs(document.body.innerText.length - oldLen) > 20;
+                                    const contentChanged = Math.abs(document.body.innerText.length - oldLen) > 10;
                                     return urlChanged || contentChanged || (inventoryLoaded && !urlChanged) || (elDisappeared && urlChanged);
                                 }, { timeout: 15000 }, initialUrl, initialContent, params.selector).catch(() => 'TIMEOUT'),
-                                this.page.waitForURL((url) => norm(url.toString()) !== norm(initialUrl), { timeout: 15000 }).catch(() => 'TIMEOUT')
+                                this.page.waitForURL((url) => norm(url.toString()) !== norm(initialUrl), { timeout: 10000 }).catch(() => 'TIMEOUT')
                             ]);
 
                             const lastUrl = await this.page.url();
@@ -538,26 +537,47 @@ class HubServer {
                             const hasInventory = await this.page.evaluate(() => !!document.querySelector('.inventory_list, #inventory_container')).catch(() => false);
 
                             if (!hasInventory && norm(lastUrl) === norm(initialUrl) && Math.abs(lastContent - initialContent) < 20) {
-                                // Fallback: Try dispatchEvent if direct click failed
-                                console.log('[HubServer] Attempting fallback click via dispatchEvent...');
-                                await this.page.dispatchEvent(params.selector, 'click').catch(() => { });
-                                await this.page.waitForTimeout(3500); // 3.5s budget for slow navigations
+                                // Phase 18: Smart Retry & Keyboard Fallback (Solve Hydration/Interaction Miss)
+                                console.log(`[HubServer] Interaction on "${goal}" ineffective. Initiating robust fallback sequence...`);
 
-                                const finalCheckUrl = await this.page.url();
-                                const finalCheckInventory = await this.page.evaluate(() => !!document.querySelector('.inventory_list, #inventory_container')).catch(() => false);
+                                // 1. Stabilization + Retry Click
+                                await this.page.waitForTimeout(1000);
+                                await this.page.click(params.selector, { timeout: 5000 }).catch(() => { });
 
-                                if (!finalCheckInventory && norm(finalCheckUrl) === norm(initialUrl)) {
-                                    // Discover UI-based error messages (True Forensics)
-                                    const uiError = await this.page.evaluate(() => {
-                                        const errEl = document.querySelector('[data-test="error"], .error-message, .alert-danger');
-                                        return errEl ? errEl.innerText : null;
-                                    }).catch(() => null);
+                                // 2. Keyboard Enter Fallback (Crucial for submission forms like SauceDemo)
+                                await this.page.waitForTimeout(1500);
+                                const retryUrl = await this.page.url();
+                                const retryInventory = await this.page.evaluate(() => !!document.querySelector('.inventory_list, #inventory_container')).catch(() => false);
 
-                                    const failMsg = uiError ? `Login Failed: ${uiError}` : `Click on "${goal}" had no visible effect (possible auth failure or blocking).`;
-                                    console.error(`[HubServer] ❌ ${failMsg}`);
-                                    throw new Error(failMsg);
+                                if (!retryInventory && norm(retryUrl) === norm(initialUrl)) {
+                                    console.log(`[HubServer] Retried click failed. Attempting Keyboard Enter fallback...`);
+                                    await this.page.press(params.selector, 'Enter').catch(() => { });
+                                    await this.page.waitForTimeout(3000);
+                                }
+
+                                // 3. Final DispatchEvent Fallback
+                                const postKbdUrl = await this.page.url();
+                                const postKbdInventory = await this.page.evaluate(() => !!document.querySelector('.inventory_list, #inventory_container')).catch(() => false);
+                                if (!postKbdInventory && norm(postKbdUrl) === norm(initialUrl)) {
+                                    console.log('[HubServer] Attempting final dispatchEvent fallback...');
+                                    await this.page.dispatchEvent(params.selector, 'click').catch(() => { });
+                                    await this.page.waitForTimeout(3000);
                                 }
                             }
+                        }
+
+                        const finalCheckUrl = await this.page.url();
+                        const finalCheckInventory = await this.page.evaluate(() => !!document.querySelector('.inventory_list, #inventory_container')).catch(() => false);
+
+                        if (!finalCheckInventory && norm(finalCheckUrl) === norm(initialUrl)) {
+                            const uiError = await this.page.evaluate(() => {
+                                const errEl = document.querySelector('[data-test="error"], .error-message, .alert-danger');
+                                return errEl ? errEl.innerText : null;
+                            }).catch(() => null);
+
+                            const failMsg = uiError ? `Interaction Failed: ${uiError}` : `Click on "${goal}" had no visible effect (possible auth failure or blocking).`;
+                            console.error(`[HubServer] ❌ ${failMsg}`);
+                            throw new Error(failMsg);
                         }
                     } else {
                         // Non-submission click: Reactive wait for mutation or animation (Max 500ms)
@@ -568,7 +588,7 @@ class HubServer {
                     }
                     return true;
                 case 'fill':
-                    await this.page.waitForSelector(params.selector, { timeout: 15000, state: 'visible' }).catch(e => {
+                    const fillEl = await this.page.waitForSelector(params.selector, { timeout: 15000, state: 'visible' }).catch(e => {
                         console.warn(`[HubServer] Selector not visible for fill: ${params.selector}`);
                         throw e;
                     });
@@ -578,29 +598,29 @@ class HubServer {
                         return false;
                     }
                     console.log(`[HubServer] Filling "${params.selector}" with: ${valToFill}`);
-                    await this.page.fill(params.selector, valToFill, { timeout: 10000 });
+                    await fillEl.fill(valToFill, { timeout: 10000 });
 
-                    // High-Performance Reactive Verification (Ensure value is set)
-                    await this.page.waitForFunction((sel, val) => {
-                        const el = document.querySelector(sel);
-                        return el && el.value === val;
-                    }, { timeout: 2000 }, params.selector, valToFill).catch(() => {
-                        console.warn(`[HubServer] Reactive fill verification timed out for ${params.selector}`);
-                    });
+                    // High-Performance Reactive Verification (Ensure value is set on the specific element)
+                    let verifiedValue = '';
+                    for (let i = 0; i < 10; i++) {
+                        verifiedValue = await fillEl.inputValue().catch(() => '');
+                        if (verifiedValue === valToFill) break;
+                        await this.page.waitForTimeout(200);
+                    }
 
                     // Verification (Phase 8 Rigor)
-                    let currentVal = await this.page.inputValue(params.selector).catch(e => {
+                    let currentVal = await fillEl.inputValue().catch(e => {
                         console.warn(`[HubServer] Verification check failed for ${params.selector}: ${e.message}`);
                         return 'ERROR_DURING_CHECK';
                     });
 
                     if (currentVal !== valToFill) {
                         console.warn(`[HubServer] Fill mismatch. Observed: "${currentVal}", Expected: "${valToFill}". Attempting "type" fallback for "${params.selector}"`);
-                        await this.page.click(params.selector).catch(() => { });
+                        await fillEl.click().catch(() => { });
                         // Clear field first
-                        await this.page.fill(params.selector, '').catch(() => { });
-                        await this.page.type(params.selector, valToFill, { delay: 50 });
-                        currentVal = await this.page.inputValue(params.selector).catch(() => 'ERROR_RETRY');
+                        await fillEl.fill('').catch(() => { });
+                        await fillEl.type(valToFill, { delay: 50 });
+                        currentVal = await fillEl.inputValue().catch(() => 'ERROR_RETRY');
                     }
 
                     if (currentVal !== valToFill) {
