@@ -44,6 +44,14 @@ class SemanticResolver {
             const kebabCase = normalized.replace(/\s+/g, '-');
             const snakeCase = normalized.replace(/\s+/g, '_');
 
+            // v4.1.2: Playback Toggle Support
+            const isPlayback = /play|pause|mute|unmute|stop|video|audio/i.test(normalized);
+            const toggleAlt = normalized.includes('play') ? 'Pause' :
+                normalized.includes('pause') ? 'Play' :
+                    normalized.includes('mute') ? 'Unmute' :
+                        normalized.includes('unmute') ? 'Mute' : null;
+            const toggleEscaped = toggleAlt ? toggleAlt.replace(/"/g, '\\"') : escaped;
+
             // High-Class Strategy: Multi-Tier Prioritized Resolution (v4.1)
             let tiers = [];
 
@@ -60,13 +68,15 @@ class SemanticResolver {
             } else if (intent === 'click') {
                 tiers = [
                     // Tier 1: High-Fidelity Interactive Elements (Text-based)
-                    [`button:has-text("${escaped}")`, `a:has-text("${escaped}")`],
+                    [`button:has-text("${escaped}")`, `a:has-text("${escaped}")`, ...(toggleAlt ? [`button:has-text("${toggleEscaped}")`, `a:has-text("${toggleEscaped}")`] : [])],
                     // Tier 2: High-Fidelity Attributes (Explicit interactivity)
                     [`input[type="submit"][value*="${escaped}" i]`, `input[type="button"][value*="${escaped}" i]`, `[role="button"]:has-text("${escaped}")`, `[role="link"]:has-text("${escaped}")`],
                     // Tier 3: Targeted Accessibility Attributes & Playback
-                    [`button[aria-label*="${escaped}" i]`, `a[aria-label*="${escaped}" i]`, `input[aria-label*="${escaped}" i]`, `[title*="${escaped}" i]`],
+                    [`button[aria-label*="${escaped}" i]`, `a[aria-label*="${escaped}" i]`, `input[aria-label*="${escaped}" i]`, `[title*="${escaped}" i]`,
+                    ...(toggleAlt ? [`button[aria-label*="${toggleEscaped}" i]`, `a[aria-label*="${toggleEscaped}" i]`, `[title*="${toggleEscaped}" i]`] : [])],
                     // Tier 4: Identification/Test Hooks & Class-based semantic (High-fidelity)
-                    [`[data-test*="${normalized}" i]`, `[data-test-id*="${normalized}" i]`, `button[id*="${kebabCase}" i]`, `a[id*="${kebabCase}" i]`, `button[class*="${kebabCase}" i]`, `a[class*="${kebabCase}" i]`],
+                    [`[data-test*="${normalized}" i]`, `[data-test-id*="${normalized}" i]`, `button[id*="${kebabCase}" i]`, `a[id*="${kebabCase}" i]`, `button[class*="${kebabCase}" i]`, `a[class*="${kebabCase}" i]`,
+                    ...(toggleAlt ? [`button[class*="${toggleAlt.toLowerCase()}" i]`, `a[class*="${toggleAlt.toLowerCase()}" i]`] : [])],
                     // Tier 5: Generic Semantic Fallbacks (Excluding structural noise)
                     [`[id="${kebabCase}"]`, `[id="${snakeCase}"]`, `[id="${camelCase}"]`],
                     [`[class*="${snakeCase}" i]:not(link, script, style, meta, div, section, span, ytd-miniplayer)`, `[aria-label*="${escaped}" i]:not(link, script, style, meta, div, section, span, ytd-miniplayer)`]

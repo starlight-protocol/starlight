@@ -498,12 +498,15 @@ class HubServer {
                     for (const selector of selectors) {
                         try {
                             console.log(`[HubServer] Attempting click on tier: ${selector}`);
-                            const el = await this.page.waitForSelector(selector, { timeout: 5000, state: 'visible' });
+                            const el = await this.page.waitForSelector(selector, { timeout: 5000, state: 'attached' });
+
+                            // v4.1.5: Dynamic Exposure - Hover to reveal hidden controls (Crucial for YouTube Shorts)
+                            await el.hover({ timeout: 2000 }).catch(() => { });
 
                             const initialUrl = await this.page.url();
                             const initialContent = await this.page.evaluate(() => document.body.innerText.length);
 
-                            await el.click({ timeout: 10000 });
+                            await el.click({ timeout: 10000, force: true });
 
                             // Phase 18: Sovereign Interaction Loop
                             const lowerGoal = goal.toLowerCase() || '';
@@ -547,7 +550,24 @@ class HubServer {
                             }
                         } catch (e) {
                             const isTimeout = e.message.includes('timeout') || e.message.includes('Timeout');
+                            const isNotVisible = e.message.includes('not visible') || e.message.includes('hidden');
+
                             console.warn(`[HubServer] Tier ${isTimeout ? 'TIMED OUT' : 'FAILED'}: ${selector} - ${e.message}`);
+
+                            // v4.1.8: Parent Surface Fallback - Handle occluded overlays
+                            if (isNotVisible) {
+                                try {
+                                    console.log(`[HubServer] Element occluded. Attempting parent surface interaction...`);
+                                    await this.page.evaluate((sel) => {
+                                        const el = document.querySelector(sel);
+                                        if (el && el.parentElement) el.parentElement.click();
+                                    }, selector);
+                                    await this.page.waitForTimeout(1000);
+                                    return true; // Assume success for non-submission surfacing
+                                } catch (inner) {
+                                    console.warn(`[HubServer] Parent surface fallback failed.`);
+                                }
+                            }
                             continue;
                         }
                     }
