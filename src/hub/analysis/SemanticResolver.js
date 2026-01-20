@@ -44,44 +44,50 @@ class SemanticResolver {
             const kebabCase = normalized.replace(/\s+/g, '-');
             const snakeCase = normalized.replace(/\s+/g, '_');
 
-            // High-Class Strategy: Prioritize search based on Intent (Performance & Purity)
-            let seekers = [];
+            // High-Class Strategy: Multi-Tier Prioritized Resolution (v4.1)
+            let tiers = [];
 
             if (intent === 'fill') {
-                seekers = [
-                    // Precise Form Elements
-                    `input[name="${normalized}"]`, `input[id="${normalized}"]`, `input[id="${kebabCase}"]`, `input[id="${camelCase}"]`,
-                    `input[data-test*="${normalized}" i]`, `input[data-test*="${camelCase}" i]`,
-                    `textarea[name*="${normalized}" i]`, `select[name*="${normalized}" i]`,
-                    `label:has-text("${escaped}") ~ input`, `label:has-text("${escaped}") ~ select`,
-                    `input[placeholder*="${escaped}" i]`, `input[aria-label*="${escaped}" i]`,
-                    // Fallback to general attributes but strictly scoped to inputs
-                    `input[id*="${kebabCase}" i]`, `input[name*="${kebabCase}" i]`,
-                    `[contenteditable="true"]:has-text("${escaped}")`
+                tiers = [
+                    // Tier 1: Explicit Matches
+                    [`input[name="${normalized}"]`, `input[id="${normalized}"]`, `input[id="${kebabCase}"]`, `input[id="${camelCase}"]`],
+                    [`input[data-test*="${normalized}" i]`, `input[data-test-id*="${normalized}" i]`, `input[data-test*="${camelCase}" i]`],
+                    // Tier 2: Proximal Labels & Placeholders
+                    [`label:has-text("${escaped}") ~ input`, `input[placeholder*="${escaped}" i]`, `input[aria-label*="${escaped}" i]`],
+                    // Tier 3: Fuzzy Fallbacks
+                    [`input[id*="${kebabCase}" i]`, `input[name*="${kebabCase}" i]`, `[contenteditable="true"]:has-text("${escaped}")`]
                 ];
             } else if (intent === 'click') {
-                seekers = [
-                    // Interactive Surfaces
-                    `button:has-text("${escaped}")`, `a:has-text("${escaped}")`,
-                    `input[type="submit"][value*="${escaped}" i]`, `input[type="button"][value*="${escaped}" i]`,
-                    `[role="button"]:has-text("${escaped}")`, `[role="link"]:has-text("${escaped}")`,
-                    `[id="${kebabCase}"]`, `[id="${snakeCase}"]`, `[id="${camelCase}"]`,
-                    `[class*="${snakeCase}" i]`, // Matches icon classes like shopping_cart
-                    `[aria-label*="${escaped}" i]`, `[title*="${escaped}" i]`,
-                    `button[id*="${kebabCase}" i]`, `a[id*="${kebabCase}" i]`
+                tiers = [
+                    // Tier 1: High-Fidelity Interactive Elements (Text-based)
+                    [`button:has-text("${escaped}")`, `a:has-text("${escaped}")`],
+                    // Tier 2: High-Fidelity Attributes (Explicit interactivity)
+                    [`input[type="submit"][value*="${escaped}" i]`, `input[type="button"][value*="${escaped}" i]`, `[role="button"]:has-text("${escaped}")`, `[role="link"]:has-text("${escaped}")`],
+                    // Tier 3: Targeted Accessibility Attributes & Playback
+                    [`button[aria-label*="${escaped}" i]`, `a[aria-label*="${escaped}" i]`, `input[aria-label*="${escaped}" i]`, `[title*="${escaped}" i]`],
+                    // Tier 4: Identification/Test Hooks & Class-based semantic (High-fidelity)
+                    [`[data-test*="${normalized}" i]`, `[data-test-id*="${normalized}" i]`, `button[id*="${kebabCase}" i]`, `a[id*="${kebabCase}" i]`, `button[class*="${kebabCase}" i]`, `a[class*="${kebabCase}" i]`],
+                    // Tier 5: Generic Semantic Fallbacks (Excluding structural noise)
+                    [`[id="${kebabCase}"]`, `[id="${snakeCase}"]`, `[id="${camelCase}"]`],
+                    [`[class*="${snakeCase}" i]:not(link, script, style, meta, div, section, span, ytd-miniplayer)`, `[aria-label*="${escaped}" i]:not(link, script, style, meta, div, section, span, ytd-miniplayer)`]
                 ];
             } else {
-                // Generic Fallback (Purity Layer)
-                seekers = [
-                    `[id="${kebabCase}"]`, `[id="${snakeCase}"]`, `[id="${camelCase}"]`,
-                    `[data-test*="${kebabCase}" i]`, `[data-test*="${camelCase}" i]`,
-                    `label:has-text("${escaped}") ~ input`,
-                    `[aria-label*="${escaped}" i]`, `button:has-text("${escaped}")`, `a:has-text("${escaped}")`
+                // Tiered Generic Fallback
+                tiers = [
+                    [`[id="${kebabCase}"]`, `[id="${snakeCase}"]`, `[id="${camelCase}"]`],
+                    [`[data-test*="${kebabCase}" i]`, `[data-test*="${camelCase}" i]`],
+                    [`label:has-text("${escaped}") ~ input`, `[aria-label*="${escaped}" i]`, `button:has-text("${escaped}")`, `a:has-text("${escaped}")`]
                 ];
             }
 
-            resolved = seekers.join(', ');
+            resolved = tiers.map(t => t.join(', ')).filter(s => s.length > 0);
         }
+
+        if (resolved) {
+            this.cache.set(key, resolved);
+        }
+
+        return resolved;
 
         if (resolved) {
             this.cache.set(key, resolved);
