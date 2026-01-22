@@ -31,24 +31,25 @@ class VisionSentinel(SentinelBase):
         asyncio.create_task(self._health_check_loop())
         await super().start()
 
-    async def _health_check_loop(self):
-        """Wait for registration then check Ollama health."""
-        await self._registered.wait()
-        print(f"[{self.layer}] Verifying AI dependencies (Ollama)...")
+    async def verify_health(self):
+        """Phase 8: Systematic health verification for Starlight Protocol."""
         try:
             async with httpx.AsyncClient(timeout=2.0) as client:
-                # Use base URL to check if service is up
                 base_url = self.ollama_url.replace('/api/generate', '')
                 response = await client.get(base_url)
                 if response.status_code == 200:
-                    print(f"[{self.layer}] AI Backend Online. Initializing...")
-                    await self.update_context({"vision_health": "online"})
-                else:
-                    print(f"[{self.layer}] WARNING: AI Backend degraded (Status: {response.status_code})")
-                    await self.update_context({"vision_health": "degraded"})
+                    return "online"
+                return f"degraded ({response.status_code})"
         except Exception:
-            print(f"[{self.layer}] CRITICAL: AI Backend OFFLINE. Model '{self.model}' will not be available.")
-            await self.update_context({"vision_health": "offline"})
+            return "offline"
+
+    async def _health_check_loop(self):
+        """Historical context: Keep for backward compatibility with older Hubs."""
+        await self._registered.wait()
+        while self._running:
+            health = await self.verify_health()
+            await self.update_context({"vision_health": health})
+            await asyncio.sleep(10)
 
     async def on_pre_check(self, params, msg_id):
         screenshot_b64 = params.get("screenshot")

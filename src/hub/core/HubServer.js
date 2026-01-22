@@ -26,6 +26,7 @@ const { AuditLogger } = require('../security/AuditLogger');
 const { SemanticResolver } = require('../analysis/SemanticResolver');
 const { HistoryEngine } = require('../analysis/HistoryEngine');
 const { ReportGenerator } = require('../analysis/ReportGenerator');
+const TelemetryEngine = require('../../telemetry');
 
 class HubServer {
     constructor(options = {}) {
@@ -58,8 +59,14 @@ class HubServer {
         this.pendingSentinels = new Map(); // For challenge-response
         this.consensusState = new Map(); // Tracks clearance for each msg_id
         this.reportData = [];
+        this.missionStartTime = Date.now();
+        this.totalSavedTime = 0;
+        this.recoveryTimes = [];
+        this.telemetry = new TelemetryEngine(path.join(process.cwd(), 'telemetry.json'));
         this.missionContext = {}; // Aggregated Sentinel reports
         this.securityEvents = []; // SOC 2 Forensic Trace
+        this.missionTargetUrl = null; // Sovereign Mission Source of Truth
+        this.missionLocaleInvariants = []; // Derived locale tokens (en_gb, us, etc.)
         this.screenshotsDir = path.join(process.cwd(), 'screenshots');
         if (!fs.existsSync(this.screenshotsDir)) {
             fs.mkdirSync(this.screenshotsDir, { recursive: true });
@@ -143,6 +150,21 @@ class HubServer {
             const sentinel = this.sentinels.get(id);
             if (sentinel) {
                 console.log(`[HubServer] Sentinel disconnected: ${sentinel.layer} (${id})`);
+
+                // v4.2: Consensus Recovery
+                // If this sentinel was part of a pending consensus, we need to adjust or resolve
+                for (const [msgId, consensus] of this.consensusState.entries()) {
+                    if (consensus.clearedBy.has(id)) {
+                        // Already counted, nothing to do
+                    } else {
+                        // Reduce required count or force resolution if it's the last one
+                        consensus.required = Math.max(0, consensus.required - 1);
+                        console.log(`[HubServer] Adjusted consensus ${msgId} (New requirement: ${consensus.required})`);
+                        if (consensus.clearedBy.size >= consensus.required && !consensus.hijacked) {
+                            consensus.resolve();
+                        }
+                    }
+                }
             } else {
                 console.log(`[HubServer] Client disconnected: ${id}`);
             }
@@ -152,6 +174,11 @@ class HubServer {
 
     async _handleMessage(id, ws, msg) {
         if (msg.method === 'starlight.pulse') {
+            const sentinel = this.sentinels.get(id);
+            if (sentinel) {
+                sentinel.health = msg.params?.health || 'online';
+                sentinel.lastPulse = Date.now();
+            }
             return; // Heartbeat handled silently
         }
 
@@ -209,15 +236,95 @@ class HubServer {
             const consensus = this.consensusState.get(clearedId);
             if (consensus) {
                 consensus.clearedBy.add(id);
+                if (consensus.clearedBy.size >= consensus.required && !consensus.hijacked) {
+                    consensus.resolve();
+                }
+            }
+        } else if (msg.method === 'starlight.hijack') {
+            // Sentinel is taking over to remediate (e.g., Janitor clearing a popup)
+            const hijackedId = msg.params?.id || msg.id;
+            const consensus = this.consensusState.get(hijackedId);
+            if (consensus) {
+                consensus.hijacked = true;
+                consensus.hijackStartTime = Date.now();
+                const sentinelName = this.sentinels.get(id)?.layer || 'Unknown Sentinel';
+                console.log(`[HubServer] 🚨 SESSION HIJACKED by Sentinel ${id}. Reason: ${msg.params?.reason || 'Unknown'}`);
+
+                // v4.2 Traceability: Record for Hero Story Report
+                const screenshot = await this.takeScreenshot(`HIJACK_${id}_${Date.now()}`);
+                this.reportData.push({
+                    type: 'HIJACK',
+                    sentinel: sentinelName,
+                    reason: msg.params?.reason || 'Auto-remediation initiated',
+                    screenshot,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+                this.totalSavedTime += 300; // ROI: 5 mins triage avoided
+            }
+        } else if (msg.method === 'starlight.action') {
+            // Sentinel executing an autonomous remediation command
+            const action = msg.params?.action || msg.params?.cmd;
+            console.log(`[HubServer] ⚡ Sentinel Action: ${action} (Selector: ${msg.params?.selector})`);
+            await this._executeRawCommand({
+                method: msg.method,
+                params: { ...msg.params, cmd: action } // Normalize to 'cmd' for internal processing
+            }).catch(e => {
+                console.error(`[HubServer] Sentinel Action Failed: ${e.message}`);
+            });
+        } else if (msg.method === 'starlight.resume') {
+            // Sentinel remediation complete, requesting re-check or mission resume
+            const resumeId = msg.params?.id || msg.id;
+            const consensus = this.consensusState.get(resumeId);
+            if (consensus) {
+                console.log(`[HubServer] ✅ Sentinel ${id} RELINQUISHED control. Resuming consensus...`);
+
+                if (consensus.hijackStartTime) {
+                    const duration = Date.now() - consensus.hijackStartTime;
+                    this.recoveryTimes.push(duration);
+                    console.log(`[HubServer] Recovery completed in ${duration}ms (Total recoveries: ${this.recoveryTimes.length})`);
+                }
+
+                consensus.hijacked = false;
+                // If it was the last one needed, or if we want to force re-check
                 if (consensus.clearedBy.size >= consensus.required) {
                     consensus.resolve();
                 }
             }
+        } else if (msg.method === 'starlight.getPageContext') {
+            await this._handleGetPageContext(id, ws, msg);
         } else if (msg.method === 'starlight.shutdown' || msg.method === 'starlight.finish') {
             const reason = msg.params?.reason || 'Mission End';
             console.log(`[HubServer] Protocol Termination Trigger: ${reason}`);
+
+            // Record mission status for report
+            if (msg.method === 'starlight.finish' && msg.params?.success === false) {
+                this.reportData.push({
+                    type: 'FAILURE',
+                    reason,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+            }
+
             await this.shutdown();
         }
+    }
+
+    async _handleGetPageContext(id, ws, msg) {
+        console.log(`[HubServer] 🧠 Retrieving semantic context for client ${id}...`);
+        const a11y = await this._getA11ySnapshot();
+
+        // Filter elements for relevance
+        const context = {
+            buttons: a11y.elements.filter(e => e.tag === 'BUTTON' || e.role === 'button').map(e => e.text),
+            inputs: a11y.elements.filter(e => e.tag === 'INPUT' || e.role === 'textbox').map(e => e.label || e.placeholder),
+            url: this.page ? await this.page.url() : 'about:blank'
+        };
+
+        ws.send(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            result: context
+        }));
     }
 
     async _processIntent(id, ws, msg) {
@@ -228,6 +335,16 @@ class HubServer {
 
         // 1. Resolve Semantic Goal (Skip for raw commands like GOTO)
         const isNavigation = (goal === 'goto' || msg.params?.cmd === 'goto');
+
+        if (isNavigation && msg.params.url) {
+            this.missionTargetUrl = msg.params.url;
+            // Extract locale tokens (e.g., en_gb from /en_gb/)
+            this.missionLocaleInvariants = (this.missionTargetUrl.match(/\/[a-z]{2}[_-][a-z]{2}\//g) || [])
+                .map(m => m.replace(/\//g, ''));
+            console.log(`[HubServer] Mission Target URL captured: ${this.missionTargetUrl}`);
+            console.log(`[HubServer] Mission Locale Invariants defined: [${this.missionLocaleInvariants.join(', ')}]`);
+        }
+
         let resolvedSelector = null;
 
         if (!isNavigation && goal && !msg.params.selector) {
@@ -245,6 +362,31 @@ class HubServer {
             // Generate A11y Snapshot for Sentinels
             const a11ySnapshot = await this._getA11ySnapshot();
 
+            // v4.2: Enterprise-Grade Obstacle Detection (The "Master Signal")
+            const blocking = (a11ySnapshot.elements || []).filter(el => {
+                const combined = `${el.id || ''} ${el.className || ''} ${el.tag || ''}`.toLowerCase();
+                const text = (el.text || '').toLowerCase();
+
+                const isGlobalBlocker = combined.includes('onetrust') ||
+                    combined.includes('cookie') ||
+                    combined.includes('modal') ||
+                    combined.includes('popup') ||
+                    combined.includes('overlay') ||
+                    combined.includes('gdpr') ||
+                    combined.includes('consent');
+
+                const isRegionGate = combined.includes('region') ||
+                    combined.includes('location-selection') ||
+                    (el.tag === 'A' && text.includes('united kingdom')) ||
+                    (el.tag === 'BUTTON' && text.includes('united kingdom'));
+
+                return isGlobalBlocker || isRegionGate;
+            });
+
+            if (blocking.length > 0) {
+                console.log(`[HubServer] 🛡️ OBSTACLE DETECTED: Identified ${blocking.length} interference points.`);
+            }
+
             const preCheckMsg = JSON.stringify({
                 jsonrpc: '2.0',
                 method: 'starlight.pre_check',
@@ -252,6 +394,7 @@ class HubServer {
                     goal,
                     url: contextUrl,
                     a11y_snapshot: a11ySnapshot,
+                    blocking, // THE MASTER SIGNAL
                     command: msg.params
                 },
                 id: msg.id
@@ -261,11 +404,13 @@ class HubServer {
                 const timeout = setTimeout(() => {
                     console.log(`[HubServer] Consensus Timeout for ${msg.id}. Proceeding with partial clearance.`);
                     resolve();
-                }, 2000); // Optimized Phase 8: 2s budget for consensus
+                }, 3000);
 
                 this.consensusState.set(msg.id, {
                     required: this.sentinels.size,
                     clearedBy: new Set(),
+                    hijacked: false, // v4.2 Traceability
+                    hijackStartTime: null,
                     resolve: () => {
                         clearTimeout(timeout);
                         resolve();
@@ -273,7 +418,6 @@ class HubServer {
                 });
             });
 
-            // Broadcast to all Sentinels
             for (const sentinel of this.sentinels.values()) {
                 sentinel.ws.send(preCheckMsg);
             }
@@ -306,19 +450,17 @@ class HubServer {
 
         // 5. Visual Reporting: AFTER State
         console.log(`[HubServer] Capturing AFTER screenshot (waiting for stability)...`);
-        // v4.0.28: Settlement Grace Period to ensure page is fully rendered
         await this.page.waitForTimeout(1000).catch(() => { });
         const afterScreenshot = await this.takeScreenshot(`AFTER_${msg.id}`);
 
         // 6. Build Report Entry
         const now = new Date();
-        // Machines local time with AM/PM for forensics
         const localTimestamp = now.toLocaleTimeString('en-US', { hour12: true });
-        const rawTimestamp = now.toISOString(); // Hidden for latency calc
+        const rawTimestamp = now.toISOString();
 
         this.reportData.push({
             id: msg.id,
-            goal: isNavigation ? null : goal, // Avoid showing 'goto' as a semantic goal
+            goal: isNavigation ? null : goal,
             cmd: msg.params?.cmd || goal,
             selector: resolvedSelector || msg.params?.selector,
             success,
@@ -353,10 +495,29 @@ class HubServer {
 
     async takeScreenshot(name) {
         if (!this.page) return null;
+
+        // v4.2 Traceability: Visual Cooldown for Stealth Engine
+        // CDP overhead on heavy pages can crash the driver if screenshots are too frequent.
+        if (this.browserAdapter && this.browserAdapter.activeEngine === 'stealth') {
+            await this.page.waitForTimeout(2000).catch(() => { });
+        }
+
         const filename = `${name}.png`;
+
         const filepath = path.join(this.screenshotsDir, filename);
-        await this.page.screenshot({ path: filepath });
-        return filename;
+
+        try {
+            // v4.2 Traceability: Enforce 15s visual deadline to prevent mission stalls
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for screenshot')), 15000));
+            await Promise.race([
+                this.page.screenshot({ path: filepath }),
+                timeout
+            ]);
+            return filename;
+        } catch (e) {
+            console.error(`[HubServer] Screenshot Error: ${e.message}`);
+            return null;
+        }
     }
 
     async _getA11ySnapshot() {
@@ -365,17 +526,27 @@ class HubServer {
             const elements = [];
             const computed = [];
 
-            // Recursive walk to capture meaningful elements
+            // Protocol v4.1: Standardized Shadow-Piercing Walker
             const walk = (root) => {
                 const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
                 let node = walker.currentNode;
+
                 while (node) {
                     const tag = node.tagName;
+                    // Optimization: Skip noise nodes (script, style, head)
+                    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'HEAD' || tag === 'NOSCRIPT') {
+                        node = walker.nextNode();
+                        continue;
+                    }
+
                     const styles = window.getComputedStyle(node);
                     const rect = node.getBoundingClientRect();
 
-                    if (rect.width > 0 && rect.height > 0) {
-                        // Protocol Stabilization: Safely handle class names (SVG compatibility)
+                    // v4.1.12: Capture hidden elements if they are potential obstacles (e.g. cookie banners)
+                    const isVisible = rect.width > 0 && rect.height > 0 && styles.display !== 'none' && styles.visibility !== 'hidden';
+                    const isObstacleCandidate = node.id?.includes('onetrust') || node.className?.toString().includes('cookie') || node.className?.toString().includes('modal');
+
+                    if (isVisible || isObstacleCandidate) {
                         const classAttr = node.getAttribute('class') || '';
                         const className = (typeof classAttr === 'string') ? classAttr : '';
 
@@ -383,10 +554,13 @@ class HubServer {
                             tag,
                             text: node.innerText?.trim() || node.textContent?.trim(),
                             attributes: {},
-                            selector: node.id ? `#${node.id}` : (className ? `.${className.trim().split(/\s+/).join('.')}` : tag.toLowerCase())
+                            className: className,
+                            id: node.id,
+                            rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+                            selector: node.id ? `#${node.id}` : (className ? `.${className.trim().split(/\s+/)[0]}` : tag.toLowerCase())
                         };
 
-                        // Extract relevant attributes
+                        // Extract relevant attributes for Sentinels
                         for (const attr of node.attributes) {
                             if (attr.name.startsWith('aria-') || ['role', 'alt', 'title', 'name', 'type', 'placeholder', 'id'].includes(attr.name)) {
                                 info.attributes[attr.name] = attr.value;
@@ -395,23 +569,26 @@ class HubServer {
 
                         elements.push(info);
 
-                        // Capture styles for contrast/visibility checks
-                        computed.push({
-                            tag,
-                            selector: info.selector,
-                            styles: {
-                                color: styles.color,
-                                backgroundColor: styles.backgroundColor,
-                                fontSize: styles.fontSize,
-                                outline: styles.outline,
-                                boxShadow: styles.boxShadow,
-                                visibility: styles.visibility,
-                                opacity: styles.opacity
-                            }
-                        });
+                        if (isVisible) {
+                            computed.push({
+                                tag,
+                                selector: info.selector,
+                                styles: {
+                                    color: styles.color,
+                                    backgroundColor: styles.backgroundColor,
+                                    visibility: styles.visibility,
+                                    opacity: styles.opacity,
+                                    zIndex: styles.zIndex
+                                }
+                            });
+                        }
                     }
 
-                    if (node.shadowRoot) walk(node.shadowRoot);
+                    // Pierce Shadow DOM recursively
+                    if (node.shadowRoot) {
+                        walk(node.shadowRoot);
+                    }
+
                     node = walker.nextNode();
                 }
             };
@@ -419,6 +596,76 @@ class HubServer {
             walk(document.body);
             return { elements, computed };
         });
+    }
+
+    async _performNavigationConsensus(msg) {
+        if (this.sentinels.size === 0) {
+            console.warn(`[HubServer] ⚠️ Stabilization Consensus skipped: No Sentinels connected.`);
+            return;
+        }
+
+        console.log(`[HubServer] 🏁 Stabilization Consensus initiated (Active Sentinels: ${this.sentinels.size})...`);
+
+        // 1. Capture Post-Navigation Telemetry
+        const a11ySnapshot = await this._getA11ySnapshot();
+        this.missionContext.accessibility = a11ySnapshot; // Map to Hero Story forensic layer
+        const currentUrl = this.page ? await this.page.url() : 'about:blank';
+
+        // 2. Identify Redirection Traps (Region Pickers, Consent)
+        const blocking = (a11ySnapshot.elements || []).filter(el => {
+            const combined = `${el.id || ''} ${el.className || ''} ${el.tag || ''}`.toLowerCase();
+            const text = (el.text || '').toLowerCase();
+
+            const isGlobalBlocker = combined.includes('onetrust') || combined.includes('cookie') || combined.includes('modal') || combined.includes('popup');
+            const isRegionGate = combined.includes('region') || combined.includes('location-selection') || text.includes('select your region');
+
+            return isGlobalBlocker || isRegionGate;
+        });
+
+        const isTrap = (blocking.length > 0) || (this.missionTargetUrl && !currentUrl.includes(this.missionTargetUrl));
+
+        if (isTrap) {
+            console.log(`[HubServer] 🛡️ Environment Trap Detected. Signaling Site Recovery Protocol...`);
+
+            const recoveryMsg = JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'starlight.pre_check',
+                params: {
+                    goal: 'site_recovery',
+                    url: currentUrl,
+                    targetUrl: this.missionTargetUrl,
+                    localeInvariants: this.missionLocaleInvariants,
+                    a11y_snapshot: a11ySnapshot,
+                    blocking
+                },
+                id: `recovery-${msg.id}`
+            });
+
+            await new Promise((resolve) => {
+                const timeout = setTimeout(() => {
+                    console.log(`[HubServer] Recovery Consensus Timeout. Continuing...`);
+                    resolve();
+                }, 20000); // 20s deadline for recovery (v4.2 Stability)
+
+                this.consensusState.set(`recovery-${msg.id}`, {
+                    required: this.sentinels.size,
+                    clearedBy: new Set(),
+                    hijacked: false,
+                    resolve: () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                });
+
+                for (const sentinel of this.sentinels.values()) {
+                    sentinel.ws.send(recoveryMsg);
+                }
+            });
+
+            this.consensusState.delete(`recovery-${msg.id}`);
+        } else {
+            console.log(`[HubServer] Post-navigation environment stable.`);
+        }
     }
 
     async shutdown() {
@@ -429,14 +676,58 @@ class HubServer {
 
         // 1. Generate Final Report (Truthful Mission Forensics)
         console.log(`[HubServer] Generating mission forensics...`);
+
+        // Record Mission Telemetry
+        const commands = this.reportData.filter(i => i.type === 'COMMAND');
+        const missionSuccess = this.reportData.every(item => item.type !== 'FAILURE' && (item.type !== 'COMMAND' || item.success));
+
+        // Calculate session-specific MTTR
+        const sessionMTTR = this.recoveryTimes.length > 0
+            ? this.recoveryTimes.reduce((a, b) => a + b, 0) / this.recoveryTimes.length
+            : 0;
+
+        this.telemetry.recordMission(
+            missionSuccess,
+            this.totalSavedTime,
+            this.reportData.filter(i => i.type === 'HIJACK').length,
+            this.recoveryTimes
+        );
+
+        // Calculate session-specific vitals for the report (CRITICAL: SESSION-FIRST)
+        const sessionStats = {
+            successRate: commands.length > 0
+                ? Math.round((commands.filter(c => c.success).length / commands.length) * 100)
+                : 100,
+            totalSavedMins: Math.round(this.totalSavedTime / 60),
+            avgRecoveryTimeMs: Math.round(sessionMTTR)
+        };
+
         const reportPayload = {
+            stats: sessionStats,
             commands: this.reportData,
-            sentinels: this.sentinelHistory,
-            context: { ...this.missionContext, securityEvents: this.securityEvents }
+            sentinels: Array.from(this.sentinels.values()).map(s => {
+                const { ws, ...rest } = s;
+                return rest;
+            }),
+            totalInterventions: this.reportData.filter(i => i.type === 'HIJACK').length,
+            missionExecutionDate: new Date(this.missionStartTime).toLocaleString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+            }),
+            context: {
+                ...this.missionContext,
+                securityEvents: this.securityEvents
+            }
         };
         const reportPath = path.join(process.cwd(), 'report.html');
         ReportGenerator.generate(reportPayload, reportPath);
-        console.log(`[HubServer] ✓ Report successfully generated at: ${reportPath}`);
+        console.log(`[HubServer] ✓ Report successfully generated at: ${reportPath} `);
 
         // 2. Graceful Resource Cleanup
         if (this.browserAdapter) {
@@ -451,7 +742,7 @@ class HubServer {
         this.wss.close();
         this.server.close();
 
-        console.log(`[HubServer] Shutdown complete. Exit code 0.`);
+        console.log(`[HubServer] Shutdown complete.Exit code 0.`);
         process.exit(0);
     }
 
@@ -466,7 +757,7 @@ class HubServer {
                 result: { success }
             }));
         } catch (e) {
-            console.error(`[HubServer] Direct Command Error:`, e.stack || e.message);
+            console.error(`[HubServer] Direct Command Error: `, e.stack || e.message);
             ws.send(JSON.stringify({
                 jsonrpc: '2.0',
                 id: msg.id,
@@ -479,7 +770,9 @@ class HubServer {
 
     async _executeRawCommand(msg) {
         const { method, params } = msg;
-        const cmd = (method === 'starlight.intent') ? params.cmd : method.split('.')[1];
+        // Normalize: protocol schema uses 'action' but internal logic uses 'cmd'
+        const rawCmd = params.action || params.cmd;
+        const cmd = (method === 'starlight.intent') ? params.cmd : (rawCmd || method.split('.')[1]);
         const goal = params.goal || cmd;
 
         if (!this.page) return false;
@@ -490,14 +783,20 @@ class HubServer {
         try {
             switch (cmd) {
                 case 'goto':
-                    console.log(`[HubServer] Navigating to: ${params.url}`);
+                    console.log(`[HubServer] Navigating to: ${params.url} `);
                     const response = await this.page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+                    // v4.2 Navigation Integrity: Enforce Post-Navigation Consensus
+                    if (response && response.status() < 400) {
+                        await this._performNavigationConsensus(msg);
+                    }
+
                     return response && response.status() < 400;
 
                 case 'click':
                     for (const selector of selectors) {
                         try {
-                            console.log(`[HubServer] Attempting click on tier: ${selector}`);
+                            console.log(`[HubServer] Attempting click on tier: ${selector} `);
                             const el = await this.page.waitForSelector(selector, { timeout: 5000, state: 'attached' });
 
                             // v4.1.5: Dynamic Exposure - Hover to reveal hidden controls (Crucial for YouTube Shorts)
@@ -516,13 +815,13 @@ class HubServer {
                                 const norm = (u) => String(u || '').replace(/\/$/, '');
                                 const finalUrl = await this.page.url();
                                 const finalContent = await this.page.evaluate(() => document.body.innerText.length);
-                                const hasInventory = await this.page.evaluate(() => !!document.querySelector('.inventory_list, #inventory_container, #checkout_summary_container, .checkout_complete_container')).catch(() => false);
+                                const hasInventory = false; // Phase 18: Purged site-specific leakage
                                 return { hasInventory, urlChanged: norm(finalUrl) !== norm(initialUrl), contentChanged: Math.abs(finalContent - initialContent) > 20 };
                             };
 
                             let state = await checkState();
                             if (isSubmission && !state.hasInventory && !state.urlChanged && !state.contentChanged) {
-                                console.log(`[HubServer] Interaction on tier "${selector}" ineffective. Initiating robust fallback sequence...`);
+                                console.log(`[HubServer] Interaction on tier "${selector}" ineffective.Initiating robust fallback sequence...`);
 
                                 // 1. Stabilization + Retry Click
                                 await this.page.waitForTimeout(1000);
@@ -530,13 +829,13 @@ class HubServer {
 
                                 state = await checkState();
                                 if (!state.hasInventory && !state.urlChanged) {
-                                    console.log(`[HubServer] Retried click failed on tier "${selector}". Attempting Keyboard Enter fallback...`);
+                                    console.log(`[HubServer] Retried click failed on tier "${selector}".Attempting Keyboard Enter fallback...`);
                                     await el.press('Enter').catch(() => { });
                                     await this.page.waitForTimeout(2000);
 
                                     state = await checkState();
                                     if (!state.hasInventory && !state.urlChanged) {
-                                        console.log(`[HubServer] Keyboard fallback failed. Attempting final dispatchEvent...`);
+                                        console.log(`[HubServer] Keyboard fallback failed.Attempting final dispatchEvent...`);
                                         await el.dispatchEvent('click').catch(() => { });
                                         await this.page.waitForTimeout(2000);
                                         state = await checkState();
@@ -545,19 +844,19 @@ class HubServer {
                             }
 
                             if (state.hasInventory || state.urlChanged || state.contentChanged || !isSubmission) {
-                                console.log(`[HubServer] ✅ Click success on tier: ${selector}`);
+                                console.log(`[HubServer] ✅ Click success on tier: ${selector} `);
                                 return true;
                             }
                         } catch (e) {
                             const isTimeout = e.message.includes('timeout') || e.message.includes('Timeout');
                             const isNotVisible = e.message.includes('not visible') || e.message.includes('hidden');
 
-                            console.warn(`[HubServer] Tier ${isTimeout ? 'TIMED OUT' : 'FAILED'}: ${selector} - ${e.message}`);
+                            console.warn(`[HubServer] Tier ${isTimeout ? 'TIMED OUT' : 'FAILED'}: ${selector} - ${e.message} `);
 
                             // v4.1.8: Parent Surface Fallback - Handle occluded overlays
                             if (isNotVisible) {
                                 try {
-                                    console.log(`[HubServer] Element occluded. Attempting parent surface interaction...`);
+                                    console.log(`[HubServer] Element occluded.Attempting parent surface interaction...`);
                                     await this.page.evaluate((sel) => {
                                         const el = document.querySelector(sel);
                                         if (el && el.parentElement) el.parentElement.click();
@@ -579,7 +878,7 @@ class HubServer {
 
                     for (const selector of selectors) {
                         try {
-                            console.log(`[HubServer] Attempting fill on tier: ${selector}`);
+                            console.log(`[HubServer] Attempting fill on tier: ${selector} `);
                             const fillEl = await this.page.waitForSelector(selector, { timeout: 5000, state: 'visible' });
                             await fillEl.fill(valToFill, { timeout: 10000 });
 
@@ -591,7 +890,7 @@ class HubServer {
                                 await this.page.waitForTimeout(200);
                             }
                         } catch (e) {
-                            console.warn(`[HubServer] Fill tier failed: ${selector}`);
+                            console.warn(`[HubServer] Fill tier failed: ${selector} `);
                             continue;
                         }
                     }
@@ -603,12 +902,12 @@ class HubServer {
 
                     for (const selector of selectors) {
                         try {
-                            console.log(`[HubServer] Attempting press on tier: ${selector}`);
+                            console.log(`[HubServer] Attempting press on tier: ${selector} `);
                             await this.page.waitForSelector(selector, { timeout: 5000, state: 'visible' });
                             await this.page.press(selector, key, { timeout: 10000 });
                             return true;
                         } catch (e) {
-                            console.warn(`[HubServer] Press tier failed: ${selector}`);
+                            console.warn(`[HubServer] Press tier failed: ${selector} `);
                             continue;
                         }
                     }
@@ -617,26 +916,26 @@ class HubServer {
                 default:
                     // Protocol Fallback: Generic Page Methods (Sovereign Engine v4.0)
                     if (this.page[cmd] && typeof this.page[cmd] === 'function') {
-                        console.log(`[HubServer] Routing to generic page method: ${cmd}`);
+                        console.log(`[HubServer] Routing to generic page method: ${cmd} `);
                         const selector = selectors[0];
                         if (selector) {
                             await this.page[cmd](selector, params).catch(e => {
-                                console.warn(`[HubServer] Generic command "${cmd}" failed on selector: ${e.message}`);
+                                console.warn(`[HubServer] Generic command "${cmd}" failed on selector: ${e.message} `);
                                 throw e;
                             });
                         } else {
                             await this.page[cmd](params).catch(e => {
-                                console.warn(`[HubServer] Generic command "${cmd}" failed: ${e.message}`);
+                                console.warn(`[HubServer] Generic command "${cmd}" failed: ${e.message} `);
                                 throw e;
                             });
                         }
                         return true;
                     }
-                    console.warn(`[HubServer] Unhandled command: ${cmd}`);
+                    console.warn(`[HubServer] Unhandled command: ${cmd} `);
                     return false;
             }
         } catch (e) {
-            console.error(`[HubServer] Execution Error (${cmd}):`, e.stack || e.message);
+            console.error(`[HubServer] Execution Error(${cmd}): `, e.stack || e.message);
             this.auditLogger.log('exec_fail', { cmd, error: e.message }, 'error');
             throw e;
         }

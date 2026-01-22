@@ -199,6 +199,7 @@ class SentinelBase(ABC):
                     "params": {
                         "layer": self.layer,
                         "entropy": getattr(self, 'entropy', 0.0),
+                        "health": await self.verify_health(),
                         "timestamp": datetime.now().isoformat()
                     },
                     "id": "pulse-" + str(int(time.time()))
@@ -266,9 +267,9 @@ class SentinelBase(ABC):
     async def send_resume(self, re_check=True, msg_id=None):
         await self._send_msg("starlight.resume", {"re_check": re_check}, msg_id=msg_id)
 
-    async def send_action(self, cmd, selector, text=None, value=None, key=None, msg_id=None):
+    async def send_action(self, action, selector, text=None, value=None, key=None, msg_id=None):
         """Execute a healing action via the Hub."""
-        params = {"cmd": cmd, "selector": selector}
+        params = {"action": action, "selector": selector}
         if text: params["text"] = text
         if value: params["value"] = value
         if key: params["key"] = key
@@ -306,18 +307,18 @@ class SentinelBase(ABC):
     
     async def send_press(self, key, msg_id=None):
         """Press a keyboard key."""
-        params = {"cmd": "press", "key": key}
+        params = {"action": "press", "key": key}
         await self._send_msg("starlight.action", params, msg_id=msg_id)
     
     async def send_type(self, text, msg_id=None):
         """Type text using keyboard."""
-        params = {"cmd": "type", "text": text}
+        params = {"action": "type", "text": text}
         await self._send_msg("starlight.action", params, msg_id=msg_id)
     
     async def send_upload(self, selector, files, msg_id=None):
         """Upload file(s) to file input. Files can be single path or list of paths."""
         params = {
-            "cmd": "upload",
+            "action": "upload",
             "selector": selector,
             "files": files
         }
@@ -378,6 +379,10 @@ class SentinelBase(ABC):
         }
 
     # --- Lifecycle Hooks (Override These) ---
+
+    async def verify_health(self):
+        """Phase 8: Proactive dependency check. Override in subclasses."""
+        return "online"
 
     @abstractmethod
     async def on_pre_check(self, params, msg_id):

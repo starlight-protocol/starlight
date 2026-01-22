@@ -1,416 +1,355 @@
 /**
- * ReportGenerator - High-Fidelity Analysis Layer (v4.0)
+ * ReportGenerator - World-Class Mission Forensics (v4.5)
  * ====================================================
  * 
- * Responsibilities:
- * 1. Professional Data Visualization: Dashboard with ROI and success metrics.
- * 2. Sentinel Trace: Visualizes the contribution of each Sentinel in the constellation.
- * 3. Accessibility Forensics: Renders WCAG 2.1 audit data and impact scores.
- * 4. Step-by-Step Trace: Linked screenshots with semantic resolution mappings.
+ * 1:1 RESTORATION OF LEGACY REPORT DESIGN FROM HUB_MAIN.JS
+ * ENHANCED WITH FULL FIDELITY TELEMETRY & SECURITY TRACE.
  */
 
 const fs = require('fs');
 const path = require('path');
 
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 class ReportGenerator {
-    /**
-     * @param {Object} data - Aggregate mission data: { commands: [], sentinels: [], context: {} }
-     * @param {string} outputPath - Path to save the report.html
-     */
     static generate(data, outputPath) {
         const { commands = [], sentinels = [], context = {} } = data;
 
+        const stats = data.stats || context.stats || { successRate: 0, totalSavedMins: 0, avgRecoveryTimeMs: 0 };
+        const securityEvents = context.securityEvents || [];
+        const a11yReport = context.accessibility || context.a11yReport || null;
+        const missionExecutionDate = data.missionExecutionDate || new Date().toLocaleString();
+
         const totalCmds = commands.length;
-        const successCount = commands.filter(c => c.success).length;
-        const allPassed = totalCmds > 0 && successCount === totalCmds;
-        const missionStatus = allPassed ? 'PASSED' : 'FAILED';
-        const successRate = totalCmds > 0 ? ((successCount / totalCmds) * 100).toFixed(1) : "0.0";
+        const failedCommands = commands.filter(c => c.type === 'FAILURE' || (c.type === 'COMMAND' && !c.success));
+        const hasFailure = failedCommands.length > 0;
 
-        // Latency Calculation (Robust ISO v4.0.22)
-        let totalLatency = 0;
-        if (commands.length > 1) {
-            try {
-                const start = new Date(commands[0].rawTimestamp || commands[0].timestamp).getTime();
-                const end = new Date(commands[commands.length - 1].rawTimestamp || commands[commands.length - 1].timestamp).getTime();
-                if (!isNaN(start) && !isNaN(end)) {
-                    totalLatency = Math.max(0, (end - start) / 1000);
-                }
-            } catch (e) {
-                totalLatency = 0.5;
-            }
-        } else if (commands.length === 1) {
-            totalLatency = 0.5;
-        }
+        const statusText = !hasFailure ? 'MISSION SUCCESS' : 'MISSION COMPROMISED';
+        const statusEmoji = !hasFailure ? '🏆' : '⚠️';
+        const statusColor = !hasFailure ? '#10B981' : '#f43f5e';
 
-        // A11y Metrics (Truthful Reporting v4.0.25)
-        const a11y = context.accessibility || null;
-        const a11yScore = a11y ? (a11y.score * 100).toFixed(0) : "N/A";
+        const totalInterventions = commands.filter(c => c.type === 'HIJACK').length;
 
-        // ROI Calculation (Legacy Starlight v4.0)
-        // Formula: 5 mins triage baseline + actual intervention duration per obstacle
-        let totalInterventionTime = 0;
-        sentinels.forEach(s => {
-            if (s.interventionTime) totalInterventionTime += s.interventionTime;
-        });
-
-        const minutesSaved = allPassed ? (5 + totalInterventionTime) : 0;
-        const roi = minutesSaved.toFixed(1);
-
-        const html = `
-<!DOCTYPE html>
+        const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Starlight Protocol v4.0 | Mission Forensics</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <title>Starlight Protocol | Hero Story Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0a0a0a;
-            --card-bg: #111111;
-            --accent: #00ff88;
-            --success: #00ff88;
-            --fail: #ff4444;
-            --warning: #fab005;
-            --text-main: #ffffff;
-            --text-dim: #999999;
-            --glass: rgba(0, 255, 136, 0.03);
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #111111;
+            --bg-card: #161616;
+            --accent: #10B981;
+            --accent-red: #f43f5e;
+            --accent-blue: #3b82f6;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --border: #222222;
         }
 
+        * { box-sizing: border-box; }
         body { 
             font-family: 'Inter', sans-serif; 
-            background: var(--bg); 
-            color: var(--text-main); 
+            background: var(--bg-primary); 
+            color: var(--text-primary); 
             margin: 0; 
-            padding: 2rem; 
-            line-height: 1.5;
+            padding: 4rem;
+            max-width: 1400px;
+            margin: auto; 
+            line-height: 1.6;
         }
 
-        .container { max-width: 1200px; margin: 0 auto; }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid #334155;
-        }
-
-        .header h1 { margin: 0; font-size: 1.8rem; letter-spacing: -0.025em; font-weight: 700; color: var(--accent); }
-        .header .version { color: var(--text-dim); font-size: 0.875rem; font-weight: 400; }
-
-        .mission-badge {
-            display: inline-block;
-            padding: 0.5rem 1.5rem;
-            border-radius: 9999px;
-            font-weight: 800;
-            font-size: 1.25rem;
-            letter-spacing: 0.05em;
-            margin-bottom: 2rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-        .mission-passed { background: #064e3b; color: var(--success); border: 1px solid var(--success); }
-        .mission-failed { background: #450a0a; color: var(--fail); border: 1px solid var(--fail); }
-
-        /* DASHBOARD SECTION */
-        .dashboard {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 3rem;
-        }
-
-        .stat-card {
-            background: var(--card-bg);
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            border: 1px solid #00ff8822;
-            box-shadow: 0 4px 20px rgba(0, 255, 136, 0.05);
+        .hero-header { 
+            text-align: center; 
+            padding: 6rem 2rem; 
+            background: var(--bg-secondary); 
+            border-radius: 30px; 
+            margin-bottom: 4rem; 
+            border: 2px solid ${statusColor}; 
             position: relative;
-            transition: transform 0.2s ease;
-        }
-        .stat-card:hover { transform: translateY(-2px); }
-
-        .stat-card::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; width: 4px; height: 100%;
-            background: var(--accent);
-        }
-        .stat-card.failed::after { background: var(--fail); }
-        .stat-card.success::after { background: var(--success); }
-        .stat-card.warning::after { background: var(--warning); }
-
-        .stat-card.success-card::after { background: var(--success); }
-        .stat-card.fail-card::after { background: var(--fail); }
-        .stat-card.warning-card::after { background: var(--warning); }
-
-        .stat-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 0.5rem; }
-        .stat-value { font-size: 2rem; font-weight: 700; display: flex; align-items: baseline; gap: 0.25rem; }
-        .stat-unit { font-size: 0.875rem; font-weight: 400; color: var(--text-dim); }
-
-        /* SENTINEL SECTION */
-        .section-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
-        .section-title::before { content: ''; width: 4px; height: 1.25rem; background: var(--accent); border-radius: 2px; }
-
-        .sentinel-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 1rem;
-            margin-bottom: 3rem;
-        }
-
-        .sentinel-card {
-            background: #1e293b80;
-            border: 1px dashed #334155;
-            border-radius: 0.75rem;
-            padding: 1rem;
-            text-align: center;
-        }
-
-        .sentinel-icon { font-size: 1.5rem; margin-bottom: 0.5rem; display: block; }
-        .sentinel-name { font-size: 0.875rem; font-weight: 600; }
-        .sentinel-status { font-size: 0.75rem; margin-top: 0.25rem; }
-        .status-online { color: var(--success); font-weight: 600; }
-        .status-offline { color: var(--fail); font-weight: 600; }
-        .status-degraded { color: var(--warning); font-weight: 600; }
-        .status-idle { color: var(--text-dim); font-weight: 400; }
-
-        /* ACCESSIBILITY SECTION */
-        .a11y-panel {
-            background: #1e293b;
-            border-radius: 1rem;
-            padding: 2rem;
-            margin-bottom: 3rem;
-            display: flex;
-            gap: 2rem;
-            align-items: center;
-        }
-
-        .a11y-score-circle {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            border: 8px solid #334155;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            position: relative;
-        }
-
-        .a11y-score-circle .val { font-size: 1.8rem; font-weight: 700; color: ${parseInt(a11yScore) > 80 ? 'var(--success)' : (parseInt(a11yScore) > 50 ? 'var(--warning)' : 'var(--fail)')}; }
-        .a11y-score-circle .lbl { font-size: 0.6rem; color: var(--text-dim); }
-
-        .a11y-details { flex: 1; }
-        .vulnerability-list { margin-top: 1rem; list-style: none; padding: 0; }
-        .vulnerability-item { 
-            background: #0f172a; 
-            padding: 0.5rem 1rem; 
-            border-radius: 0.5rem; 
-            margin-bottom: 0.5rem;
-            font-size: 0.875rem;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        /* COMMAND TRACE SECTION */
-        .trace { display: flex; flex-direction: column; gap: 1.5rem; }
-        .trace-node {
-            background: var(--card-bg);
-            border-radius: 1rem;
-            border: 1px solid #334155;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
             overflow: hidden;
         }
 
-        .trace-header {
-            padding: 1rem 1.5rem;
-            background: #33415540;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .hero-header::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle at 50% 50%, ${statusColor}1A, transparent 70%);
+            pointer-events: none;
         }
 
-        .trace-title { display: flex; align-items: center; gap: 0.75rem; font-weight: 600; }
-        .trace-id { color: var(--text-dim); font-size: 0.75rem; font-family: monospace; border: 1px solid #475569; padding: 0.1rem 0.4rem; border-radius: 4px; }
+        .hero-header h1 { font-size: 3.5rem; font-weight: 800; margin-bottom: 1rem; letter-spacing: -0.04em; }
+        .hero-header p { color: var(--text-secondary); font-size: 1.3rem; }
 
-        .badge {
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 0.2rem 0.6rem;
-            border-radius: 4px;
-            text-transform: uppercase;
+        /* Vitals Dashboard */
+        .vitals-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 2rem;
+            margin-bottom: 4rem;
         }
-        .badge-success { background: #064e3b; color: var(--success); }
-        .badge-fail { background: #450a0a; color: var(--fail); }
+        .vital-card {
+            background: var(--bg-card);
+            border-radius: 24px;
+            padding: 2.5rem;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+        .vital-label { color: var(--text-secondary); text-transform: uppercase; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; margin-bottom: 1rem; }
+        .vital-value { font-size: 3rem; font-weight: 800; color: var(--accent); }
+        .vital-unit { font-size: 1rem; color: var(--text-secondary); margin-left: 0.5rem; }
 
-        .trace-body { padding: 1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
-        .visual-box { }
-        .visual-label { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.5rem; font-weight: 600; text-transform: uppercase; }
-        .visual-img { width: 100%; border-radius: 0.5rem; border: 1px solid #334155; aspect-ratio: 4/3; object-fit: cover; background: #0f172a; }
+        .card { 
+            background: var(--bg-card); 
+            border-radius: 20px; 
+            padding: 3rem; 
+            margin-bottom: 3rem; 
+            border: 1px solid var(--border); 
+            position: relative; 
+            transition: all 0.3s ease;
+        }
+        .card:hover { border-color: var(--accent); transform: translateY(-5px); }
 
-        .mapping-info { grid-column: span 2; padding-top: 1rem; border-top: 1px dashed #334155; font-size: 0.875rem; display: flex; gap: 2rem; }
-        .mapping-item { display: flex; flex-direction: column; }
-        .mapping-label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; }
-        .mapping-value { color: var(--accent); font-family: monospace; }
+        .hijack { border-left: 10px solid var(--accent-red); background: linear-gradient(90deg, #f43f5e05, transparent); }
+        .command { border-left: 10px solid var(--accent); }
+        .failure { border-left: 10px solid var(--accent-red); background: #f43f5e0a; }
 
-        .vulnerability-list { list-style: none; padding: 0; margin-top: 1rem; border-top: 1px dashed #334155; padding-top: 1rem; }
-        .vulnerability-item { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.5rem; color: var(--text-dim); }
-        .vulnerability-item span strong { color: var(--text-main); }
+        .tag { 
+            position: absolute; 
+            top: 2rem; 
+            right: 2rem; 
+            padding: 0.6rem 1.4rem; 
+            border-radius: 30px; 
+            font-size: 0.8rem; 
+            font-weight: 800; 
+            text-transform: uppercase; 
+            letter-spacing: 0.1em;
+        }
+        .tag-hijack { background: var(--accent-red); color: white; }
+        .tag-command { background: var(--accent); color: var(--bg-primary); }
+
+        img { 
+            width: 100%; 
+            border-radius: 16px; 
+            margin-top: 2rem; 
+            border: 1px solid var(--border); 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            transition: transform 0.4s ease;
+        }
+        img:hover { transform: scale(1.02); }
+
+        .flex { display: flex; gap: 3rem; margin-top: 2.5rem; }
+        .flex > div { flex: 1; }
+
+        .meta { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 0.8rem; font-family: 'JetBrains Mono', monospace; }
+        .card-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 1rem; }
         
-        @media (max-width: 768px) {
-            .trace-body { grid-template-columns: 1fr; }
-            .a11y-panel { flex-direction: column; text-align: center; }
+        .badge { padding: 0.4rem 1.2rem; border-radius: 30px; font-size: 0.8rem; font-weight: 800; text-transform: uppercase; }
+        .badge-success { background: var(--accent); color: var(--bg-primary); }
+        .badge-danger { background: var(--accent-red); color: white; }
+        .badge-warning { background: #f59e0b; color: #0a0a0a; }
+
+        /* Security & A11y Layers */
+        .grid-layer { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; margin-top: 6rem; }
+        .layer-box { 
+            background: var(--bg-secondary); 
+            border-radius: 30px; 
+            padding: 3.5rem; 
+            border: 1px solid var(--border); 
         }
+
+        .sec-event { 
+            padding: 1.5rem; 
+            background: rgba(244, 63, 94, 0.05); 
+            border-radius: 12px; 
+            border-left: 3px solid var(--accent-red); 
+            margin-bottom: 1rem;
+        }
+
+        .sentinel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 2rem; }
+        .sentinel-pill { 
+            padding: 1.5rem; 
+            background: var(--bg-card); 
+            border-radius: 16px; 
+            border: 1px solid var(--border); 
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+        h2 { font-size: 2.5rem; font-weight: 800; margin-bottom: 2rem; letter-spacing: -0.03em; }
+        code { background: rgba(255,255,255,0.08); padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.95em; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Mission Control Forensics</h1>
-            <div class="version">Starlight Protocol v4.0.21 [Modular Mode]</div>
+    <div class="hero-header">
+        <div class="meta" style="color: var(--accent); margin-bottom: 1rem; font-weight: 800;">MISSION TIMESTAMP: ${escapeHtml(missionExecutionDate)}</div>
+        <h1>${statusEmoji} Starlight Protocol: ${statusText}</h1>
+        <p>Zero-Defect Autonomous Mission Forensics</p>
+    </div>
+
+    <!-- Vital Dashboard -->
+    <div class="vitals-grid">
+        <div class="vital-card">
+            <div class="vital-label">Success Rate</div>
+            <div class="vital-value">${stats.successRate}%</div>
+        </div>
+        <div class="vital-card">
+            <div class="vital-label">Saved Effort</div>
+            <div class="vital-value">${stats.totalSavedMins}<span class="unit">min</span></div>
+        </div>
+        <div class="vital-card">
+            <div class="vital-label">Sovereign MTTR</div>
+            <div class="vital-value">${Math.round(stats.avgRecoveryTimeMs)}<span class="unit">ms</span></div>
+        </div>
+        <div class="vital-card">
+            <div class="vital-label">Interventions</div>
+            <div class="vital-value">${totalInterventions}</div>
+        </div>
+    </div>
+
+    <div id="timeline">
+        ${commands.map(item => {
+            if (item.type === 'HIJACK') {
+                return `
+                    <div class="card hijack">
+                        <span class="tag tag-hijack">Sentinel Intervention</span>
+                        <div class="meta">${escapeHtml(item.timestamp)}</div>
+                        <div class="card-title">Sovereign Correction: ${escapeHtml(item.sentinel)}</div>
+                        <p style="font-size: 1.2rem;"><strong>Remediation:</strong> ${escapeHtml(item.reason)}</p>
+                        <img src="screenshots/${escapeHtml(item.screenshot)}" alt="Obstacle Detected" />
+                    </div>
+                `;
+            } else if (item.type === 'FAILURE') {
+                return `
+                    <div class="card failure">
+                        <span class="tag tag-hijack">Critical Termination</span>
+                        <div class="meta">${escapeHtml(item.timestamp)}</div>
+                        <div class="card-title" style="color: var(--accent-red);">Mission Halted</div>
+                        <p style="font-size: 1.4rem; font-weight: 700;">${escapeHtml(item.reason)}</p>
+                    </div>
+                `;
+            } else {
+                const status = item.success ? 'SUCCESS' : 'FAILED';
+                const badgeClass = item.success ? 'badge-success' : 'badge-danger';
+
+                return `
+                    <div class="card command">
+                        <span class="tag tag-command">Intent</span>
+                        <div class="meta">${escapeHtml(item.timestamp)} | ID: ${escapeHtml(item.id)}</div>
+                        <div class="card-title">
+                            <span>${escapeHtml(item.cmd).toUpperCase()}${item.goal ? ': ' + escapeHtml(item.goal) : ''}</span>
+                            <span class="badge ${badgeClass}">${status}</span>
+                        </div>
+                        <p>Resolved Selector: <code>${escapeHtml(item.selector) || 'N/A'}</code></p>
+                        <div class="flex">
+                            <div>
+                                <div class="meta">Before State</div>
+                                <img src="screenshots/${escapeHtml(item.beforeScreenshot || 'none.png')}" alt="Before State" onerror="this.src='https://placehold.co/400x300?text=No+Data'">
+                            </div>
+                            <div>
+                                <div class="meta">After State</div>
+                                <img src="screenshots/${escapeHtml(item.afterScreenshot || 'none.png')}" alt="After State" onerror="this.src='https://placehold.co/400x300?text=No+Data'">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }).join('')}
+    </div>
+
+    <div class="grid-layer">
+        <!-- Security Trace -->
+        <div class="layer-box">
+            <h2>🛡️ Security Audit</h2>
+            <div class="meta" style="margin-bottom: 2rem;">SOC 2 Forensic Trace - Intercepted Protocol Violations</div>
+            ${securityEvents.length > 0 ? securityEvents.map(e => `
+                <div class="sec-event">
+                    <div style="font-weight: 800; color: var(--accent-red); margin-bottom: 0.3rem;">VIOLATION DETECTED</div>
+                    <div class="meta">${escapeHtml(e.timestamp)} | Client ID: ${escapeHtml(e.clientId)}</div>
+                    <div>${escapeHtml(e.error)}</div>
+                </div>
+            `).join('') : '<p style="color: var(--accent); font-weight: 700;">✓ No Security Violations Detected during mission.</p>'}
         </div>
 
-        <div style="text-align: center;">
-            <div class="mission-badge ${allPassed ? 'mission-passed' : 'mission-failed'}">
-                MISSION OVERALL STATUS: ${missionStatus}
-            </div>
+        <!-- A11y Audit -->
+        <div class="layer-box">
+            <h2>♿ Accessibility Audit</h2>
+            ${a11yReport ? `
+                <div style="display: flex; align-items: center; gap: 2rem; margin-bottom: 3rem;">
+                    <div style="width: 120px; height: 120px; border-radius: 50%; border: 8px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: 2.2rem; font-weight: 900; color: var(--accent);">
+                        ${Math.round((a11yReport.score || 0) * 100)}%
+                    </div>
+                    <div>
+                        <div style="font-size: 1.5rem; font-weight: 800;">${a11yReport.level || 'WCAG Compliance'}</div>
+                        <div style="color: var(--text-secondary);">${a11yReport.violations?.length || 0} Critical Violations Found</div>
+                    </div>
+                </div>
+                
+                <div style="max-height: 400px; overflow-y: auto; padding-right: 1rem;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                        <thead>
+                            <tr style="text-align: left; border-bottom: 2px solid var(--border);">
+                                <th style="padding: 1rem 0.5rem; color: var(--text-secondary);">Rule</th>
+                                <th style="padding: 1rem 0.5rem; color: var(--text-secondary);">Impact</th>
+                                <th style="padding: 1rem 0.5rem; color: var(--text-secondary);">Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${(a11yReport.violations || []).map(v => `
+                                <tr style="border-bottom: 1px solid var(--border);">
+                                    <td style="padding: 1rem 0.5rem; font-weight: 700; color: var(--accent);">${escapeHtml(v.rule || v.id)}</td>
+                                    <td style="padding: 1rem 0.5rem;"><span class="badge ${v.impact === 'critical' || v.impact === 'serious' ? 'badge-danger' : 'badge-warning'}">${escapeHtml(v.impact)}</span></td>
+                                    <td style="padding: 1rem 0.5rem; color: var(--text-secondary);">${escapeHtml(v.description || v.message)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            ` : '<p class="meta">No Accessibility Data available for this mission profile.</p>'}
         </div>
+    </div>
 
-        <!-- DASHBOARD -->
-        <div class="dashboard">
-            <div class="stat-card ${allPassed ? 'success' : 'failed'}">
-                <div class="stat-label">Success Rate</div>
-                <div class="stat-value">${successRate}<span class="stat-unit">%</span></div>
-            </div>
-            <div class="stat-card ${allPassed ? 'success' : 'failed'}">
-                <div class="stat-label">Automation Efficiency</div>
-                <div class="stat-value">~${roi}<span class="stat-unit">Minutes Saved</span></div>
-            </div>
-            <div class="stat-card ${a11y ? 'warning' : ''}">
-                <div class="stat-label">A11y Score</div>
-                <div class="stat-value">${a11yScore}<span class="stat-unit">WCAG</span></div>
-            </div>
-            <div class="stat-card" style="border-color: ${context.securityEvents?.length > 0 ? 'var(--fail)' : 'var(--success)'}">
-                <div class="stat-label">Security Alerts</div>
-                <div class="stat-value">${context.securityEvents?.length || 0}<span class="stat-unit">${context.securityEvents?.length === 1 ? 'Event' : 'Events'}</span></div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-label">Total Latency</div>
-                <div class="stat-value">${totalLatency.toFixed(1)}<span class="stat-unit">s</span></div>
-            </div>
-        </div>
-
-        <!-- SENTINEL CONSTELLATION -->
-        <div class="section-title">Sentinel Constellation Status</div>
+    <!-- Sentinel Health -->
+    <div style="margin-top: 6rem;">
+        <h2>🔍 Sentinel Fleet Status</h2>
         <div class="sentinel-grid">
             ${sentinels.map(s => {
-            const healthKey = s.layer.toLowerCase().replace('sentinel', '') + '_health';
-            const statusKey = s.layer.toLowerCase().replace('sentinel', '') + '_status';
-            const health = context[healthKey] || context[statusKey] || 'idle';
-            const isOffline = health.toLowerCase().includes('offline') || health.toLowerCase().includes('failed');
-            const isDegraded = health.toLowerCase().includes('degraded') || health.toLowerCase().includes('timeout');
-            const isIdle = health.toLowerCase() === 'idle';
-
+            const health = s.health || 'online';
+            const dotColor = health === 'online' ? 'var(--accent)' : (health === 'offline' ? 'var(--accent-red)' : '#f59e0b');
             return `
-                <div class="sentinel-card">
-                    <span class="sentinel-icon">${s.layer.includes('Pulse') ? '💓' : (s.layer.includes('Vision') ? '👁️' : (s.layer.includes('A11y') ? '♿' : (s.layer.includes('Janitor') ? '🧹' : '🚀')))}</span>
-                    <div class="sentinel-name">${s.layer}</div>
-                    <div class="sentinel-status ${isOffline ? 'status-offline' : (isDegraded ? 'status-degraded' : (isIdle ? 'status-idle' : 'status-online'))}">
-                        ${health.toUpperCase()} [${(s.capabilities || []).join(', ')}]
+                <div class="sentinel-pill">
+                    <div class="status-dot" style="background: ${dotColor}; box-shadow: 0 0 10px ${dotColor};"></div>
+                    <div>
+                        <div style="font-weight: 800;">${escapeHtml(s.layer)} <span class="meta" style="font-size: 0.7rem; margin-left: 0.5rem; text-transform: uppercase;">(${escapeHtml(health)})</span></div>
+                        <div class="meta" style="margin: 0;">Priority: ${s.priority} | ID: ${escapeHtml(s.id)}</div>
                     </div>
                 </div>
                 `;
         }).join('')}
-            ${sentinels.length === 0 ? '<div class="sentinel-card" style="grid-column: span 3">No Sentinels registered during this mission.</div>' : ''}
-        </div>
-
-        <!-- ACCESSIBILITY AUDIT -->
-        <div class="section-title">Accessibility Compliance [WCAG 2.1 AA]</div>
-        <div class="a11y-panel">
-            <div class="a11y-score-circle">
-                <span class="val">${a11yScore}</span>
-                <span class="lbl">Compliance</span>
-            </div>
-            <div class="a11y-details">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">Audit Findings: ${a11y.violations?.length || 0} Issues Detected</div>
-                <div style="font-size: 0.875rem; color: var(--text-dim)">
-                    Last audited at: ${a11y.timestamp || 'N/A'}<br>
-                    Context URL: ${a11y.url || 'N/A'}
-                </div>
-                <ul class="vulnerability-list">
-                    ${a11y ? (a11y.violations || []).map(v => `
-                        <li class="vulnerability-item">
-                            <span><strong>${v.rule}:</strong> ${v.message}</span>
-                            <span style="color: ${v.impact === 'critical' ? 'var(--fail)' : 'var(--warning)'}">${v.impact.toUpperCase()}</span>
-                        </li>
-                    `).join('') : '<li class="vulnerability-item" style="color: var(--text-dim)">No accessibility data available for this mission.</li>'}
-                    ${a11y && (a11y.violations || []).length === 0 ? '<li class="vulnerability-item">Perfect Compliance! No issues detected by A11ySentinel.</li>' : ''}
-                </ul>
-            </div>
-        </div>
-        
-        <!-- SECURITY FORENSICS -->
-        <div class="section-title">Security Governance & Protocol Integrity</div>
-        <div class="a11y-panel" style="border-left-color: var(--warning)">
-            <div class="a11y-details" style="padding-left: 0;">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">Zero-Trust Security Log: ${context.securityEvents?.length || 0} Alerts</div>
-                <ul class="vulnerability-list">
-                    ${(context.securityEvents || []).map(e => `
-                        <li class="vulnerability-item">
-                            <span><strong>${new Date(e.timestamp).toLocaleTimeString()}:</strong> Security rejection from client ${e.clientId}</span>
-                            <span style="color: var(--fail)">${e.error}</span>
-                        </li>
-                    `).join('')}
-                    ${(context.securityEvents || []).length === 0 ? '<li class="vulnerability-item" style="color: var(--success)">✓ 100% Protocol Integrity: No schema or injection violations detected.</li>' : ''}
-                </ul>
-            </div>
-        </div>
-
-        <!-- COMMAND TRACE -->
-        <div class="section-title">Mission Execution Trace</div>
-        <div class="trace">
-            ${commands.map((cmd, idx) => `
-                <div class="trace-node" id="step-${idx}">
-                    <div class="trace-header">
-                        <div class="trace-title">
-                            <span class="trace-id">#${idx + 1}</span>
-                            <span>${cmd.goal && cmd.goal !== 'unknown' ? cmd.goal : (cmd.cmd || 'Direct Command')}</span>
-                        </div>
-                        <span class="badge ${cmd.success ? 'badge-success' : 'badge-fail'}">${cmd.success ? 'Passed' : 'Failed'}</span>
-                    </div>
-                    <div class="trace-body">
-                        <div class="visual-box">
-                            <div class="visual-label">Pre-Command State</div>
-                            <img src="screenshots/${cmd.beforeScreenshot}" class="visual-img" onerror="this.src='https://placehold.co/800x600?text=No+Data'">
-                        </div>
-                        <div class="visual-box">
-                            <div class="visual-label">Post-Command State</div>
-                            <img src="screenshots/${cmd.afterScreenshot}" class="visual-img" onerror="this.src='https://placehold.co/800x600?text=No+Data'">
-                        </div>
-                        <div class="mapping-info">
-                            <div class="mapping-item">
-                                <span class="mapping-label">Resolved Selector</span>
-                                <span class="mapping-value">${cmd.selector || 'N/A'}</span>
-                            </div>
-                            <div class="mapping-item">
-                                <span class="mapping-label">Timestamp</span>
-                                <span class="mapping-value">${cmd.timestamp}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `).join('')}
         </div>
     </div>
 
-    <script>
-        console.log("Starlight Report v4.0 Initialized");
-    </script>
+    <div style="margin-top: 8rem; padding: 4rem; background: var(--bg-secondary); border-radius: 30px; border: 1px solid var(--border); text-align: center;">
+        <h2>🚀 Business Value</h2>
+        <p style="font-size: 1.4rem;">Starlight prevented <strong>${stats.totalSavedMins} minutes</strong> of manual triage effort by autonomously resolving environmental obstacles.</p>
+        <p class="meta">Efficiency Score: ${(stats.successRate * 0.8 + (totalInterventions * 2)).toFixed(1)}/100</p>
+    </div>
 </body>
-</html>
-        `;
+</html>`;
 
         fs.writeFileSync(outputPath, html, 'utf8');
     }
