@@ -20,6 +20,7 @@ import base64
 import logging
 import threading
 import queue
+import platform
 from enum import IntEnum
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -150,6 +151,23 @@ class StealthDriver:
         self.is_running = True
         self.state = "IDLE"  # IDLE, EXECUTING, ZOMBIE
         self.last_filled_selector = None  # Protocol: Track for press orchestration
+        self.headless = False
+        
+        # v4.2 Traceability: CDP Heartbeat thread
+        self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        self.heartbeat_thread.start()
+
+    def _heartbeat_loop(self):
+        """Monitors driver health and triggers recovery on CDP failure, yielding to active commands."""
+        while self.is_running:
+            time.sleep(30.0) # Passive check every 30s
+            # Only heartbeat if we are initialized and NOT busy with a command
+            # This prevents CDP contention during heavy operations like screenshots
+            if self.driver_initialized and self.state == "IDLE":
+                if not self.is_alive:
+                    logger.warning("HEARTBEAT: Driver connection lost. Triggering Autonomous Recovery.")
+                    self.recover()
+
         
     @property
     def is_alive(self) -> bool:
@@ -267,15 +285,37 @@ class StealthDriver:
             self.headless = headless
             user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             
-            # ATTEMPT 1: Optimistic Launch (WORKAROUND: Force uc=False for Chrome 144+)
+            # ATTEMPT 1: Optimistic Launch
             try:
-                logger.info(f"Initializing SeleniumBase (headless={headless})...")
-                # CRITICAL FIX: Chrome 144+ breaks with uc=True. Forcing Standard Mode.
-                self._sb_cm = SB(uc=False, headless2=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
+                logger.info(f"Initializing SeleniumBase (uc=True, headless={headless})...")
+                
+                # SB-STEALTH-WRAPPER inspired: Smart headless for Linux
+                is_linux = platform.system() == "Linux"
+                xvfb = False
+                if is_linux:
+                    logger.info("Linux/CI detected: using Xvfb with headed mode.")
+                    xvfb = True
+                    headless = False
+                
+                # New Headless (headless2) is often less stable in UC mode - using standard for robustness
+                self._sb_cm = SB(
+                    uc=True, 
+                    headless=headless,
+                    xvfb=xvfb,
+                    ad_block=True,
+                    agent=user_agent
+                )
                 self.sb = self._sb_cm.__enter__()
                 
                 # VERIFY CONNECTION: Fail fast if driver is dead
                 _ = self.sb.driver.current_url
+                
+                # v4.2: CDP Stabilization Buffer (Eliminates 10061 on handover)
+                logger.info("Waiting for CDP stabilization...")
+                time.sleep(2.0)
+                
+                # Fingerprint Poisoning (Canvas/Audio Noise) after stabilization
+                self._poison_fingerprint()
                 
                 self.driver_initialized = True
                 self.state = "IDLE"
@@ -292,8 +332,10 @@ class StealthDriver:
                     
                     try:
                         logger.info("Retrying Initialization after Sanitation...")
-                        self._sb_cm = SB(uc=True, headless2=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
+                        self._sb_cm = SB(uc=True, headless=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
                         self.sb = self._sb_cm.__enter__()
+                        time.sleep(2.0)
+                        self._poison_fingerprint()
                         self.driver_initialized = True
                         self.state = "IDLE"
                         logger.info("Self-Healing Successful: Driver Initialized.")
@@ -308,7 +350,7 @@ class StealthDriver:
                     self._sanitize_environment()
                     
                     try:
-                        self._sb_cm = SB(uc=False, headless2=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
+                        self._sb_cm = SB(uc=False, headless=headless, page_load_strategy="normal", ad_block=True, agent=user_agent)
                         self.sb = self._sb_cm.__enter__()
                         self.driver_initialized = True
                         self.state = "IDLE"
@@ -319,15 +361,94 @@ class StealthDriver:
                         self.state = "ZOMBIE"
                         return {"status": "error", "message": str(e)}
 
+    def _handle_challenges(self):
+        """Detect and solve Cloudflare/Turnstile challenges automatically."""
+        # Challenge indicators from sb-stealth-wrapper
+        indicators = ["challenge", "turnstile", "just a moment", "verify you are human", "ray id"]
+        
+        for attempt in range(3):
+            page_text = self.sb.get_page_source().lower()
+            if any(indicator in page_text for indicator in indicators):
+                logger.warning(f"Challenge detected (Attempt {attempt+1})...")
+                time.sleep(2)
+                
+                try:
+                    # Attempt UC Mode GUI click (turnstile/cloudflare)
+                    self.sb.uc_gui_click_captcha()
+                    time.sleep(4)
+                except Exception:
+                    pass
+                
+                # Specialized handled for .cf-turnstile if GUI click missed
+                try:
+                    if self.sb.is_element_visible(".cf-turnstile"):
+                        self.sb.uc_click(".cf-turnstile")
+                        time.sleep(4)
+                except Exception:
+                    pass
+            else:
+                return # No challenge or resolved
+
+
+    def _poison_fingerprint(self):
+        """Inject Canvas and Audio noise via CDP to differentiate from standard bot profiles."""
+        js_code = """
+        (function() {
+            // Canvas Poisoning
+            if (window.CanvasRenderingContext2D) {
+                const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+                CanvasRenderingContext2D.prototype.getImageData = function(sx, sy, sw, sh) {
+                    const imageData = originalGetImageData.apply(this, arguments);
+                    for (let i = 0; i < imageData.data.length; i += 100) {
+                        imageData.data[i] = imageData.data[i] + (Math.random() > 0.5 ? 1 : -1);
+                    }
+                    return imageData;
+                };
+            }
+            // Audio Poisoning
+            if (window.AudioBuffer) {
+                const originalGetChannelData = AudioBuffer.prototype.getChannelData;
+                AudioBuffer.prototype.getChannelData = function() {
+                    const data = originalGetChannelData.apply(this, arguments);
+                    for (let i = 0; i < data.length; i += 100) {
+                        data[i] += (Math.random() * 0.0001);
+                    }
+                    return data;
+                };
+            }
+        })();
+        """
+        try:
+            self.sb.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": js_code})
+            logger.info("CDP Fingerprint Poisoning Active.")
+        except Exception as e:
+            logger.warning(f"CDP Poisoning failed: {e}. Falling back to standard execution.")
+            self.sb.execute_script(js_code)
+
+    def _apply_human_pause(self, min_ms=100, max_ms=300):
+        """Simulate a human 'mental pause' before interaction."""
+        time.sleep(random.uniform(min_ms, max_ms) / 1000.0)
+
+    def _get_human_offset(self, width, height):
+        """Calculate a randomized offset within the inner 60% of an element."""
+        ox = random.uniform(-0.3 * width, 0.3 * width)
+        oy = random.uniform(-0.3 * height, 0.3 * height)
+        return int(ox), int(oy)
+
+
     def goto(self, url: str) -> dict:
-        """Navigate to URL with autonomous safety wrappers."""
+        """Navigate to URL with autonomous safety wrappers and challenge handling."""
         with self.lock:
             self.state = "EXECUTING"
             logger.info(f"Navigating to: {url}")
             try:
                 self._safe_driver_call(self.sb.open, url)
-                # YouTube specific: wait for settle
-                time.sleep(2)
+                
+                # Handle any immediate challenges
+                self._handle_challenges()
+                
+                # YouTube/Dynamic settle
+                time.sleep(1.5)
                 self.state = "IDLE"
                 return {"status": "ok", "url": url}
             except Exception as e:
@@ -336,16 +457,21 @@ class StealthDriver:
                 return {"status": "error", "message": str(e), "code": -32001}
 
     def click(self, selector: str) -> dict:
-        """Click element with minimum driver overhead."""
+        """Click element with human-like randomized offset and mental pause."""
         with self.lock:
             self.state = "EXECUTING"
             logger.info(f"Clicking: {selector}")
             try:
+                # Mental pause before action
+                self._apply_human_pause(150, 400)
+                
                 if " >>> " in selector:
                     self._safe_driver_call(self.sb.shadow_click, selector, timeout=15)
                 else:
+                    # UC Mode click is already pretty good, but we ensure human-like targeting
                     by = "xpath" if selector.startswith("//") or selector.startswith("(") else "css selector"
-                    self._safe_driver_call(self.sb.click, selector, by=by, timeout=15)
+                    self._safe_driver_call(self.sb.uc_click, selector, by=by, timeout=15)
+                
                 self.state = "IDLE"
                 return {"status": "ok"}
             except Exception as e:
@@ -353,40 +479,58 @@ class StealthDriver:
                 return {"status": "error", "message": str(e), "code": -32002}
 
     def fill(self, selector: str, value: str) -> dict:
-        """Fill input with robust focus and state preservation."""
+        """Fill input with human-like interactions (Click -> Pause -> Gaussian Type)."""
         with self.lock:
             self.state = "EXECUTING"
-            logger.info(f"Filling: {selector}")
+            logger.info(f"Human-filling: {selector}")
             try:
-                if " >>> " in selector:
-                    self._safe_driver_call(self.sb.shadow_click, selector, timeout=10)
-                    self._safe_driver_call(self.sb.shadow_type, selector, value, timeout=10)
-                else:
-                    by = "xpath" if selector.startswith("//") or selector.startswith("(") else "css selector"
-                    # Robust Pattern: Focus -> Clear -> Type
-                    self._safe_driver_call(self.sb.click, selector, by=by, timeout=10)
-                    self._safe_driver_call(self.sb.update_text, selector, value, by=by, timeout=10)
-                self.last_filled_selector = selector
-                self.state = "IDLE"
-                return {"status": "ok"}
+                # 1. Use smart click (already implemented with human shims)
+                click_res = self.click(selector)
+                if click_res.get("status") != "ok":
+                    return click_res
+                
+                # 2. Use human-typing
+                return self.type(value, selector)
             except Exception as e:
                 self.state = "IDLE"
                 return {"status": "error", "message": str(e), "code": -32003}
 
     def type(self, text: str, selector: str = None) -> dict:
-        """Type text into element or active element if no selector."""
+        """Type text with Gaussian delays and simulated typos for maximum stealth."""
         with self.lock:
             self.state = "EXECUTING"
             try:
                 if selector:
-                    logger.info(f"Typing into {selector}: {text}")
+                    logger.info(f"Human-typing into {selector}")
                     by = "xpath" if selector.startswith("//") or selector.startswith("(") else "css selector"
-                    self._safe_driver_call(self.sb.type, selector, text, by=by, timeout=15)
+                    # Mental pause
+                    self._apply_human_pause(200, 500)
+                    
+                    # For stealth, we type character by character with delays
+                    element = self._safe_driver_call(self.sb.wait_for_element_visible, selector, by=by, timeout=15)
+                    self._safe_driver_call(element.click)
+                    
+                    for char in text:
+                        # 0.5% chance of typo
+                        if random.random() < 0.005:
+                            typo = chr(ord(char) + 1)
+                            self._safe_driver_call(element.send_keys, typo)
+                            time.sleep(random.uniform(0.1, 0.3))
+                            self._safe_driver_call(element.send_keys, Keys.BACKSPACE)
+                            time.sleep(random.uniform(0.05, 0.15))
+                        
+                        self._safe_driver_call(element.send_keys, char)
+                        # Gaussian delay (mean=120ms, std=50ms)
+                        delay = max(0.03, random.gauss(0.12, 0.05))
+                        time.sleep(delay)
+                    
                     self.last_filled_selector = selector
                 else:
                     logger.info(f"Typing into active element: {text}")
                     active_element = self._safe_driver_call(lambda: self.sb.driver.switch_to.active_element)
-                    self._safe_driver_call(active_element.send_keys, text)
+                    for char in text:
+                        self._safe_driver_call(active_element.send_keys, char)
+                        time.sleep(max(0.03, random.gauss(0.1, 0.04)))
                 
                 self.state = "IDLE"
                 return {"status": "ok"}
@@ -573,16 +717,19 @@ class StealthDriver:
         """Inject cookies for context sync."""
         with self.lock:
             try:
-                for cookie in cookies:
-                    # Ensure required fields
+                logger.info(f"Injecting {len(cookies)} cookies into stealth context...")
+                for i, cookie in enumerate(cookies):
                     if 'sameSite' not in cookie:
                         cookie['sameSite'] = 'Lax'
                     try:
                         self.sb.driver.add_cookie(cookie)
+                        if i % 10 == 0:
+                            logger.info(f"Injected {i}/{len(cookies)} cookies...")
                     except Exception as cookie_err:
                         logger.warning(f"Failed to set cookie {cookie.get('name')}: {cookie_err}")
                 return {"status": "ok", "count": len(cookies)}
             except Exception as e:
+                logger.error(f"FATAL: Cookie injection failed - {e}")
                 raise
 
     def get_storage(self) -> dict:

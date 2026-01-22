@@ -60,6 +60,14 @@ class JanitorSentinel(SentinelBase):
             "unusual traffic", "automated queries", "captcha",
             "security check", "verify yourself", "prove you're human"
         ]
+        self.locale_map = {
+            "en_gb": ["United Kingdom", "UK", "Great Britain", "England"],
+            "en_us": ["United States", "USA", "US", "America"],
+            "en_in": ["India", "IN"],
+            "en_ca": ["Canada", "CA"],
+            "de_de": ["Germany", "Deutschland", "DE"],
+            "fr_fr": ["France", "FR"]
+        }
         self.selectors = self.blocking_patterns 
         self.state = SentinelState.IDLE
         self.metrics = {
@@ -70,6 +78,8 @@ class JanitorSentinel(SentinelBase):
         }
         self.tried_selectors = []  # Track ALL selectors tried during exploration
         self.current_action_selector = None  # Track most recent action for learning
+        self.recovery_successful = False # v4.2 Traceability v2
+
 
     async def _emit_telemetry(self):
         """Report Sentinel health and activity to Hub context."""
@@ -88,6 +98,12 @@ class JanitorSentinel(SentinelBase):
         blocking = params.get("blocking", [])
         target_rect = params.get("targetRect")  # Target element's bounding rect
         command = params.get("command", {})
+        goal = params.get("goal")
+
+        # WORLD-CLASS: Site Recovery Protocol (Locale Alignment)
+        if goal == "site_recovery":
+            await self.handle_site_recovery(params, msg_id)
+            return
         
         # Skip if no blocking elements or already hijacking
         if not blocking or self.state == SentinelState.HIJACKING:
@@ -191,6 +207,11 @@ class JanitorSentinel(SentinelBase):
                 # === Cookiebot ===
                 "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll",
                 "#CybotCookiebotDialogBodyButtonDecline",
+                # === Region Selection (Autonomy Fix) ===
+                "button:has-text('United Kingdom')",
+                "a:has-text('United Kingdom')",
+                "a:has-text('UK')",
+                ".region-link",
                 # === Generic Cookie Dismiss ===
                 "#cookie-accept", "#accept-cookies", ".cookie-accept",
                 # === Shadow Close Buttons ===
@@ -229,6 +250,61 @@ class JanitorSentinel(SentinelBase):
         await self._emit_telemetry()
         # After a brief pause, return to IDLE to accept new pre-checks
         self.state = SentinelState.IDLE
+
+    async def handle_site_recovery(self, params, msg_id):
+        """Autonomously resolve locale discrepancies based on mission intent."""
+        invariants = params.get("localeInvariants", [])
+        if not invariants:
+            print(f"[{self.layer}] Site Recovery triggered but no locale invariants provided.")
+            await self.send_clear(msg_id=msg_id)
+            return
+
+        self.state = SentinelState.HIJACKING
+        self.recovery_successful = False
+        await self.send_hijack(msg_id=msg_id, reason=f"Recovering mission locale for tokens: {invariants}")
+
+        # Derive semantic targets from invariants
+        semantic_targets = []
+        for inv in invariants:
+            semantic_targets.extend(self.locale_map.get(inv.lower(), []))
+        
+        if not semantic_targets:
+            print(f"[{self.layer}] No semantic mapping found for invariants: {invariants}")
+            await self.send_resume(re_check=True, msg_id=msg_id)
+            self.state = SentinelState.IDLE
+            return
+
+        # Attempt remediation by matching semantic targets
+        # We use Playwright-style :has-text for maximum robustness
+        remediation_attempted = False
+        for target in semantic_targets:
+            # Strategies: Button, Link, or generic text match
+            strategies = [
+                f"button:has-text('{target}')",
+                f"a:has-text('{target}')",
+                f"[role='button']:has-text('{target}')",
+                f"*:has-text('{target}')"
+            ]
+            
+            for selector in strategies:
+                if self.recovery_successful:
+                    print(f"[{self.layer}] Site Recovery SUCCESS detected. Breaking heuristic loop.")
+                    break
+
+                full_sel = f"{selector} >> visible=true"
+                print(f"[{self.layer}] Site Recovery heuristic: {full_sel}")
+                await self.send_action("click", full_sel, msg_id=msg_id)
+                remediation_attempted = True
+                await asyncio.sleep(self.exploration_delay)
+            
+            if self.recovery_successful:
+                break
+
+        await asyncio.sleep(self.remediation_delay)
+        await self.send_resume(re_check=True, msg_id=msg_id)
+        self.state = SentinelState.IDLE
+        print(f"[{self.layer}] Site Recovery complete. Resume signal sent.")
+
     async def on_message(self, method, params, msg_id):
         """Learn from command completion feedback and handle system signals."""
         if method == "starlight.shutdown":
@@ -238,22 +314,27 @@ class JanitorSentinel(SentinelBase):
 
         m_type = params.get("type") if isinstance(params, dict) else None
         
-        if m_type == "COMMAND_COMPLETE" and self.last_action:
-            if params.get("success", True):
-                obs_id = self.last_action["id"]
+        if m_type == "COMMAND_COMPLETE":
+            # If we are in Site Recovery, one success is enough to stop heuristics
+            if self.state == SentinelState.HIJACKING and params.get("success", False):
+                self.recovery_successful = True
+
+            if self.last_action:
+                if params.get("success", True):
+                    obs_id = self.last_action["id"]
+                    
+                    if self.last_action.get("known"):
+                        # Already knew the right selector, nothing to learn
+                        pass
+                    else:
+                        # Logic Fix: Learn the selector that was used in last_action
+                        sel = self.last_action.get("selector")
+                        if sel and self.memory.get(obs_id) != sel:
+                            print(f"[{self.layer}] LEARNING remediation! {obs_id} -> {sel}")
+                            self.memory[obs_id] = sel
+                            self._save_memory()
                 
-                if self.last_action.get("known"):
-                    # Already knew the right selector, nothing to learn
-                    pass
-                else:
-                    # Logic Fix: Learn the selector that was used in last_action
-                    sel = self.last_action.get("selector")
-                    if sel and self.memory.get(obs_id) != sel:
-                        print(f"[{self.layer}] LEARNING remediation! {obs_id} -> {sel}")
-                        self.memory[obs_id] = sel
-                        self._save_memory()
-            
-            self.last_action = None
+                self.last_action = None
 
 if __name__ == "__main__":
     import argparse

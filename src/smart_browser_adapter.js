@@ -94,19 +94,14 @@ class DetectionEngine {
     constructor() {
         this.detectionPatterns = {
             cloudflare: {
-                dom: ['#cf-wrapper', '.cf-browser-verification', '#challenge-running', '#cf-please-wait'],
-                scripts: ['_cf_chl_opt', 'cf-challenge'],
-                headers: ['cf-ray', 'cf-cache-status']
-            },
-            cloudflare: {
-                dom: ['cf-challenge', 'cf-browser-verification', '_cf_chl_opt'],
-                scripts: ['/cdn-cgi/challenge-platform'],
+                dom: ['#cf-wrapper', '.cf-browser-verification', '#challenge-running', '#cf-please-wait', 'cf-challenge', '_cf_chl_opt'],
+                scripts: ['_cf_chl_opt', 'cf-challenge', '/cdn-cgi/challenge-platform'],
                 headers: ['cf-ray', 'cf-cache-status']
             },
             akamai: {
-                dom: ['ak-challenge', 'akamai_sensor_data'],
-                scripts: ['_akamai', 'akamai_sensor_data'],
-                headers: ['x-akamai-transformed']
+                dom: ['ak-challenge', 'akamai_sensor_data', 'ak-bm-c'],
+                scripts: ['_akamai', 'akamai_sensor_data', '/akam/'],
+                headers: ['x-akamai-transformed', 'akamai-bot-detection']
             },
             generic: {
                 dom: [
@@ -115,12 +110,16 @@ class DetectionEngine {
                     'Access Denied',
                     'You don\'t have permission',
                     'Checking your browser',
-                    'Enable JavaScript and cookies to continue'
+                    'Enable JavaScript and cookies to continue',
+                    '403 Forbidden',
+                    'Request blocked',
+                    'automated access',
+                    'bot detected'
                 ],
-                status: [403, 429, 503]
+                status: [403, 401, 429, 503]
             },
             onetrust: {
-                dom: ['onetrust-consent-sdk', 'onetrust-banner-sdk'],
+                dom: ['onetrust-consent-sdk', 'onetrust-banner-sdk', '#onetrust-accept-btn-handler'],
                 scripts: ['onetrust']
             }
         };
@@ -168,12 +167,11 @@ class DetectionEngine {
             }
         }
 
-        // Explicit Text Detection (refined for false positives)
+        // Explicit Text Detection (high-confidence signal)
         const pageText = (dom || '').toLowerCase();
-        if (statusCode === 403 || statusCode === 429) {
-            if (pageText.includes('access denied') || pageText.includes('permission denied') || pageText.includes('you don\'t have permission')) {
-                signals.push({ type: 'generic', source: 'text', confidence: 1.0 });
-            }
+        if (pageText.includes('access denied') || pageText.includes('permission denied') || pageText.includes('you don\'t have permission') || pageText.includes('bot detected')) {
+            const confidence = (statusCode === 403 || statusCode === 429) ? 1.0 : 0.85;
+            signals.push({ type: 'generic', source: 'text', confidence });
         }
 
         // Status code detection
@@ -342,6 +340,7 @@ class SmartBrowserAdapter extends EventEmitter {
         this.playwrightBrowser = null;
         this.playwrightContext = null;
         this.playwrightPage = null;
+        this.lastResponse = null; // Track last HTTP response for bot detection
         this.stealthAdapter = null;
 
         // Current active engine - Smart Selection based on Config
@@ -423,6 +422,9 @@ class SmartBrowserAdapter extends EventEmitter {
                 this.playwrightContext = await this.playwrightBrowser.newContext();
                 this.playwrightPage = await this.playwrightContext.newPage();
                 this.playwrightPage.on('console', msg => console.log(`[Browser] ${msg.type().toUpperCase()}: ${msg.text()}`));
+                this.playwrightPage.on('response', response => {
+                    this.lastResponse = response;
+                });
                 console.log('[SmartAdapter] ✓ Playwright engine ready');
             } catch (e) {
                 console.error('[SmartAdapter] Playwright launch failed:', e.message);
@@ -619,26 +621,28 @@ class SmartBrowserAdapter extends EventEmitter {
 
             // After navigation commands, check for bot detection
             if (method === 'goto') {
-                await this._checkAndSwap();
+                const dom = await this.playwrightPage.content().catch(() => '');
+                // Prioritize actual status code if available
+                const statusCode = this.lastResponse?.status?.() || 200;
+                const detection = this.detectionEngine.analyze({ dom, statusCode });
+
+                if (detection.detected) {
+                    console.log(`[SmartAdapter] ⚠️ Critical Bot Barrier Detected (${detection.type}). Entering Stealth Mode...`);
+                    await this.hotSwap('stealth');
+                    return await this._execute(method, ...args); // Recover and retry internally
+                }
+                await this._checkAndSwap(); // Normal check for other signals
             }
 
             return result;
         } catch (e) {
             console.warn(`[SmartAdapter] Command "${method}" failed on ${this.activeEngine}: ${e.message}`);
 
-            // If playwright failed, verify if it's likely bot detection before swapping
-            if (this.activeEngine === 'playwright') {
-                const dom = await this.playwrightPage.content().catch(() => '');
-                // Note: status code extraction is best-effort
-                const statusCode = 200; // Default
-
-                const detection = this.detectionEngine.analyze({ dom, statusCode });
-
-                if (detection.detected) {
-                    console.log(`[SmartAdapter] Execution failed AND detection confirmed (${detection.type}). Swapping to Stealth...`);
-                    await this.hotSwap('stealth');
-                    return await this._execute(method, ...args); // Retry on stealth
-                }
+            // If playwright failed with 403 or Permission Denied, it's a bot signal
+            if (this.activeEngine === 'playwright' && (e.message.includes('403') || e.message.includes('permission denied'))) {
+                console.log(`[SmartAdapter] Permission Denied on Playwright. Hoisting to Stealth...`);
+                await this.hotSwap('stealth');
+                return await this._execute(method, ...args);
             }
             throw e;
         }
@@ -831,7 +835,7 @@ class SmartBrowserAdapter extends EventEmitter {
 
         try {
             const dom = await this.playwrightPage.content();
-            const response = this.playwrightPage.mainFrame()?.lastResponse?.();
+            const response = this.lastResponse;
             const statusCode = response?.status?.() || 200;
             const headers = response?.headers?.() || {};
 
@@ -879,15 +883,19 @@ class SmartBrowserAdapter extends EventEmitter {
             // Switch active engine
             this.activeEngine = targetEngine;
 
-            // 1. Navigate to domain (Required for cookie/storage bridge)
+            // 1. Navigate to target domain (Required for cookie/storage bridge context)
             if (oldUrl && oldUrl !== 'about:blank') {
-                console.log(`[SmartAdapter] Target Engine navigating to domain for state injection: ${oldUrl}`);
+                console.log(`[SmartAdapter] Target Engine navigating for context: ${oldUrl}`);
                 if (targetEngine === 'stealth') {
-                    // Lazy-init Stealth if needed
                     if (!this.stealthAdapter || !this.stealthAdapter.isReady) {
+                        // v4.2 Resilience: Allow CDP ports and browser processes to settle
+                        console.log(`[SmartAdapter] Cooldown for engine handshake (3s)...`);
+                        await new Promise(r => setTimeout(r, 3000));
+
                         this.stealthAdapter = new StealthBrowserAdapter(this.config);
                         await this.stealthAdapter.launch({ headless: this.config.headless });
                     }
+                    // Optimized: Only navigate once if we're moving to stealth to avoid double-detection hits
                     await this.stealthAdapter.goto(oldUrl);
                 } else {
                     await this.playwrightPage.goto(oldUrl, { waitUntil: 'commit' });
@@ -896,7 +904,7 @@ class SmartBrowserAdapter extends EventEmitter {
 
             // 2. Inject state into target engine
             if (encryptedState) {
-                console.log(`[SmartAdapter] Injecting state bridge (Domain: ${oldUrl})...`);
+                console.log(`[SmartAdapter] Injecting state bridge...`);
                 if (targetEngine === 'stealth') {
                     await this.stateManager.injectToStealth(this.stealthAdapter, encryptedState);
                 } else {
@@ -904,12 +912,14 @@ class SmartBrowserAdapter extends EventEmitter {
                 }
             }
 
-            // 3. Final navigation/reload to apply state
+            // 3. Final refresh only if engine requires it for state application
             if (oldUrl && oldUrl !== 'about:blank') {
-                if (targetEngine === 'stealth') {
-                    await this.stealthAdapter.goto(oldUrl);
-                } else {
+                if (targetEngine === 'playwright') {
                     await this.playwrightPage.goto(oldUrl, { waitUntil: 'domcontentloaded' });
+                } else {
+                    // For Stealth/SeleniumBase, a simple reload is less suspicious than a full goto
+                    await this.stealthAdapter._sendCommand('evaluate', { script: 'location.reload();' });
+                    await new Promise(r => setTimeout(r, 2000)); // Stabilization
                 }
             }
 

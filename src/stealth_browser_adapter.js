@@ -172,7 +172,15 @@ class StealthBrowserAdapter extends EventEmitter {
                 if (result && result.url) {
                     this.currentUrl = result.url;
                 }
-                return result;
+
+                // v4.1.12: Protocol Polyfill - Return Playwright-compatible Response object
+                return {
+                    status: () => 200,
+                    url: () => this.currentUrl,
+                    ok: () => true,
+                    statusText: () => 'OK',
+                    headers: () => ({})
+                };
             },
             url: () => this.currentUrl,
 
@@ -420,6 +428,22 @@ class StealthBrowserAdapter extends EventEmitter {
                 await new Promise(r => setTimeout(r, ms));
             },
 
+            screenshot: async (options = {}) => {
+                if (!this.isReady) return null;
+                console.log('[StealthBrowserAdapter] Capturing screenshot...');
+                try {
+                    // 15s timeout for screenshot to avoid blocking Hub heartbeats
+                    const result = await this._sendCommand('screenshot', {}, 15000);
+                    if (result && result.data) {
+                        return Buffer.from(result.data, 'base64');
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`[StealthBrowserAdapter] Screenshot failed: ${e.message}`);
+                    return null;
+                }
+            },
+
             // Event emitter compatibility (no-op stubs for Hub compatibility)
             // SeleniumBase handles dialogs/popups automatically
             _eventListeners: new Map(),
@@ -634,7 +658,7 @@ class StealthBrowserAdapter extends EventEmitter {
      * Send JSON-RPC command to Python driver
      * @private
      */
-    _sendCommand(method, params, timeout = 60000) {
+    _sendCommand(method, params, timeout = 120000) {
         return new Promise((resolve, reject) => {
             const id = nanoid();
 

@@ -1,0 +1,27 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://starlight-protocol.github.io/schemas/starlight.getPageContext.schema.json",
+    "title": "starlight.getPageContext",
+    "description": "Request for semantic page context (buttons, inputs, etc.)",
+    "type": "object",
+    "properties": {
+        "jsonrpc": {
+            "const": "2.0"
+        },
+        "method": {
+            "const": "starlight.getPageContext"
+        },
+        "params": {
+            "type": "object"
+        },
+        "id": {
+            "type": "string"
+        }
+    },
+    "required": [
+        "jsonrpc",
+        "method",
+        "params",
+        "id"
+    ]
+}
