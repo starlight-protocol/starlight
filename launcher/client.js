@@ -1,111 +1,23 @@
-/**
- * Starlight Mission Control - Client Script
- * Connects to launcher server and handles UI interactions
- */
-
-// Logic Fix: Make WebSocket URL configurable via query parameter
+// Starlight Mission Control Client v4.2
 const params = new URLSearchParams(window.location.search);
 const WS_URL = params.get('ws') || 'ws://localhost:3001';
 let ws = null;
-let reconnectTimer = null;
+let processStatus = { hub: 'stopped', mission: 'stopped' };
 
-// DOM Elements
-const logOutput = document.getElementById('log-output');
-const hubBtn = document.getElementById('hub-btn');
-const pulseBtn = document.getElementById('pulse-btn');
-const janitorBtn = document.getElementById('janitor-btn');
-const launchBtn = document.getElementById('launch-btn');
-const missionSelect = document.getElementById('mission-select');
-
-// Status icons
-const statusIcons = {
-    hub: document.getElementById('hub-status'),
-    pulse: document.getElementById('pulse-status'),
-    janitor: document.getElementById('janitor-status')
-};
-
-// Status cards
-const statusCards = {
-    hub: document.getElementById('hub-card'),
-    pulse: document.getElementById('pulse-card'),
-    janitor: document.getElementById('janitor-card')
-};
-
-// Process state
-let processStatus = {
-    hub: 'stopped',
-    pulse: 'stopped',
-    janitor: 'stopped',
-    mission: 'stopped'
-};
-
-// Connect to WebSocket server
 function connect() {
-    addLog('System', 'Connecting to launcher server...', 'info');
-
     ws = new WebSocket(WS_URL);
-
-    ws.onopen = () => {
-        addLog('System', 'Connected to launcher server!', 'success');
-        if (reconnectTimer) {
-            clearInterval(reconnectTimer);
-            reconnectTimer = null;
-        }
-    };
-
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        handleMessage(msg);
-    };
-
-    ws.onclose = () => {
-        addLog('System', 'Disconnected from server. Reconnecting...', 'error');
-        scheduleReconnect();
-    };
-
-    ws.onerror = () => {
-        addLog('System', 'Connection error. Is the server running?', 'error');
-    };
-}
-
-function scheduleReconnect() {
-    if (!reconnectTimer) {
-        reconnectTimer = setInterval(() => {
-            if (!ws || ws.readyState === WebSocket.CLOSED) {
-                connect();
-            }
-        }, 3000);
-    }
+    ws.onopen = () => addLog('System', '🚀 Core Link Established', 'success');
+    ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+    ws.onclose = () => setTimeout(connect, 3000);
 }
 
 function handleMessage(msg) {
     switch (msg.type) {
-        case 'log':
-            addLog(msg.source, msg.text, msg.logType);
-            break;
-        case 'status':
-            updateStatus(msg.status);
-            break;
-        case 'telemetry':
-            updateVitals(msg.data);
-            break;
-        case 'missionList':
-            updateMissionDropdown(msg.missions);
-            break;
-        case 'sentinels':
-            renderSentinelCards(msg.sentinels);
-            break;
-        case 'SENTINEL_ERROR':
-            const errText = `🚨 ${msg.layer}: ${msg.error}`;
-            showToast(errText, true);
-            addLog(msg.layer, msg.error, 'error');
-            break;
-        default:
-            // Phase 13.5: Handle recording events
-            if (msg.type?.startsWith('RECORDING_')) {
-                handleRecordingEvent(msg);
-            }
-            break;
+        case 'log': addLog(msg.source, msg.text, msg.logType); break;
+        case 'status': updateStatus(msg.status); break;
+        case 'telemetry': updateVitals(msg.data); break;
+        case 'missionList': updateMissionDropdown(msg.missions); break;
+        case 'sentinels': renderSentinelCards(msg.sentinels); break;
     }
 }
 
@@ -114,343 +26,142 @@ function updateVitals(data) {
     document.getElementById('success-rate').textContent = `${data.successRate}%`;
     document.getElementById('saved-effort').innerHTML = `${data.totalSavedMins}<span class="unit">min</span>`;
     document.getElementById('sovereign-mttr').innerHTML = `${Math.round(data.avgRecoveryTimeMs)}<span class="unit">ms</span>`;
-    document.getElementById('interventions-count').textContent = data.totalInterventions;
+
+    // Update A11y Feed if data contains violations
+    const feed = document.getElementById('a11y-feed');
+    if (data.a11yViolations > 0) {
+        feed.innerHTML = `<span style="color:var(--accent-red)">🚨 ${data.a11yViolations} violations detected in current session.</span>`;
+    } else {
+        feed.innerHTML = `No accessibility violations found.`;
+    }
 }
 
 function updateStatus(status) {
     processStatus = status;
+    const isRunning = status.hub === 'running';
 
-    // Update all process statuses dynamically
-    Object.keys(status).forEach(name => {
-        if (name === 'mission') return; // Skip mission, handled separately
-        updateProcessUI(name, status[name]);
-    });
+    // Toggle main constellation buttons
+    const startBtn = document.getElementById('start-all-btn');
+    const stopBtn = document.getElementById('stop-all-btn');
 
-    // Update launch button
+    startBtn.style.display = isRunning ? 'none' : 'block';
+    stopBtn.style.display = isRunning ? 'block' : 'none';
+
+    // Reset stop button state if it was loading
+    if (!isRunning) {
+        stopBtn.innerHTML = '⏹️ Stop All';
+        stopBtn.classList.remove('btn-loading');
+    }
+
+    // Update Hub Card
+    const hubBtn = document.getElementById('hub-btn');
+    const hubStatus = document.getElementById('hub-status');
+    const hubCard = document.getElementById('hub-card');
+
+    if (isRunning) {
+        hubBtn.textContent = 'Stop Hub';
+        hubStatus.textContent = '🟢';
+        hubCard.classList.add('running');
+    } else {
+        hubBtn.textContent = 'Start Hub';
+        hubStatus.textContent = '⚫';
+        hubCard.classList.remove('running');
+    }
+
+    // Update mission button
+    const launchBtn = document.getElementById('launch-btn');
     if (status.mission === 'running') {
-        launchBtn.textContent = '⏳ Running...';
+        launchBtn.textContent = '⏳ Running';
         launchBtn.disabled = true;
     } else {
-        launchBtn.textContent = '🚀 Launch Mission';
+        launchBtn.textContent = '🚀 Launch';
         launchBtn.disabled = false;
     }
 }
 
-function updateMissionDropdown(missions) {
-    if (!missions) return;
-    const select = document.getElementById('mission-select');
-    const currentValue = select.value;
+function renderSentinelCards(sentinels) {
+    const grid = document.getElementById('fleet-grid');
+    grid.querySelectorAll('.sentinel-card').forEach(c => c.remove());
 
-    // Clear existing
-    select.innerHTML = '';
-
-    // Add missions
-    missions.forEach(mission => {
-        const option = document.createElement('option');
-        option.value = mission;
-        option.textContent = mission;
-        if (mission === currentValue) option.selected = true;
-        select.appendChild(option);
+    sentinels.forEach(s => {
+        const card = document.createElement('div');
+        const isRunning = s.status === 'running';
+        card.className = `status-card sentinel-card ${isRunning ? 'running' : ''}`;
+        card.innerHTML = `
+            <div class="status-header">
+                <h3>${s.icon} ${s.name}</h3>
+                <span class="status-icon">${isRunning ? '🟢' : '⚫'}</span>
+            </div>
+            <p class="status-desc">Status: <span style="color:${s.health === 'online' ? 'var(--accent-emerald)' : 'var(--accent-red)'}">${s.health.toUpperCase()}</span></p>
+            <button class="btn btn-secondary" style="width:100%" onclick="toggleSentinel('${s.id}')">${isRunning ? 'Stop' : 'Start'}</button>
+        `;
+        grid.insertBefore(card, grid.lastElementChild);
     });
-
-    if (missions.length === 0) {
-        const option = document.createElement('option');
-        option.textContent = 'No missions found';
-        option.disabled = true;
-        select.appendChild(option);
-    }
 }
 
-function updateProcessUI(name, state) {
-    // Get elements dynamically - they may not exist in statusIcons/statusCards
-    const icon = document.getElementById(`${name}-status`);
-    const card = document.getElementById(`${name}-card`);
-    const btn = document.getElementById(`${name}-btn`);
-
-    // Skip if elements don't exist (e.g., sentinel cards not yet rendered)
-    if (!icon || !card || !btn) return;
-
-    if (state === 'running') {
-        icon.textContent = '🟢';
-        card.classList.add('running');
-        btn.textContent = 'Stop';
-        btn.className = 'btn btn-stop';
-    } else {
-        icon.textContent = '⚫';
-        card.classList.remove('running');
-        btn.textContent = 'Start';
-        btn.className = 'btn btn-start';
-    }
+function updateMissionDropdown(missions) {
+    const select = document.getElementById('mission-select');
+    select.innerHTML = '<option value="">Load Mission Script...</option>';
+    missions.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        select.appendChild(opt);
+    });
 }
 
 function addLog(source, text, logType = 'info') {
+    const output = document.getElementById('log-output');
     const entry = document.createElement('div');
-    entry.className = `log-entry log-${logType}`;
-
-    const timestamp = new Date().toLocaleTimeString();
-    entry.innerHTML = `<span style="opacity: 0.5">[${timestamp}]</span> [${source}] ${text}`;
-
-    logOutput.appendChild(entry);
-    logOutput.scrollTop = logOutput.scrollHeight;
-
-    // Limit log entries
-    while (logOutput.children.length > 500) {
-        logOutput.removeChild(logOutput.firstChild);
-    }
+    entry.className = `log-entry log-${logType.toLowerCase()}`;
+    entry.innerHTML = `<span class="log-source">[${source}]</span> <span class="log-text">${text}</span>`;
+    output.appendChild(entry);
+    output.scrollTop = output.scrollHeight;
 }
 
-function send(cmd) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(cmd));
-    } else {
-        addLog('System', 'Not connected to server!', 'error');
-    }
-}
-
-// UI Actions
-function toggleProcess(name) {
-    const state = processStatus[name];
-    if (state === 'running') {
-        send({ cmd: 'stop', process: name });
-    } else {
-        const params = { cmd: 'start', process: name };
-        if (name === 'hub') {
-            const browserSelect = document.getElementById('browser-select');
-            const deviceSelect = document.getElementById('device-select');
-            const networkSelect = document.getElementById('network-select');
-            if (browserSelect) {
-                params.browser = browserSelect.value;
-            }
-            if (deviceSelect && deviceSelect.value) {
-                params.device = deviceSelect.value;
-            }
-            if (networkSelect) {
-                params.network = networkSelect.value;
-            }
-        }
-        send(params);
-    }
-}
-
+// UI Triggers
 function startAll() {
-    const browserSelect = document.getElementById('browser-select');
-    const deviceSelect = document.getElementById('device-select');
-    const networkSelect = document.getElementById('network-select');
-    const browser = browserSelect ? browserSelect.value : 'chromium';
-    const device = deviceSelect ? deviceSelect.value : null;
-    const network = networkSelect ? networkSelect.value : 'online';
-    send({ cmd: 'startAll', browser, device, network });
+    const browser = document.getElementById('browser-select').value;
+    const device = document.getElementById('device-select').value;
+    const network = document.getElementById('network-select').value;
+    ws.send(JSON.stringify({ cmd: 'startAll', browser, device, network }));
 }
 
 function stopAll() {
-    send({ cmd: 'stopAll' });
+    const btn = document.getElementById('stop-all-btn');
+    btn.innerHTML = '⌛ Stopping...';
+    btn.classList.add('btn-loading');
+    ws.send(JSON.stringify({ cmd: 'stopAll' }));
 }
 
 function launchMission() {
-    const mission = missionSelect.value;
-    send({ cmd: 'launch', mission });
+    const mission = document.getElementById('mission-select').value;
+    if (mission) ws.send(JSON.stringify({ cmd: 'launch', mission }));
 }
 
-function openReport() {
-    // Open report.html from the project root (served at /report.html)
-    window.open('/report.html', '_blank');
+function toggleProcess(name) {
+    if (processStatus[name] === 'running') ws.send(JSON.stringify({ cmd: 'stopAll' }));
+    else startAll();
 }
 
-function clearLogs() {
-    logOutput.innerHTML = '<div class="log-entry log-info">[System] Logs cleared.</div>';
+function toggleSentinel(id) {
+    ws.send(JSON.stringify({ cmd: 'toggleSentinel', id }));
 }
 
-// Phase 13.5: Recording
-let isRecording = false;
+function openReport() { window.open('/report.html', '_blank'); }
+function clearLogs() { document.getElementById('log-output').innerHTML = ''; }
 
-function toggleRecording() {
-    if (isRecording) {
-        // Stop recording
-        const name = prompt('Name for this test (leave empty for auto-generated):');
-        send({ cmd: 'stopRecording', name: name || null });
-        isRecording = false;
-        document.getElementById('record-btn').textContent = '🔴 Record';
-        document.getElementById('record-btn').classList.remove('recording');
-        document.getElementById('recording-indicator').style.display = 'none';
-        addLog('System', '⏹️ Recording stopped. Generating test file...', 'success');
-    } else {
-        // Start recording
-        const urlInput = document.getElementById('record-url');
-        const url = urlInput.value.trim() || 'https://google.com';
-        send({ cmd: 'startRecording', url: url });
-        isRecording = true;
-        document.getElementById('record-btn').textContent = '⏹️ Stop';
-        document.getElementById('record-btn').classList.add('recording');
-        document.getElementById('recording-indicator').style.display = 'block';
-        addLog('System', `🔴 Recording started on ${url}. Navigate and interact on the browser.`, 'success');
-    }
-}
-
-// Handle recording events from server
-function handleRecordingEvent(msg) {
-    if (msg.type === 'RECORDING_STOPPED' && msg.fileName) {
-        addLog('Recorder', `✅ Test file generated: ${msg.fileName}`, 'success');
-        // Add new test to dropdown
-        const option = document.createElement('option');
-        option.value = msg.fileName;
-        option.textContent = `📝 ${msg.fileName} (Recorded)`;
-        option.selected = true;
-        document.getElementById('mission-select').prepend(option);
-    } else if (msg.type === 'RECORDING_ERROR') {
-        addLog('Recorder', `❌ Error: ${msg.error}`, 'error');
-        isRecording = false;
-        document.getElementById('record-btn').textContent = '🔴 Record';
-        document.getElementById('recording-indicator').style.display = 'none';
-    }
-}
-
-// Sentinel Fleet Manager: Render dynamic sentinel cards
-function renderSentinelCards(sentinels) {
-    const grid = document.getElementById('fleet-grid');
-    if (!grid) return;
-
-    // Find the "Create Sentinel" card (we'll insert before it)
-    const createCard = grid.querySelector('a[href="/sentinel-editor"]');
-
-    // Remove any existing dynamic sentinel cards
-    grid.querySelectorAll('.sentinel-card').forEach(card => card.remove());
-
-    // Insert cards for each sentinel
-    sentinels.forEach(sentinel => {
-        const isRunning = processStatus[sentinel.id] === 'running';
-        const card = document.createElement('div');
-        card.className = 'status-card sentinel-card';
-        card.id = `${sentinel.id}-card`;
-        if (isRunning) card.classList.add('running');
-
-        card.innerHTML = `
-            <div class="status-header">
-                <span class="status-icon" id="${sentinel.id}-status">${isRunning ? '🟢' : '⚫'}</span>
-                <h3>${sentinel.icon} ${sentinel.name}</h3>
-            </div>
-            <p class="status-desc">${getDescription(sentinel.id)}</p>
-            <button class="btn ${isRunning ? 'btn-stop' : 'btn-start'}" 
-                    id="${sentinel.id}-btn" 
-                    onclick="toggleProcess('${sentinel.id}')">
-                ${isRunning ? 'Stop' : 'Start'}
-            </button>
-        `;
-
-        // Insert before the create card
-        if (createCard) {
-            grid.insertBefore(card, createCard);
-        } else {
-            grid.appendChild(card);
-        }
-    });
-}
-
-// Get description based on sentinel name
-function getDescription(id) {
-    const descriptions = {
-        'pulse_sentinel': 'Temporal Stability Monitor',
-        'janitor': 'Obstacle Clearing Agent',
-        'vision_sentinel': 'AI-Powered Visual Detection',
-        'data_sentinel': 'Context Injection Engine',
-        'pii_sentinel': 'Privacy Data Detection'
-    };
-    return descriptions[id] || 'Custom Sentinel';
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Phase 13: Natural Language Intent (NLI)
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Execute a natural language instruction via the Hub
- */
 function executeNLI() {
-    const input = document.getElementById('nli-input');
-    const instruction = input.value.trim();
-
-    if (!instruction) {
-        addLog('NLI', 'Please enter a natural language instruction', 'error');
-        return;
-    }
-
-    addLog('NLI', `🗣️ Executing: "${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`, 'info');
-
-    // Send NLI command to launcher server
-    send({
-        cmd: 'executeNLI',
-        instruction: instruction
-    });
-
-    // Update button state
-    const btn = document.getElementById('nli-btn');
-    btn.textContent = '⏳ Running...';
-    btn.disabled = true;
-
-    // Reset button after timeout (will be reset by server response in real implementation)
-    setTimeout(() => {
-        btn.textContent = '🚀 Execute NL';
-        btn.disabled = false;
-    }, 30000);
+    const input = document.getElementById('nli-input').value.trim();
+    if (input) ws.send(JSON.stringify({ cmd: 'executeNLI', instruction: input }));
 }
 
-/**
- * Load example NLI instructions
- */
-function loadNLIExample(type) {
-    const input = document.getElementById('nli-input');
-
-    const examples = {
-        login: 'Go to https://www.saucedemo.com and fill Username with standard_user and fill Password with secret_sauce and click Login',
-        checkout: 'Click Add to cart and click shopping cart and click Checkout and fill First Name with Test and fill Last Name with User and fill Zip/Postal Code with 12345 and click Continue',
-        search: 'Go to https://www.google.com and fill search with Starlight Protocol and click Search'
-    };
-
-    input.value = examples[type] || '';
-    addLog('NLI', `📝 Loaded ${type} example`, 'info');
-}
-
-/**
- * Check NLI parser status (Ollama availability, model, etc.)
- */
 function checkNLIStatus() {
-    send({ cmd: 'getNLIStatus' });
-    addLog('NLI', '🔍 Checking NLI status...', 'info');
+    ws.send(JSON.stringify({ cmd: 'getNLIStatus' }));
 }
-
-/**
- * Toggle Ollama server (start/stop)
- */
-let ollamaRunning = false;
 
 function toggleOllama() {
-    const btn = document.getElementById('ollama-btn');
-
-    if (ollamaRunning) {
-        send({ cmd: 'stopOllama' });
-        btn.textContent = '🦙 Launch Ollama';
-        btn.className = 'btn btn-start';
-        ollamaRunning = false;
-        addLog('NLI', '⏹️ Stopping Ollama...', 'info');
-    } else {
-        send({ cmd: 'startOllama' });
-        btn.textContent = '⏹️ Stop Ollama';
-        btn.className = 'btn btn-stop';
-        ollamaRunning = true;
-        addLog('NLI', '🦙 Launching Ollama server...', 'info');
-    }
+    ws.send(JSON.stringify({ cmd: 'toggleOllama' }));
 }
 
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    connect();
-
-    // Add keyboard shortcut for NLI input (Enter to execute)
-    const nliInput = document.getElementById('nli-input');
-    if (nliInput) {
-        nliInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                executeNLI();
-            }
-        });
-    }
-});
+document.addEventListener('DOMContentLoaded', connect);

@@ -1,749 +1,479 @@
-/**
- * Starlight Launch Server - Backend for Mission Control
- * Manages Hub and Sentinel processes via WebSocket
- */
-
+// Starlight Launch Server v4.2 - The "Forensic" Update
 const { spawn } = require('child_process');
 const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const TelemetryEngine = require('../src/telemetry');
 
 const PORT = 3000;
 const WS_PORT = 3001;
 
-// Process registry (dynamic for sentinels)
-const processes = {
-    hub: null,
-    mission: null
-};
+// Process registry
+const processes = { hub: null, mission: null };
+const processStatus = { hub: 'stopped', mission: 'stopped' };
+let hubAutoSyncLastUpdate = 0;
+let isShuttingDown = false; // v4.6 Flag to prevent status race conditions during shutdown
 
-const processStatus = {
-    hub: 'stopped',
-    mission: 'stopped'
-};
+// v4.2: Session-Isolated Forensics Integration
+function getSessionMetrics() {
+    const reportPath = path.join(__dirname, '../mission_trace.json');
+    try {
+        if (!fs.existsSync(reportPath)) return null;
+        const traceString = fs.readFileSync(reportPath, 'utf8');
+        // Handle potentially malformed JSON if mission is in progress
+        const trace = JSON.parse(traceString.endsWith(']') ? traceString : traceString + ']');
 
-// Sentinel Fleet Manager: Auto-discover all sentinels
-function discoverSentinels() {
+        // v4.6 Enterprise Metrics: Sync with HubServer truth
+        const totalAttempts = trace.filter(e => e.type === 'COMMAND' || e.type === 'SUCCESS' || e.type === 'FAILURE');
+        const successfulOnes = trace.filter(e => e.type === 'COMMAND' && e.success === true);
+        const interventions = trace.filter(e => e.type === 'HIJACK').length;
+        const sentinelActions = trace.filter(e => e.type === 'SENTINEL_ACTION' && e.success).length;
+
+        const successRate = totalAttempts.length > 0
+            ? Math.round((successfulOnes.length / totalAttempts.length) * 100)
+            : 100;
+
+        const durationMs = trace.length > 1 ? (new Date(trace[trace.length - 1].rawTimestamp || Date.now()) - new Date(trace[0].rawTimestamp || Date.now())) : 0;
+
+        // Value = Remediation + Efficiency (Protocol 4.6 weighted)
+        const savedMins = (interventions * 2) + Math.ceil(durationMs / 60000);
+
+        return {
+            successRate,
+            totalSavedMins: savedMins,
+            avgRecoveryTimeMs: interventions > 0 ? (durationMs / interventions / 2) : 0,
+            totalInterventions: interventions + sentinelActions,
+            a11yViolations: trace.filter(e => e.type === 'A11Y_VIOLATION').length
+        };
+    } catch (e) { return null; }
+}
+
+// Backend Dependency Monitor (v4.3 Factual Health)
+async function checkOllamaHealth() {
+    return new Promise((resolve) => {
+        const http = require('http');
+        const req = http.get('http://localhost:11434/api/tags', (res) => {
+            resolve(res.statusCode === 200 ? 'online' : 'unhealthy');
+        });
+        req.on('error', () => resolve('offline'));
+        req.setTimeout(1000, () => { req.destroy(); resolve('timeout'); });
+    });
+}
+
+// Sentinel Fleet Manager: v4.2 Health Pulse
+// Sentinel Fleet Manager: v4.3 Health Pulse
+async function discoverSentinels() {
     const sentinelsDir = path.join(__dirname, '../sentinels');
     const results = [];
+
+    // Fetch live data from Hub if available
+    let liveSentinels = [];
+    let managedFleet = [];
+    let ollamaStatus = 'unknown';
+
+    try {
+        ollamaStatus = await checkOllamaHealth();
+        const response = await fetch('http://localhost:8095/health').catch(() => null);
+        if (response && response.ok) {
+            const data = await response.json();
+            liveSentinels = data.sentinels || [];
+            managedFleet = data.managedFleet || [];
+        }
+    } catch (e) { }
 
     try {
         const files = fs.readdirSync(sentinelsDir);
         files.forEach(file => {
             if (file.endsWith('.py') && !file.startsWith('__') && !file.startsWith('test_')) {
                 const id = file.replace('.py', '');
-                const name = formatSentinelName(file);
+                const name = id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+                // Match with live data (connected or managed) - Fuzzy normalization
+                const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const normId = normalize(id);
+
+                const live = liveSentinels.find(s => normalize(s.layer).includes(normId));
+                const managed = managedFleet && managedFleet.find(m => normalize(m.name).includes(normId));
+                const isRunning = processStatus[id] === 'running' || !!live || !!managed;
+
+                // Factual Health Override: If it depends on Ollama and Ollama is down, it's unhealthy
+                let calculatedHealth = live ? live.health : (isRunning ? 'awaiting_registry' : 'offline');
+                if (id.includes('vision') && ollamaStatus !== 'online') {
+                    calculatedHealth = `backend_offline (Ollama: ${ollamaStatus})`;
+                }
+
                 results.push({
                     id,
                     name,
                     file,
-                    path: `sentinels/${file}`,
-                    status: processStatus[id] || 'stopped',
+                    status: isRunning ? 'running' : 'stopped',
+                    health: calculatedHealth,
                     icon: getSentinelIcon(id)
                 });
             }
         });
-    } catch (e) {
-        console.error('[Launcher] Error discovering sentinels:', e.message);
-    }
 
+        // Sync Hub status if not manually started but health check works
+        // v4.3: Added check to prevent "Zombies" staying green after manual stop
+        // v4.6: Allow sync but respect shutdown flag for status logic
+
+        if (liveSentinels.length > 0 || (hubAutoSyncLastUpdate > Date.now() - 10000 && hubAutoSyncLastUpdate !== 0)) {
+            if (!isShuttingDown && processStatus.hub === 'stopped') {
+                log('System', '🔗 Synchronized with external Hub instance.', 'info');
+                processStatus.hub = 'running';
+                broadcast({ type: 'status', status: processStatus });
+            }
+            if (liveSentinels.length > 0) hubAutoSyncLastUpdate = Date.now();
+        } else if (processStatus.hub === 'running' && !processes.hub && !isShuttingDown) {
+            // We thought it was running but it's not in our list and health failed
+            processStatus.hub = 'stopped';
+            broadcast({ type: 'status', status: processStatus });
+        }
+    } catch (e) { }
     return results;
 }
 
-function formatSentinelName(filename) {
-    // pulse_sentinel.py -> Pulse Sentinel
-    return filename
-        .replace('.py', '')
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, c => c.toUpperCase());
-}
-
 function getSentinelIcon(id) {
-    const icons = {
-        'pulse_sentinel': '💚',
-        'janitor': '🧹',
-        'vision_sentinel': '👁️',
-        'data_sentinel': '📊',
-        'pii_sentinel': '🔒',
-        'cookie': '🍪',
-        'modal': '🪟',
-        'popup': '💬'
-    };
-    for (const [key, icon] of Object.entries(icons)) {
-        if (id.includes(key)) return icon;
-    }
-    return '🛡️'; // Default sentinel icon
+    const icons = { pulse: '💚', janitor: '🧹', vision: '👁️', pii: '🔒', compliance: '⚖️' };
+    for (const [key, icon] of Object.entries(icons)) { if (id.includes(key)) return icon; }
+    return '🛡️';
 }
 
-// Phase 13.5: Hub WebSocket connection for recording
-let hubWs = null;
-
-function connectToHub() {
-    if (hubWs && hubWs.readyState === WebSocket.OPEN) return;
-
-    try {
-        hubWs = new WebSocket('ws://localhost:8080');
-        hubWs.on('open', () => console.log('[Launcher] Connected to Hub'));
-        hubWs.on('message', (data) => {
-            try {
-                const msg = JSON.parse(data);
-                // Forward recording events to UI clients
-                if (msg.type?.startsWith('RECORDING_')) {
-                    broadcast(msg);
-                    if (msg.type === 'RECORDING_STOPPED') {
-                        broadcast({ type: 'missionList', missions: discoverMissions() });
-                    }
-                }
-            } catch (e) { }
-        });
-        hubWs.on('close', () => {
-            hubWs = null;
-            console.log('[Launcher] Hub connection closed');
-        });
-        hubWs.on('error', () => hubWs = null);
-    } catch (e) {
-        hubWs = null;
-    }
-}
-
-function forwardToHub(message, retries = 0) {
-    const maxRetries = 5;
-    if (!hubWs || hubWs.readyState !== WebSocket.OPEN) {
-        if (retries >= maxRetries) {
-            log('System', 'Could not connect to Hub - is it running?', 'error');
-            return;
-        }
-        connectToHub();
-        setTimeout(() => forwardToHub(message, retries + 1), 500);
-        return;
-    }
-    hubWs.send(JSON.stringify({ jsonrpc: '2.0', ...message, id: 'launcher-' + Date.now() }));
-}
-
-const telemetry = new TelemetryEngine(path.join(__dirname, '../telemetry.json'));
-
-// WebSocket server for real-time logs
+// WebSocket server for Mission Control UI
 const wss = new WebSocket.Server({ port: WS_PORT });
 const clients = new Set();
 
-wss.on('connection', (ws) => {
+wss.on('connection', async (ws) => {
     clients.add(ws);
-    console.log('[Launcher] Client connected');
-
-    // Send current status, telemetry, sentinels, and missions
     ws.send(JSON.stringify({ type: 'status', status: processStatus }));
-    ws.send(JSON.stringify({ type: 'telemetry', data: telemetry.getStats() }));
-    ws.send(JSON.stringify({ type: 'sentinels', sentinels: discoverSentinels() }));
+    ws.send(JSON.stringify({ type: 'telemetry', data: getSessionMetrics() }));
+    ws.send(JSON.stringify({ type: 'sentinels', sentinels: await discoverSentinels() }));
     ws.send(JSON.stringify({ type: 'missionList', missions: discoverMissions() }));
 
     ws.on('message', (data) => {
-        try {
-            const msg = JSON.parse(data);
-            handleCommand(msg, ws);
-        } catch (e) {
-            console.error('[Launcher] Parse error:', e.message);
-        }
+        try { handleCommand(JSON.parse(data), ws); } catch (e) { }
     });
-
-    ws.on('close', () => {
-        clients.delete(ws);
-        console.log('[Launcher] Client disconnected');
-    });
+    ws.on('close', () => clients.delete(ws));
 });
 
 function broadcast(message) {
     const data = JSON.stringify(message);
-    clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(data);
-        }
-    });
+    clients.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(data); });
 }
 
 function log(source, text, type = 'info') {
-    const entry = {
-        type: 'log',
-        source,
-        text,
-        logType: type,
-        timestamp: new Date().toLocaleTimeString()
-    };
-    broadcast(entry);
-    console.log(`[${source}] ${text}`);
+    broadcast({ type: 'log', source, text, logType: type, timestamp: new Date().toLocaleTimeString() });
 }
 
 function handleCommand(msg, ws) {
     switch (msg.cmd) {
-        case 'start':
-            startProcess(msg.process, msg.browser, msg.device, msg.network);
-            break;
-        case 'stop':
-            stopProcess(msg.process);
-            break;
         case 'startAll':
-            startProcess('hub', msg.browser, msg.device, msg.network);
-            // Start ALL discovered sentinels
-            const sentinels = discoverSentinels();
-            sentinels.forEach((s, i) => {
-                setTimeout(() => startProcess(s.id), 1000 + (i * 500));
-            });
-            log('System', `Starting constellation with ${sentinels.length} sentinels...`, 'info');
+            startConstellation(msg.browser, msg.device, msg.network);
             break;
         case 'stopAll':
-            stopProcess('mission');
-            // Stop ALL discovered sentinels
-            discoverSentinels().forEach(s => stopProcess(s.id));
-            setTimeout(() => stopProcess('hub'), 500);
+            stopConstellation();
             break;
         case 'launch':
             launchMission(msg.mission);
             break;
-        case 'refreshMissions':
-            broadcast({ type: 'missionList', missions: discoverMissions() });
-            break;
-        // Phase 13.5: Recording commands
-        case 'startRecording':
-            // Auto-start Hub if not running
-            if (!processes.hub) {
-                log('System', 'Starting Hub for recording...', 'info');
-                startProcess('hub');
-                // Wait for Hub to be ready before forwarding
-                setTimeout(() => {
-                    forwardToHub({ method: 'starlight.startRecording', params: { url: msg.url } });
-                    log('System', `🔴 Recording started on ${msg.url} - Browser will open!`, 'success');
-                }, 2000);
-            } else {
-                forwardToHub({ method: 'starlight.startRecording', params: { url: msg.url } });
-                log('System', `🔴 Recording started on ${msg.url}`, 'success');
-            }
-            break;
-        case 'stopRecording':
-            forwardToHub({ method: 'starlight.stopRecording', params: { name: msg.name } });
-            log('System', '⏹️ Recording stopped', 'success');
-            break;
-
-        // Phase 13: Natural Language Intent commands
         case 'executeNLI':
             executeNLI(msg.instruction);
             break;
         case 'getNLIStatus':
             getNLIStatus();
             break;
-        case 'startOllama':
-            startOllama();
+        case 'toggleOllama':
+            toggleOllama();
             break;
-        case 'stopOllama':
-            stopOllama();
+        case 'toggleSentinel':
+            toggleSentinel(msg.id);
             break;
     }
 }
 
-function startProcess(name, browserEngine = null, device = null, network = 'online') {
-    if (processes[name]) {
-        log('System', `${name} already running`, 'info');
-        return;
-    }
+async function toggleSentinel(id) {
+    log('System', `🔄 Requesting sentinel toggle: ${id}`, 'info');
 
-    let cmd, args;
-    const cwd = path.join(__dirname, '..');
+    // World-Class: Mapping IDs to Protocol Names from config.json
+    const catalog = [
+        { id: 'pulse', name: 'Pulse' },
+        { id: 'vision', name: 'Vision' },
+        { id: 'pii', name: 'PII' },
+        { id: 'janitor', name: 'Janitor' },
+        { id: 'a11y', name: 'A11y' },
+        { id: 'data', name: 'Data' },
+        { id: 'responsive', name: 'Responsive' },
+        { id: 'stealth', name: 'Stealth' }
+    ];
+    const entry = catalog.find(c => id.toLowerCase().includes(c.id));
+    const sentinelName = entry ? entry.name : id;
 
-    // Hub is special - needs browser/mobile/network configuration
-    if (name === 'hub') {
-        // Phase 14.2: Update config.json with browser, mobile, and network settings
-        const configPath = path.join(cwd, 'config.json');
-        try {
-            const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const isRunning = processStatus[id] === 'running';
+    const action = isRunning ? 'stop' : 'start';
 
-            if (!config.hub) config.hub = {};
-            if (!config.hub.browser) config.hub.browser = {};
-
-            // Browser engine
-            if (browserEngine) {
-                config.hub.browser.engine = browserEngine;
-                log('System', `✓ Config updated: browser.engine = "${browserEngine}"`, 'success');
-            }
-
-            // Mobile device emulation
-            if (device) {
-                config.hub.browser.mobile = {
-                    enabled: true,
-                    device: device
-                };
-                log('System', `✓ Config updated: mobile.device = "${device}"`, 'success');
-            } else {
-                config.hub.browser.mobile = {
-                    enabled: false,
-                    device: null
-                };
-            }
-
-            // Network emulation
-            if (!config.hub.network) config.hub.network = {};
-            config.hub.network.emulation = network || 'online';
-            if (network && network !== 'online') {
-                log('System', `✓ Config updated: network.emulation = "${network}"`, 'success');
-            }
-
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 4), 'utf8');
-
-            const selectedBrowser = config.hub?.browser?.engine || 'chromium';
-            const mobileInfo = device ? ` with ${device} emulation` : '';
-            const networkInfo = network !== 'online' ? ` (${network} network)` : '';
-            log('System', `🚀 Starting Hub with ${selectedBrowser.toUpperCase()}${mobileInfo}${networkInfo}...`, 'info');
-        } catch (e) {
-            log('System', `Warning: Could not update config: ${e.message}`, 'info');
-        }
-
-        cmd = 'node';
-        args = ['src/hub.js'];
-    } else {
-        // Dynamic sentinel - find the file
-        const sentinels = discoverSentinels();
-        const sentinel = sentinels.find(s => s.id === name);
-
-        if (sentinel) {
-            cmd = 'python';
-            args = [sentinel.path];
+    try {
+        const response = await fetch('http://localhost:8095/manage/sentinel', {
+            method: 'POST',
+            body: JSON.stringify({ action, name: sentinelName }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        if (response.ok) {
+            log('System', `✅ Hub acknowledged ${action} for ${sentinelName}`, 'success');
         } else {
-            log('System', `Unknown process: ${name}`, 'error');
-            return;
+            // Fallback to direct spawn if Hub is unreachable
+            if (!isRunning) spawnSentinel(id);
+            else stopSentinel(id);
         }
-
-        log('System', `Starting ${name}...`, 'info');
+    } catch (e) {
+        log('System', `⚠️ Hub Management Link Offline. Using direct orchestration.`, 'warn');
+        if (!isRunning) spawnSentinel(id);
+        else stopSentinel(id);
     }
+}
 
-    const proc = spawn(cmd, args, {
-        cwd,
-        shell: true,
-        stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    processes[name] = proc;
-    processStatus[name] = 'running';
-    broadcast({ type: 'status', status: processStatus });
-
-    proc.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n').filter(l => l.trim());
-        lines.forEach(line => log(name, line, name));
-    });
-
-    proc.stderr.on('data', (data) => {
-        const lines = data.toString().split('\n').filter(l => l.trim());
-        lines.forEach(line => log(name, line, 'error'));
-    });
-
-    proc.on('close', (code) => {
-        log('System', `${name} exited with code ${code}`, code === 0 ? 'info' : 'error');
-        processes[name] = null;
-        processStatus[name] = 'stopped';
+function stopSentinel(id) {
+    if (processes[id]) {
+        if (process.platform === 'win32') spawn('taskkill', ['/pid', processes[id].pid, '/f', '/t']);
+        else processes[id].kill();
+        delete processes[id];
+        processStatus[id] = 'stopped';
         broadcast({ type: 'status', status: processStatus });
+    }
+}
 
-        // Phase 10: Refresh and broadcast telemetry if the Hub just finished
-        if (name === 'hub') {
-            telemetry.refresh();
-            broadcast({ type: 'telemetry', data: telemetry.getStats() });
-        }
+function spawnSentinel(id) {
+    const sentinelFile = path.join(__dirname, '../sentinels', `${id}.py`);
+    if (fs.existsSync(sentinelFile)) {
+        const proc = spawn('python', ['-u', sentinelFile], {
+            cwd: path.join(__dirname, '..'),
+            env: { ...process.env, HUB_URL: 'ws://localhost:8095' }
+        });
+        processes[id] = proc;
+        processStatus[id] = 'running';
+        proc.stdout.on('data', d => log(id, d.toString(), 'hub'));
+        proc.on('close', () => {
+            processStatus[id] = 'stopped';
+            broadcast({ type: 'status', status: processStatus });
+        });
+    } else {
+        log('System', `Error: Sentinel file not found: ${sentinelFile}`, 'error');
+    }
+}
+
+// v4.2 NLI Engine
+function executeNLI(instruction) {
+    log('NLI', `🗣️ Parsing: ${instruction}`, 'info');
+    const proc = spawn('node', ['bin/starlight.js', '--intent', instruction], {
+        cwd: path.join(__dirname, '..'),
+        shell: false
+    });
+    proc.stdout.on('data', d => log('NLI', d.toString(), 'mission'));
+}
+
+let ollamaProc = null;
+function toggleOllama() {
+    if (ollamaProc) {
+        log('System', '⏹️ Stopping Ollama...', 'info');
+        if (process.platform === 'win32') spawn('taskkill', ['/pid', ollamaProc.pid, '/f', '/t']);
+        else ollamaProc.kill();
+        ollamaProc = null;
+    } else {
+        log('System', '🦙 Launching Ollama...', 'info');
+        ollamaProc = spawn('ollama', ['serve'], { shell: false });
+        ollamaProc.on('error', () => log('System', 'Error: Ollama not found.', 'error'));
+    }
+}
+
+function getNLIStatus() {
+    log('System', '🔍 Checking NLI Health...', 'info');
+    // Simple check: is Ollama port 11434 open?
+    const http = require('http');
+    http.get('http://localhost:11434/api/tags', (res) => {
+        log('System', '✅ Ollama is ONLINE', 'success');
+    }).on('error', () => log('System', '❌ Ollama is OFFLINE', 'error'));
+}
+
+// v4.2: Unified CLI Orchestration (bin/starlight.js)
+function startConstellation(browser = 'chromium', device = '', network = 'online') {
+    isShuttingDown = false; // Reset shutdown flag
+    if (processes.hub) return;
+
+    log('System', `🚀 Assembling constellation via bin/starlight.js...`, 'info');
+
+    // Update config.json (Mobile/Network)
+    const configPath = path.join(__dirname, '../config.json');
+    try {
+        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        config.browser = browser;
+        config.device = device;
+        config.network = network;
+        fs.writeFileSync(configPath, JSON.stringify(config, null, 4));
+    } catch (e) { }
+
+    // Use src/hub.js as the official protocol entry point (v4.5)
+    const proc = spawn('node', ['src/hub.js'], {
+        cwd: path.join(__dirname, '..'),
+        shell: false,
+        env: { ...process.env, NODE_NO_WARNINGS: '1' }
+    });
+
+    proc.stderr.on('data', d => log('System', `ERR: ${d.toString()}`, 'error'));
+
+    processes.hub = proc;
+    processStatus.hub = 'running';
+    broadcast({ type: 'status', status: processStatus });
+
+    proc.stdout.on('data', d => {
+        const lines = d.toString().split('\n').filter(l => l.trim());
+        lines.forEach(line => {
+            let source = 'Hub';
+            let text = line;
+
+            // Forensic Routing: Detect sentinel name in [Name] bracket
+            const match = line.match(/^\[([^\]]+)\]\s*(.*)/);
+            if (match) {
+                const candidate = match[1];
+                if (candidate.toLowerCase().includes('hubserver')) {
+                    source = 'Hub';
+                    text = match[2];
+                } else if (!candidate.includes('System') && !candidate.includes('Launcher')) {
+                    source = candidate;
+                    text = match[2];
+                }
+            }
+
+            log(source, text, 'hub');
+            if (line.includes('Starlight Protocol READY')) {
+                log('System', '✨ Constellation synchronized. Ready for mission.', 'success');
+            }
+        });
+    });
+
+    proc.on('close', () => {
+        processes.hub = null;
+        processStatus.hub = 'stopped';
+        broadcast({ type: 'status', status: processStatus });
     });
 }
 
-function stopProcess(name) {
-    const proc = processes[name];
-    if (!proc) {
-        log('System', `${name} is not running`, 'info');
-        return;
-    }
+async function stopConstellation() {
+    if (isShuttingDown) return; // Prevent double trigger
+    isShuttingDown = true;
+    log('System', '🛑 Initiating full constellation shutdown...', 'warn');
 
-    log('System', `Stopping ${name}...`, 'info');
-
-    if (process.platform === 'win32') {
-        spawn('taskkill', ['/pid', proc.pid, '/f', '/t']);
-    } else {
-        proc.kill('SIGTERM');
-    }
-
-    processes[name] = null;
-    processStatus[name] = 'stopped';
+    // 1. Immediate status reset for UI responsiveness
+    processStatus.hub = 'stopped';
+    processStatus.mission = 'stopped';
+    hubAutoSyncLastUpdate = 0;
     broadcast({ type: 'status', status: processStatus });
-}
 
-function launchMission(missionFile) {
-    if (!processes.hub) {
-        log('System', 'Hub is not running! Start Hub first.', 'error');
-        return;
+    // 2. Kill tracked processes by PID
+    if (processes.hub) {
+        if (process.platform === 'win32') {
+            spawn('taskkill', ['/pid', processes.hub.pid, '/f', '/t']);
+        } else {
+            processes.hub.kill();
+        }
+        processes.hub = null;
     }
 
     if (processes.mission) {
-        log('System', 'A mission is already running!', 'error');
+        if (process.platform === 'win32') {
+            spawn('taskkill', ['/pid', processes.mission.pid, '/f', '/t']);
+        } else {
+            processes.mission.kill();
+        }
+        processes.mission = null;
+    }
+
+    // 3. Kill orphan Hub/Sentinel processes (Absolute Path & Port Match)
+    if (process.platform === 'win32') {
+        const cwd = process.cwd().replace(/\\/g, '\\\\');
+
+        // Kill Hub orphans on 8095
+        const killHub = `Get-NetTCPConnection -LocalPort 8095 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }`;
+        spawn('powershell.exe', ['-NoProfile', '-Command', killHub], { shell: false });
+
+        // Kill ALL node/python orphans spawned from this codebase directory
+        const killOrphans = `Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq "node.exe" -or $_.Name -eq "python.exe") -and ($_.CommandLine -like "*${cwd}*") } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+        spawn('powershell.exe', ['-NoProfile', '-Command', killOrphans], { shell: false });
+    }
+
+    // 4. Wipe health cache to prevent phantom status
+    try {
+        const healthFile = path.join(__dirname, '../sentinel_health.json');
+        if (fs.existsSync(healthFile)) fs.writeFileSync(healthFile, '{}');
+    } catch (e) { }
+
+    // 5. Port Cleanup Buffer: Wait for OS to release sockets before allowing restart
+    await new Promise(r => setTimeout(r, 2000));
+
+    isShuttingDown = false;
+    log('System', '✅ Fleet shutdown complete.', 'success');
+}
+
+function launchMission(mission) {
+    if (!processes.hub) {
+        log('System', 'Error: Hub is not running.', 'error');
         return;
     }
 
-    const cwd = path.join(__dirname, '..');
-    const missionPath = path.join('test', missionFile);
-
-    log('System', `Launching mission: ${missionFile}`, 'success');
-
-    const proc = spawn('node', [missionPath], {
-        cwd,
-        shell: true,
-        stdio: ['pipe', 'pipe', 'pipe']
+    log('System', `🛰️ Launching mission: ${mission}`, 'success');
+    const proc = spawn('node', [`test/${mission}`], {
+        cwd: path.join(__dirname, '..'),
+        shell: false,
+        env: { ...process.env, HUB_URL: 'ws://localhost:8095' }
     });
 
     processes.mission = proc;
     processStatus.mission = 'running';
     broadcast({ type: 'status', status: processStatus });
 
-    proc.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n').filter(l => l.trim());
-        lines.forEach(line => log('mission', line, 'intent'));
+    proc.stdout.on('data', d => {
+        const lines = d.toString().split('\n').filter(l => l.trim());
+        lines.forEach(line => log('Mission', line, 'mission'));
     });
 
-    proc.stderr.on('data', (data) => {
-        const lines = data.toString().split('\n').filter(l => l.trim());
-        lines.forEach(line => log('mission', line, 'error'));
-    });
-
-    proc.on('close', (code) => {
-        log('System', `Mission completed with code ${code}`, code === 0 ? 'success' : 'error');
+    proc.on('close', code => {
+        log('System', `Mission outcome: ${code === 0 ? 'SUCCESS' : 'FAILURE'}`, code === 0 ? 'success' : 'error');
         processes.mission = null;
         processStatus.mission = 'stopped';
         broadcast({ type: 'status', status: processStatus });
+
+        // Refresh session-isolated metrics
+        broadcast({ type: 'telemetry', data: getSessionMetrics() });
     });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Phase 13: Natural Language Intent (NLI)
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Execute a natural language instruction via generated temp script
- */
-function executeNLI(instruction) {
-    if (!instruction) {
-        log('NLI', 'No instruction provided', 'error');
-        return;
-    }
-
-    // Auto-start Hub if not running
-    if (!processes.hub) {
-        log('NLI', 'Starting Hub for NLI execution...', 'info');
-        startProcess('hub');
-        // Wait for Hub to be ready
-        setTimeout(() => executeNLI(instruction), 2500);
-        return;
-    }
-
-    log('NLI', `🗣️ Parsing: "${instruction.substring(0, 50)}${instruction.length > 50 ? '...' : ''}"`, 'info');
-
-    // Generate temp script
-    const scriptContent = `
-const IntentRunner = require('./src/intent_runner');
-
-async function run() {
-    const runner = new IntentRunner();
-    
-    try {
-        await runner.connect();
-        console.log('[NLI] Connected to Hub');
-        
-        const results = await runner.executeNL(${JSON.stringify(instruction)});
-        
-        console.log('\\n[NLI] ✅ Execution complete!');
-        console.log('[NLI] Steps executed:', results.length);
-        
-        await runner.finish('NLI execution complete');
-    } catch (error) {
-        console.error('[NLI] ❌ Execution failed:', error.message);
-        runner.close();
-        process.exit(1);
-    }
-}
-
-run();
-`;
-
-    const cwd = path.join(__dirname, '..');
-    const scriptPath = path.join(cwd, '_nli_temp_mission.js');
-
-    try {
-        fs.writeFileSync(scriptPath, scriptContent, 'utf8');
-
-        // Launch as a mission
-        const proc = spawn('node', [scriptPath], {
-            cwd,
-            shell: true,
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
-
-        processes.mission = proc;
-        processStatus.mission = 'running';
-        broadcast({ type: 'status', status: processStatus });
-
-        proc.stdout.on('data', (data) => {
-            const lines = data.toString().split('\n').filter(l => l.trim());
-            lines.forEach(line => log('NLI', line, 'intent'));
-        });
-
-        proc.stderr.on('data', (data) => {
-            const lines = data.toString().split('\n').filter(l => l.trim());
-            lines.forEach(line => log('NLI', line, 'error'));
-        });
-
-        proc.on('close', (code) => {
-            // Cleanup temp script
-            try { fs.unlinkSync(scriptPath); } catch { }
-
-            log('NLI', `Execution ${code === 0 ? 'completed successfully' : 'failed with code ' + code}`,
-                code === 0 ? 'success' : 'error');
-            processes.mission = null;
-            processStatus.mission = 'stopped';
-            broadcast({ type: 'status', status: processStatus });
-        });
-
-    } catch (e) {
-        log('NLI', `Failed to create script: ${e.message}`, 'error');
-    }
-}
-
-/**
- * Get NLI status (config, Ollama availability)
- */
-function getNLIStatus() {
-    const configPath = path.join(__dirname, '..', 'config.json');
-
-    try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-        const nliConfig = config.nli || {};
-
-        log('NLI', `Model: ${nliConfig.model || 'llama3.2:1b'}`, 'info');
-        log('NLI', `Endpoint: ${nliConfig.endpoint || 'http://localhost:11434'}`, 'info');
-        log('NLI', `Fallback: ${nliConfig.fallback?.enabled !== false ? 'Enabled' : 'Disabled'} (${nliConfig.fallback?.mode || 'pattern'})`, 'info');
-
-        // Check Ollama availability via HTTP
-        const http = require('http');
-        const url = new URL(nliConfig.endpoint || 'http://localhost:11434');
-
-        const req = http.get({ hostname: url.hostname, port: url.port, path: '/api/tags', timeout: 3000 }, (res) => {
-            if (res.statusCode === 200) {
-                log('NLI', '✅ Ollama is available', 'success');
-            } else {
-                log('NLI', `⚠️ Ollama responded with status ${res.statusCode}`, 'info');
-            }
-        });
-
-        req.on('error', () => {
-            log('NLI', '❌ Ollama not available (will use fallback)', 'info');
-        });
-
-        req.on('timeout', () => {
-            req.destroy();
-            log('NLI', '❌ Ollama connection timeout', 'info');
-        });
-
-    } catch (e) {
-        log('NLI', `Error reading config: ${e.message}`, 'error');
-    }
-}
-
-/**
- * Start Ollama server
- */
-let ollamaProcess = null;
-
-function startOllama() {
-    if (ollamaProcess) {
-        log('NLI', 'Ollama is already running', 'info');
-        return;
-    }
-
-    log('NLI', '🦙 Starting Ollama server...', 'info');
-
-    // Try to start Ollama
-    ollamaProcess = spawn('ollama', ['serve'], {
-        shell: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        detached: false
-    });
-
-    ollamaProcess.stdout.on('data', (data) => {
-        const lines = data.toString().split('\n').filter(l => l.trim());
-        lines.forEach(line => log('Ollama', line, 'info'));
-    });
-
-    ollamaProcess.stderr.on('data', (data) => {
-        const text = data.toString();
-        // Ollama logs to stderr but it's not always an error
-        if (text.includes('listening') || text.includes('Listening')) {
-            log('NLI', '✅ Ollama server is ready at http://localhost:11434', 'success');
-        } else {
-            log('Ollama', text.trim(), 'info');
-        }
-    });
-
-    ollamaProcess.on('error', (err) => {
-        log('NLI', `❌ Failed to start Ollama: ${err.message}`, 'error');
-        log('NLI', 'Install Ollama: https://ollama.ai', 'info');
-        ollamaProcess = null;
-    });
-
-    ollamaProcess.on('close', (code) => {
-        log('NLI', `Ollama exited with code ${code}`, code === 0 ? 'info' : 'error');
-        ollamaProcess = null;
-    });
-}
-
-function stopOllama() {
-    if (!ollamaProcess) {
-        log('NLI', 'Ollama is not running', 'info');
-        return;
-    }
-
-    log('NLI', '⏹️ Stopping Ollama...', 'info');
-
-    if (process.platform === 'win32') {
-        spawn('taskkill', ['/pid', ollamaProcess.pid, '/f', '/t']);
-    } else {
-        ollamaProcess.kill('SIGTERM');
-    }
-
-    ollamaProcess = null;
-    log('NLI', 'Ollama stopped', 'success');
-}
-
-
-
-// HTTP server for static files
-const projectRoot = path.join(__dirname, '..');
-
-const server = http.createServer((req, res) => {
-    let filePath;
-
-    // API: Export sentinel
-    if (req.method === 'POST' && req.url === '/api/sentinel/export') {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', () => {
-            try {
-                const { filename, code } = JSON.parse(body);
-
-                if (!filename || !code) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ success: false, error: 'Missing filename or code' }));
-                    return;
-                }
-
-                // Sanitize filename
-                const safeName = filename.replace(/[^a-z0-9_\-\.]/gi, '_');
-                const sentinelsDir = path.join(projectRoot, 'sentinels');
-                const filePath = path.join(sentinelsDir, safeName);
-
-                // Ensure sentinels directory exists
-                if (!fs.existsSync(sentinelsDir)) {
-                    fs.mkdirSync(sentinelsDir, { recursive: true });
-                }
-
-                // Write the file
-                fs.writeFileSync(filePath, code, 'utf8');
-
-                console.log(`[Launcher] Sentinel exported: ${safeName}`);
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, path: `sentinels/${safeName}` }));
-            } catch (e) {
-                console.error('[Launcher] Export error:', e.message);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, error: e.message }));
-            }
-        });
-        return;
-    }
-
-    // API: List available sentinels
-    if (req.method === 'GET' && req.url === '/api/sentinels') {
-        const sentinels = discoverSentinels();
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(sentinels));
-        return;
-    }
-
-    // Serve sentinel editor
-    if (req.url === '/sentinel-editor' || req.url === '/sentinel-editor.html') {
-        filePath = path.join(__dirname, 'sentinel_editor.html');
-    }
-    // Serve launcher UI files from launcher/ directory
-    else if (req.url === '/' || req.url.startsWith('/client.js') || req.url.startsWith('/styles.css')) {
-        filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url);
-    } else {
-        // Serve other files (report.html, screenshots/) from project root
-        filePath = path.join(projectRoot, req.url);
-    }
-
-    const ext = path.extname(filePath);
-
-    // Security: Prevent path traversal attacks
-    const normalizedPath = path.normalize(filePath);
-    if (!normalizedPath.startsWith(projectRoot) && !normalizedPath.startsWith(__dirname)) {
-        console.warn(`[Launcher] SECURITY: Blocked path traversal attempt: ${req.url}`);
-        res.writeHead(403);
-        res.end('Forbidden');
-        return;
-    }
-
-    const mimeTypes = {
-        '.html': 'text/html',
-        '.css': 'text/css',
-        '.js': 'application/javascript',
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.webp': 'image/webp'
-    };
-
-    const contentType = mimeTypes[ext] || 'text/plain';
-
-    fs.readFile(filePath, (err, content) => {
-        if (err) {
-            res.writeHead(404);
-            res.end('Not found: ' + req.url);
-        } else {
-            res.writeHead(200, { 'Content-Type': contentType });
-            res.end(content);
-        }
-    });
-});
-
-server.listen(PORT, () => {
-    console.log(`
-╔══════════════════════════════════════════════════╗
-║      🛰️  Starlight Mission Control               ║
-╠══════════════════════════════════════════════════╣
-║  UI:        http://localhost:${PORT}               ║
-║  WebSocket: ws://localhost:${WS_PORT}                ║
-╚══════════════════════════════════════════════════╝
-    `);
-});
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-    console.log('\n[Launcher] Shutting down...');
-    Object.keys(processes).forEach(name => stopProcess(name));
-    setTimeout(() => {
-        wss.close();
-        server.close();
-        process.exit(0);
-    }, 1000);
-});
 function discoverMissions() {
     const testDir = path.join(__dirname, '../test');
     try {
         if (!fs.existsSync(testDir)) return [];
-        const files = fs.readdirSync(testDir);
-        return files.filter(f => f.startsWith('intent_') && f.endsWith('.js'));
-    } catch (e) {
-        console.error('[Launcher] Discovery error:', e.message);
-        return [];
-    }
+        return fs.readdirSync(testDir).filter(f => f.startsWith('intent_') && f.endsWith('.js'));
+    } catch (e) { return []; }
 }
 
-// Start discovery on load
-const missions = discoverMissions();
-console.log(`[Launcher] Discovered ${missions.length} mission scripts.`);
+const server = http.createServer((req, res) => {
+    let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url);
+    if (req.url === '/sentinel-editor') filePath = path.join(__dirname, 'sentinel_editor.html');
+    if (req.url === '/report.html') filePath = path.join(__dirname, '../report.html');
+    if (req.url.startsWith('/screenshots/')) filePath = path.join(__dirname, '..', req.url);
+
+    const ext = path.extname(filePath);
+    const mimeTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript', '.png': 'image/png' };
+
+    fs.readFile(filePath, (err, content) => {
+        if (err) { res.writeHead(404); res.end('Not found'); }
+        else { res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/plain' }); res.end(content); }
+    });
+});
+
+server.listen(PORT, () => {
+    console.log(`🛰️ Mission Control UI: http://localhost:${PORT}`);
+
+    // v4.3 Periodic Health Pulse
+    setInterval(async () => {
+        const sentinels = await discoverSentinels();
+        broadcast({ type: 'sentinels', sentinels });
+    }, 5000);
+});

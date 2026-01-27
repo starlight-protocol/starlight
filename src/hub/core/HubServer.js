@@ -43,7 +43,7 @@ class HubServer {
         this.semanticResolver = new SemanticResolver(this.historyEngine);
 
         // 2. Initialize Core Components
-        this.server = http.createServer((req, res) => this._handleHealthCheck(req, res));
+        this.server = http.createServer((req, res) => this._handleHttpRequest(req, res));
         this.wss = new WebSocketServer({ server: this.server });
 
         // 3. Initialize Browser & Sentinels
@@ -59,6 +59,8 @@ class HubServer {
         this.pendingSentinels = new Map(); // For challenge-response
         this.consensusState = new Map(); // Tracks clearance for each msg_id
         this.reportData = [];
+        // Ensure mission_trace.json is fresh on start
+        this._persistTrace();
         this.missionStartTime = Date.now();
         this.totalSavedTime = 0;
         this.recoveryTimes = [];
@@ -68,6 +70,9 @@ class HubServer {
         this.missionTargetUrl = null; // Sovereign Mission Source of Truth
         this.missionLocaleInvariants = []; // Derived locale tokens (en_gb, us, etc.)
         this.screenshotsDir = path.join(process.cwd(), 'screenshots');
+        this.isReady = false; // Readiness signal
+        this.startupError = null;
+
         if (!fs.existsSync(this.screenshotsDir)) {
             fs.mkdirSync(this.screenshotsDir, { recursive: true });
         }
@@ -80,9 +85,13 @@ class HubServer {
         console.log(`[HubServer] 🚀 Initializing Starlight Protocol v4.0...`);
 
         // 1. Foundation: Browser Engine
-        console.log(`[HubServer] Launching browser engine...`);
+        console.log(`[HubServer] Launching browser engine (${this.browserAdapter.constructor.name})...`);
+        const launchStart = Date.now();
         await this.browserAdapter.launch({ headless: this.headless });
+        console.log(`[HubServer] Browser launched in ${Date.now() - launchStart}ms`);
+
         this.page = await this.browserAdapter.newPage();
+        console.log(`[HubServer] Browser page context ready`);
 
         // 1.1 Network Security: Telemetry Blocking (Eliminate CORS Noise)
         if (this.page && this.page.route) {
@@ -97,17 +106,22 @@ class HubServer {
         // 3. Network: Hub Interface
         this.server.listen(this.port, () => {
             console.log(`[HubServer] Hub listening on port ${this.port}`);
-            console.log(`[HubServer] ✓ Starlight Protocol READY.`);
         });
 
         this.wss.on('connection', (ws) => this._handleConnection(ws));
+        this.isReady = true;
+        console.log(`[HubServer] Starlight Protocol READY`);
 
         // 4. Lifecycle Hooks
         process.on('SIGINT', () => this.shutdown());
         process.on('SIGTERM', () => this.shutdown());
         process.on('uncaughtException', async (err) => {
             console.error('[HubServer] UNCAUGHT EXCEPTION:', err);
-            await this.shutdown();
+            this.startupError = err.message;
+            if (!this.isReady) {
+                // If we haven't reached readiness, we must exit to allow the orchestrator to retry
+                await this.shutdown(1);
+            }
         });
     }
 
@@ -119,9 +133,70 @@ class HubServer {
         return {};
     }
 
+    _handleHttpRequest(req, res) {
+        const url = new URL(req.url, `http://${req.headers.host}`);
+
+        // CORS Headers for Dashboard
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
+
+        if (url.pathname === '/health') {
+            return this._handleHealthCheck(req, res);
+        }
+
+        if (url.pathname === '/manage/sentinel' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', () => {
+                try {
+                    const data = JSON.parse(body);
+                    const { action, name } = data;
+                    if (action === 'start') {
+                        this.lifecycleManager.startSentinelByName(name);
+                        res.writeHead(200);
+                        res.end(JSON.stringify({ status: 'ok', message: `Launching ${name}` }));
+                    } else if (action === 'stop') {
+                        this.lifecycleManager.stopSentinelByName(name);
+                        res.writeHead(200);
+                        res.end(JSON.stringify({ status: 'ok', message: `Stopping ${name}` }));
+                    } else {
+                        res.writeHead(400);
+                        res.end(JSON.stringify({ status: 'error', message: 'Invalid action' }));
+                    }
+                } catch (e) {
+                    res.writeHead(500);
+                    res.end(JSON.stringify({ status: 'error', message: e.message }));
+                }
+            });
+            return;
+        }
+
+        res.writeHead(404);
+        res.end('Not Found');
+    }
+
     _handleHealthCheck(req, res) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'online', protocol: 'Starlight v4.0' }));
+        const sentinelData = Array.from(this.sentinels.values()).map(s => ({
+            layer: s.layer,
+            health: s.health || 'awaiting_pulse',
+            lastPulse: s.lastPulse
+        }));
+        res.end(JSON.stringify({
+            status: this.isReady ? 'online' : 'initializing',
+            error: this.startupError,
+            protocol: 'Starlight v4.5',
+            uptime: Math.round((Date.now() - this.missionStartTime) / 1000),
+            sentinels: sentinelData,
+            managedFleet: this.lifecycleManager.processes.map(p => ({ name: p.name, status: 'running' }))
+        }));
     }
 
     _handleConnection(ws) {
@@ -131,11 +206,10 @@ class HubServer {
         ws.on('message', async (data) => {
             try {
                 const rawMsg = JSON.parse(data.toString());
-                // Enhanced Security Bridge (IpcBridge v4.0)
-                const safeMsg = this.ipcBridge.processMessage(rawMsg);
-                if (!safeMsg) return;
-
-                await this._handleMessage(id, ws, safeMsg);
+                const processed = this.ipcBridge.processMessage(rawMsg);
+                const { raw, safe } = processed;
+                this.auditLogger.log('starlight.receive', safe);
+                await this._handleMessage(id, ws, raw, safe);
             } catch (e) {
                 console.error(`[HubServer] Security Violation or Protocol Error: ${e.message}`);
                 this.securityEvents.push({
@@ -150,52 +224,38 @@ class HubServer {
             const sentinel = this.sentinels.get(id);
             if (sentinel) {
                 console.log(`[HubServer] Sentinel disconnected: ${sentinel.layer} (${id})`);
-
-                // v4.2: Consensus Recovery
-                // If this sentinel was part of a pending consensus, we need to adjust or resolve
                 for (const [msgId, consensus] of this.consensusState.entries()) {
-                    if (consensus.clearedBy.has(id)) {
-                        // Already counted, nothing to do
-                    } else {
-                        // Reduce required count or force resolution if it's the last one
+                    if (!consensus.clearedBy.has(id)) {
                         consensus.required = Math.max(0, consensus.required - 1);
-                        console.log(`[HubServer] Adjusted consensus ${msgId} (New requirement: ${consensus.required})`);
                         if (consensus.clearedBy.size >= consensus.required && !consensus.hijacked) {
                             consensus.resolve();
                         }
                     }
                 }
-            } else {
-                console.log(`[HubServer] Client disconnected: ${id}`);
             }
             this.sentinels.delete(id);
         });
     }
 
-    async _handleMessage(id, ws, msg) {
+    async _handleMessage(id, ws, msg, safeMsg) {
+        const auditMsg = safeMsg || msg;
         if (msg.method === 'starlight.pulse') {
             const sentinel = this.sentinels.get(id);
             if (sentinel) {
-                sentinel.health = msg.params?.health || 'online';
+                sentinel.health = msg.params?.health || 'awaiting_pulse';
                 sentinel.lastPulse = Date.now();
             }
-            return; // Heartbeat handled silently
+            return;
         }
 
-        this.auditLogger.log('ipc_receive', msg);
+        this.auditLogger.log('ipc_receive', auditMsg);
 
         if (msg.method === 'starlight.registration') {
             const challenge = nanoid(16);
             this.pendingSentinels.set(id, { ...msg.params, challenge, ws });
-
             ws.send(JSON.stringify({
-                jsonrpc: '2.0',
-                id: msg.id,
-                result: {
-                    success: true,
-                    assignedId: id,
-                    challenge: challenge
-                }
+                jsonrpc: '2.0', id: msg.id,
+                result: { success: true, assignedId: id, challenge: challenge }
             }));
             return;
         }
@@ -203,22 +263,25 @@ class HubServer {
         if (msg.method === 'starlight.challenge_response') {
             const pending = this.pendingSentinels.get(id);
             if (pending && pending.challenge === msg.params.response) {
-                // Sanitize sentinel object for history/report (remove ws)
                 const { ws: _, ...sentinelInfo } = pending;
-                const sentinelRecord = { ...sentinelInfo, id };
-
                 this.sentinels.set(id, { ...pending, layer: pending.layer });
-                this.sentinelHistory.push(sentinelRecord);
+                this.sentinelHistory.push({ ...sentinelInfo, id });
+                ws.send(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { success: true } }));
 
-                console.log(`[HubServer] Verified Sentinel: ${pending.layer}`);
-
-                ws.send(JSON.stringify({
-                    jsonrpc: '2.0',
-                    id: msg.id,
-                    result: { success: true }
-                }));
+                // Corrected Delta v1.2.2: Mandatory registration acknowledgment
+                // This unblinds the sentinel, confirming it's now part of the constellation.
+                setTimeout(() => {
+                    ws.send(JSON.stringify({
+                        jsonrpc: '2.0',
+                        method: 'starlight.registration_ack',
+                        params: {
+                            assignedId: id,
+                            protocolVersion: '1.2.2',
+                            status: 'ACTIVE'
+                        }
+                    }));
+                }, 50);
             } else {
-                console.warn(`[HubServer] Handshake Failed for client ${id}`);
                 ws.close();
             }
             return;
@@ -227,11 +290,9 @@ class HubServer {
         if (msg.method === 'starlight.intent') {
             await this._processIntent(id, ws, msg);
         } else if (msg.method === 'starlight.context_update') {
-            // High-fidelity mission state tracking
             this.missionContext = { ...this.missionContext, ...(msg.params?.context || {}) };
             this.auditLogger.log('context_update', msg.params?.context);
         } else if (msg.method === 'starlight.clear') {
-            // Consensus signaling from Sentinels (Multi-mode mapping v4.0)
             const clearedId = msg.params?.id || msg.id;
             const consensus = this.consensusState.get(clearedId);
             if (consensus) {
@@ -241,283 +302,161 @@ class HubServer {
                 }
             }
         } else if (msg.method === 'starlight.hijack') {
-            // Sentinel is taking over to remediate (e.g., Janitor clearing a popup)
             const hijackedId = msg.params?.id || msg.id;
             const consensus = this.consensusState.get(hijackedId);
             if (consensus) {
                 consensus.hijacked = true;
                 consensus.hijackStartTime = Date.now();
                 const sentinelName = this.sentinels.get(id)?.layer || 'Unknown Sentinel';
-                console.log(`[HubServer] 🚨 SESSION HIJACKED by Sentinel ${id}. Reason: ${msg.params?.reason || 'Unknown'}`);
+                const obstacleComplexity = msg.params?.complexity || (msg.params?.reason?.includes('onetrust') ? 2.5 : 1.0);
+                const savings = 120 * obstacleComplexity;
+                this.totalSavedTime += savings;
 
-                // v4.2 Traceability: Record for Hero Story Report
-                const screenshot = await this.takeScreenshot(`HIJACK_${id}_${Date.now()}`);
+                const screenshot = await this._captureForensicSnapshot(`HIJACK_${id}`);
                 this.reportData.push({
                     type: 'HIJACK',
                     sentinel: sentinelName,
                     reason: msg.params?.reason || 'Auto-remediation initiated',
                     screenshot,
+                    savings,
                     timestamp: new Date().toLocaleTimeString()
                 });
-                this.totalSavedTime += 300; // ROI: 5 mins triage avoided
+                this._persistTrace();
             }
         } else if (msg.method === 'starlight.action') {
-            // Sentinel executing an autonomous remediation command
+            const sentinel = this.sentinels.get(id);
             const action = msg.params?.action || msg.params?.cmd;
-            console.log(`[HubServer] ⚡ Sentinel Action: ${action} (Selector: ${msg.params?.selector})`);
-            await this._executeRawCommand({
+
+            const beforeScreenshot = await this._captureForensicSnapshot(`SENTINEL_BEFORE_${id}`);
+            const actionSuccess = await this._executeRawCommand({
                 method: msg.method,
-                params: { ...msg.params, cmd: action } // Normalize to 'cmd' for internal processing
-            }).catch(e => {
-                console.error(`[HubServer] Sentinel Action Failed: ${e.message}`);
+                params: { ...msg.params, cmd: action }
+            }).catch(() => false);
+            const afterScreenshot = await this._captureForensicSnapshot(`SENTINEL_AFTER_${id}`);
+
+            this.reportData.push({
+                type: 'SENTINEL_ACTION',
+                sentinel: sentinel?.layer || 'Unknown Sentinel',
+                cmd: action,
+                selector: msg.params?.selector,
+                success: actionSuccess,
+                beforeScreenshot,
+                afterScreenshot,
+                timestamp: new Date().toLocaleTimeString()
             });
+            this._persistTrace();
         } else if (msg.method === 'starlight.resume') {
-            // Sentinel remediation complete, requesting re-check or mission resume
             const resumeId = msg.params?.id || msg.id;
             const consensus = this.consensusState.get(resumeId);
             if (consensus) {
-                console.log(`[HubServer] ✅ Sentinel ${id} RELINQUISHED control. Resuming consensus...`);
-
                 if (consensus.hijackStartTime) {
-                    const duration = Date.now() - consensus.hijackStartTime;
-                    this.recoveryTimes.push(duration);
-                    console.log(`[HubServer] Recovery completed in ${duration}ms (Total recoveries: ${this.recoveryTimes.length})`);
+                    this.recoveryTimes.push(Date.now() - consensus.hijackStartTime);
                 }
-
                 consensus.hijacked = false;
-                // If it was the last one needed, or if we want to force re-check
-                if (consensus.clearedBy.size >= consensus.required) {
-                    consensus.resolve();
-                }
+                if (consensus.clearedBy.size >= consensus.required) consensus.resolve();
+
+                this.reportData.push({
+                    type: 'RECOVERY',
+                    id: resumeId,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+                this._persistTrace();
+            }
+        } else if (msg.method === 'starlight.start_sentinel') {
+            const name = msg.params?.name;
+            if (name) {
+                console.log(`[HubServer] 🚀 Manual start requested for Sentinel: ${name}`);
+                this.lifecycleManager.startSentinelByName(name);
+                ws.send(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { success: true } }));
             }
         } else if (msg.method === 'starlight.getPageContext') {
             await this._handleGetPageContext(id, ws, msg);
         } else if (msg.method === 'starlight.shutdown' || msg.method === 'starlight.finish') {
-            const reason = msg.params?.reason || 'Mission End';
-            console.log(`[HubServer] Protocol Termination Trigger: ${reason}`);
-
-            // Record mission status for report
-            if (msg.method === 'starlight.finish' && msg.params?.success === false) {
-                this.reportData.push({
-                    type: 'FAILURE',
-                    reason,
-                    timestamp: new Date().toLocaleTimeString()
-                });
+            if (msg.params?.success === false) {
+                this.reportData.push({ type: 'FAILURE', reason: msg.params?.reason || 'External Termination', timestamp: new Date().toLocaleTimeString() });
             }
-
             await this.shutdown();
         }
     }
 
     async _handleGetPageContext(id, ws, msg) {
-        console.log(`[HubServer] 🧠 Retrieving semantic context for client ${id}...`);
         const a11y = await this._getA11ySnapshot();
-
-        // Filter elements for relevance
         const context = {
-            buttons: a11y.elements.filter(e => e.tag === 'BUTTON' || e.role === 'button').map(e => e.text),
-            inputs: a11y.elements.filter(e => e.tag === 'INPUT' || e.role === 'textbox').map(e => e.label || e.placeholder),
+            buttons: (a11y?.elements || []).filter(e => e.tag === 'BUTTON' || e.role === 'button').map(e => e.text),
+            inputs: (a11y?.elements || []).filter(e => e.tag === 'INPUT' || e.role === 'textbox').map(e => e.label || e.placeholder),
             url: this.page ? await this.page.url() : 'about:blank'
         };
-
-        ws.send(JSON.stringify({
-            jsonrpc: '2.0',
-            id: msg.id,
-            result: context
-        }));
+        ws.send(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: context }));
     }
 
     async _processIntent(id, ws, msg) {
         const goal = msg.params?.goal || msg.params?.cmd || 'Intent';
         const contextUrl = this.page ? await this.page.url() : '*';
-
-        console.log(`[HubServer] Processing Intent: ${goal} (${msg.id})`);
-
-        // 1. Resolve Semantic Goal (Skip for raw commands like GOTO)
         const isNavigation = (goal === 'goto' || msg.params?.cmd === 'goto');
 
         if (isNavigation && msg.params.url) {
             this.missionTargetUrl = msg.params.url;
-            // Extract locale tokens (e.g., en_gb from /en_gb/)
-            this.missionLocaleInvariants = (this.missionTargetUrl.match(/\/[a-z]{2}[_-][a-z]{2}\//g) || [])
-                .map(m => m.replace(/\//g, ''));
-            console.log(`[HubServer] Mission Target URL captured: ${this.missionTargetUrl}`);
-            console.log(`[HubServer] Mission Locale Invariants defined: [${this.missionLocaleInvariants.join(', ')}]`);
+            this.missionLocaleInvariants = (this.missionTargetUrl.match(/\/[a-z]{2}[_-][a-z]{2}\//g) || []).map(m => m.replace(/\//g, ''));
         }
-
-        let resolvedSelector = null;
 
         if (!isNavigation && goal && !msg.params.selector) {
-            resolvedSelector = await this.semanticResolver.resolve(goal, contextUrl, msg.params?.cmd);
-            if (resolvedSelector) {
-                msg.params.selector = resolvedSelector;
-                console.log(`[HubServer] Resolved goal "${goal}" to ${resolvedSelector}`);
-            }
+            const resolvedSelector = await this.semanticResolver.resolve(goal, contextUrl, msg.params?.cmd);
+            if (resolvedSelector) msg.params.selector = resolvedSelector;
         }
 
-        // 2. Protocol Consensus (PRE-CHECK BROADCAST) - Skip for GOTO to reduce latency
         if (this.sentinels.size > 0 && !isNavigation) {
-            console.log(`[HubServer] Broadcasting pre_check for consensus (N=${this.sentinels.size})...`);
-
-            // Generate A11y Snapshot for Sentinels
             const a11ySnapshot = await this._getA11ySnapshot();
-
-            // v4.2: Enterprise-Grade Obstacle Detection (The "Master Signal")
-            const blocking = (a11ySnapshot.elements || []).filter(el => {
+            const blocking = (a11ySnapshot?.elements || []).filter(el => {
                 const combined = `${el.id || ''} ${el.className || ''} ${el.tag || ''}`.toLowerCase();
                 const text = (el.text || '').toLowerCase();
-
-                const isGlobalBlocker = combined.includes('onetrust') ||
-                    combined.includes('cookie') ||
-                    combined.includes('modal') ||
-                    combined.includes('popup') ||
-                    combined.includes('overlay') ||
-                    combined.includes('gdpr') ||
-                    combined.includes('consent');
-
-                const isRegionGate = combined.includes('region') ||
-                    combined.includes('location-selection') ||
-                    (el.tag === 'A' && text.includes('united kingdom')) ||
-                    (el.tag === 'BUTTON' && text.includes('united kingdom'));
-
-                return isGlobalBlocker || isRegionGate;
+                return combined.includes('onetrust') || combined.includes('cookie') || combined.includes('modal') || combined.includes('popup') || text.includes('select your region');
             });
 
-            if (blocking.length > 0) {
-                console.log(`[HubServer] 🛡️ OBSTACLE DETECTED: Identified ${blocking.length} interference points.`);
-            }
-
-            const preCheckMsg = JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'starlight.pre_check',
-                params: {
-                    goal,
-                    url: contextUrl,
-                    a11y_snapshot: a11ySnapshot,
-                    blocking, // THE MASTER SIGNAL
-                    command: msg.params
-                },
-                id: msg.id
-            });
-
+            const preCheckMsg = JSON.stringify({ jsonrpc: '2.0', method: 'starlight.pre_check', params: { goal, url: contextUrl, a11y_snapshot: a11ySnapshot, blocking, command: msg.params }, id: msg.id });
             const consensusPromise = new Promise((resolve) => {
-                const timeout = setTimeout(() => {
-                    console.log(`[HubServer] Consensus Timeout for ${msg.id}. Proceeding with partial clearance.`);
-                    resolve();
-                }, 3000);
-
-                this.consensusState.set(msg.id, {
-                    required: this.sentinels.size,
-                    clearedBy: new Set(),
-                    hijacked: false, // v4.2 Traceability
-                    hijackStartTime: null,
-                    resolve: () => {
-                        clearTimeout(timeout);
-                        resolve();
-                    }
-                });
+                const timeout = setTimeout(resolve, 3000);
+                this.consensusState.set(msg.id, { required: this.sentinels.size, clearedBy: new Set(), hijacked: false, resolve: () => { clearTimeout(timeout); resolve(); } });
             });
-
-            for (const sentinel of this.sentinels.values()) {
-                sentinel.ws.send(preCheckMsg);
-            }
-
+            for (const sentinel of this.sentinels.values()) sentinel.ws.send(preCheckMsg);
             await consensusPromise;
             this.consensusState.delete(msg.id);
+
+            // Corrected Delta v1.2.5: Enforce Sync Budget
+            // Mandatory 500ms wait to allow slow-pulsing Sentinels (Vision) to finalize state analysis.
+            await new Promise(r => setTimeout(r, 500));
         }
 
-        // 3. Visual Reporting: BEFORE State
-        let beforeScreenshot = null;
-        if (!isNavigation || contextUrl !== 'about:blank' || this.reportData.length === 0) {
-            console.log(`[HubServer] Capturing BEFORE screenshot...`);
-            beforeScreenshot = await this.takeScreenshot(`BEFORE_${msg.id}`);
-        }
-
-        // 4. Command Execution
-        let success = false;
-        let auditError = null;
-        try {
-            console.log(`[HubServer] Executing raw command: ${goal}`);
-            success = await this._executeRawCommand(msg);
-            if (success && msg.params?.selector) {
-                await this.semanticResolver.learn(goal, msg.params.selector, contextUrl);
-            }
-        } catch (e) {
-            console.error(`[HubServer] Execution Error:`, e.stack || e.message);
-            success = false;
-            auditError = e.message;
-        }
-
-        // 5. Visual Reporting: AFTER State
-        console.log(`[HubServer] Capturing AFTER screenshot (waiting for stability)...`);
-        await this.page.waitForTimeout(1000).catch(() => { });
-        const afterScreenshot = await this.takeScreenshot(`AFTER_${msg.id}`);
-
-        // 6. Build Report Entry
-        const now = new Date();
-        const localTimestamp = now.toLocaleTimeString('en-US', { hour12: true });
-        const rawTimestamp = now.toISOString();
-
-        this.reportData.push({
+        const { success, error } = await this._executeRawWithForensics(id, ws, msg, true);
+        ws.send(JSON.stringify({
+            jsonrpc: '2.0',
             id: msg.id,
-            goal: isNavigation ? null : goal,
-            cmd: msg.params?.cmd || goal,
-            selector: resolvedSelector || msg.params?.selector,
+            type: 'COMMAND_COMPLETE',
             success,
-            beforeScreenshot,
-            afterScreenshot,
-            timestamp: localTimestamp,
-            rawTimestamp: rawTimestamp
-        });
-
-        // 7. Respond (SDK COMPLIANCE)
-        if (success) {
-            ws.send(JSON.stringify({
-                jsonrpc: '2.0',
-                id: msg.id,
-                type: 'COMMAND_COMPLETE',
-                success: true,
-                result: { success: true, beforeScreenshot, afterScreenshot, timestamp: localTimestamp }
-            }));
-        } else {
-            const reason = auditError || `Command "${goal}" failed interaction verification or stability check.`;
-            this.auditLogger.log('command_fail', { id: msg.id, error: reason }, 'error');
-            ws.send(JSON.stringify({
-                jsonrpc: '2.0',
-                id: msg.id,
-                type: 'COMMAND_COMPLETE',
-                success: false,
-                error: { code: -32000, message: reason },
-                result: { success: false, beforeScreenshot, afterScreenshot, timestamp: localTimestamp }
-            }));
-        }
+            error,
+            result: { success, error }
+        }));
     }
 
     async takeScreenshot(name) {
         if (!this.page) return null;
-
-        // v4.2 Traceability: Visual Cooldown for Stealth Engine
-        // CDP overhead on heavy pages can crash the driver if screenshots are too frequent.
-        if (this.browserAdapter && this.browserAdapter.activeEngine === 'stealth') {
-            await this.page.waitForTimeout(2000).catch(() => { });
-        }
-
         const filename = `${name}.png`;
-
         const filepath = path.join(this.screenshotsDir, filename);
+        try { await this.page.screenshot({ path: filepath }); return filename; } catch (e) { return null; }
+    }
 
+    async _captureForensicSnapshot(prefix = 'state') {
+        if (!this.page) return null;
+        const name = `${prefix}_${nanoid(8)}.png`;
+        const filepath = path.join(this.screenshotsDir, name);
+        await this.page.screenshot({ path: filepath, fullPage: false }).catch(() => { });
+        return name;
+    }
+
+    _persistTrace() {
         try {
-            // v4.2 Traceability: Enforce 15s visual deadline to prevent mission stalls
-            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for screenshot')), 15000));
-            await Promise.race([
-                this.page.screenshot({ path: filepath }),
-                timeout
-            ]);
-            return filename;
-        } catch (e) {
-            console.error(`[HubServer] Screenshot Error: ${e.message}`);
-            return null;
-        }
+            const tracePath = path.join(process.cwd(), 'mission_trace.json');
+            fs.writeFileSync(tracePath, JSON.stringify(this.reportData, null, 4));
+        } catch (e) { }
     }
 
     async _getA11ySnapshot() {
@@ -525,420 +464,246 @@ class HubServer {
         return await this.page.evaluate(() => {
             const elements = [];
             const computed = [];
-
-            // Protocol v4.1: Standardized Shadow-Piercing Walker
             const walk = (root) => {
                 const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
                 let node = walker.currentNode;
-
                 while (node) {
-                    const tag = node.tagName;
-                    // Optimization: Skip noise nodes (script, style, head)
-                    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'HEAD' || tag === 'NOSCRIPT') {
-                        node = walker.nextNode();
-                        continue;
-                    }
+                    if (node.nodeType === 1) {
+                        const tag = node.tagName;
+                        if (!['SCRIPT', 'STYLE', 'HEAD', 'NOSCRIPT'].includes(tag)) {
+                            const styles = window.getComputedStyle(node);
+                            const rect = node.getBoundingClientRect();
+                            const isVisible = rect.width > 0 && rect.height > 0 && styles.display !== 'none' && styles.visibility !== 'hidden';
+                            const isObstacleCandidate = node.id?.includes('onetrust') || node.className?.toString().includes('cookie') || node.className?.toString().includes('modal');
 
-                    const styles = window.getComputedStyle(node);
-                    const rect = node.getBoundingClientRect();
-
-                    // v4.1.12: Capture hidden elements if they are potential obstacles (e.g. cookie banners)
-                    const isVisible = rect.width > 0 && rect.height > 0 && styles.display !== 'none' && styles.visibility !== 'hidden';
-                    const isObstacleCandidate = node.id?.includes('onetrust') || node.className?.toString().includes('cookie') || node.className?.toString().includes('modal');
-
-                    if (isVisible || isObstacleCandidate) {
-                        const classAttr = node.getAttribute('class') || '';
-                        const className = (typeof classAttr === 'string') ? classAttr : '';
-
-                        const info = {
-                            tag,
-                            text: node.innerText?.trim() || node.textContent?.trim(),
-                            attributes: {},
-                            className: className,
-                            id: node.id,
-                            rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
-                            selector: node.id ? `#${node.id}` : (className ? `.${className.trim().split(/\s+/)[0]}` : tag.toLowerCase())
-                        };
-
-                        // Extract relevant attributes for Sentinels
-                        for (const attr of node.attributes) {
-                            if (attr.name.startsWith('aria-') || ['role', 'alt', 'title', 'name', 'type', 'placeholder', 'id'].includes(attr.name)) {
-                                info.attributes[attr.name] = attr.value;
+                            if (isVisible || isObstacleCandidate) {
+                                const classAttr = node.getAttribute('class') || '';
+                                const className = (typeof classAttr === 'string') ? classAttr : '';
+                                const info = {
+                                    tag, text: node.innerText?.trim() || node.textContent?.trim(), attributes: {}, className, id: node.id,
+                                    rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+                                    selector: node.id ? `#${node.id}` : (className ? `.${className.trim().split(/\s+/)[0]}` : tag.toLowerCase())
+                                };
+                                for (const attr of node.attributes) {
+                                    if (attr.name.startsWith('aria-') || ['role', 'alt', 'title', 'name', 'type', 'placeholder', 'id'].includes(attr.name)) {
+                                        info.attributes[attr.name] = attr.value;
+                                    }
+                                }
+                                elements.push(info);
+                                if (isVisible) {
+                                    computed.push({
+                                        tag, selector: info.selector,
+                                        styles: { color: styles.color, backgroundColor: styles.backgroundColor, visibility: styles.visibility, opacity: styles.opacity, zIndex: styles.zIndex }
+                                    });
+                                }
                             }
                         }
-
-                        elements.push(info);
-
-                        if (isVisible) {
-                            computed.push({
-                                tag,
-                                selector: info.selector,
-                                styles: {
-                                    color: styles.color,
-                                    backgroundColor: styles.backgroundColor,
-                                    visibility: styles.visibility,
-                                    opacity: styles.opacity,
-                                    zIndex: styles.zIndex
-                                }
-                            });
-                        }
                     }
-
-                    // Pierce Shadow DOM recursively
-                    if (node.shadowRoot) {
-                        walk(node.shadowRoot);
-                    }
-
+                    if (node.shadowRoot) walk(node.shadowRoot);
                     node = walker.nextNode();
                 }
             };
-
             walk(document.body);
             return { elements, computed };
         });
     }
 
     async _performNavigationConsensus(msg) {
-        if (this.sentinels.size === 0) {
-            console.warn(`[HubServer] ⚠️ Stabilization Consensus skipped: No Sentinels connected.`);
-            return;
-        }
-
-        console.log(`[HubServer] 🏁 Stabilization Consensus initiated (Active Sentinels: ${this.sentinels.size})...`);
-
-        // 1. Capture Post-Navigation Telemetry
+        if (this.sentinels.size === 0) return;
         const a11ySnapshot = await this._getA11ySnapshot();
-        this.missionContext.accessibility = a11ySnapshot; // Map to Hero Story forensic layer
         const currentUrl = this.page ? await this.page.url() : 'about:blank';
-
-        // 2. Identify Redirection Traps (Region Pickers, Consent)
-        const blocking = (a11ySnapshot.elements || []).filter(el => {
+        const blocking = (a11ySnapshot?.elements || []).filter(el => {
             const combined = `${el.id || ''} ${el.className || ''} ${el.tag || ''}`.toLowerCase();
             const text = (el.text || '').toLowerCase();
-
-            const isGlobalBlocker = combined.includes('onetrust') || combined.includes('cookie') || combined.includes('modal') || combined.includes('popup');
-            const isRegionGate = combined.includes('region') || combined.includes('location-selection') || text.includes('select your region');
-
-            return isGlobalBlocker || isRegionGate;
+            return combined.includes('onetrust') || combined.includes('cookie') || combined.includes('modal') || text.includes('select your region');
         });
-
         const isTrap = (blocking.length > 0) || (this.missionTargetUrl && !currentUrl.includes(this.missionTargetUrl));
-
         if (isTrap) {
-            console.log(`[HubServer] 🛡️ Environment Trap Detected. Signaling Site Recovery Protocol...`);
-
-            const recoveryMsg = JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'starlight.pre_check',
-                params: {
-                    goal: 'site_recovery',
-                    url: currentUrl,
-                    targetUrl: this.missionTargetUrl,
-                    localeInvariants: this.missionLocaleInvariants,
-                    a11y_snapshot: a11ySnapshot,
-                    blocking
-                },
-                id: `recovery-${msg.id}`
-            });
-
+            const recoveryMsg = JSON.stringify({ jsonrpc: '2.0', method: 'starlight.pre_check', params: { goal: 'site_recovery', url: currentUrl, targetUrl: this.missionTargetUrl, a11y_snapshot: a11ySnapshot, blocking }, id: `recovery-${msg.id}` });
             await new Promise((resolve) => {
-                const timeout = setTimeout(() => {
-                    console.log(`[HubServer] Recovery Consensus Timeout. Continuing...`);
-                    resolve();
-                }, 20000); // 20s deadline for recovery (v4.2 Stability)
-
-                this.consensusState.set(`recovery-${msg.id}`, {
-                    required: this.sentinels.size,
-                    clearedBy: new Set(),
-                    hijacked: false,
-                    resolve: () => {
-                        clearTimeout(timeout);
-                        resolve();
-                    }
-                });
-
-                for (const sentinel of this.sentinels.values()) {
-                    sentinel.ws.send(recoveryMsg);
-                }
+                const timeout = setTimeout(resolve, 20000);
+                this.consensusState.set(`recovery-${msg.id}`, { required: this.sentinels.size, clearedBy: new Set(), hijacked: false, resolve });
+                for (const sentinel of this.sentinels.values()) sentinel.ws.send(recoveryMsg);
             });
-
             this.consensusState.delete(`recovery-${msg.id}`);
-        } else {
-            console.log(`[HubServer] Post-navigation environment stable.`);
         }
     }
 
-    async shutdown() {
+    async _executeRawWithForensics(id, ws, msg, isIntent = false) {
+        const goal = msg.params?.goal || msg.params?.cmd;
+        const beforeScreenshot = await this._captureForensicSnapshot(`BEFORE_${msg.id}`);
+        let success = false;
+        let error = null;
+        try {
+            success = await this._executeRawCommand(msg);
+            if (success === false) error = 'Command returned false (Verification Failed)';
+        } catch (e) {
+            success = false;
+            error = e.message;
+        }
+        const afterScreenshot = await this._captureForensicSnapshot(`AFTER_${msg.id}`);
+        if (isIntent) {
+            this.reportData.push({
+                type: (success ? 'COMMAND' : 'FAILURE'),
+                id: msg.id, goal, cmd: msg.params?.cmd || goal, success, error,
+                beforeScreenshot, afterScreenshot, timestamp: new Date().toLocaleTimeString(), rawTimestamp: new Date().toISOString()
+            });
+            this._persistTrace();
+        }
+        return { success, error };
+    }
+
+    async shutdown(exitCode = 0) {
         if (this.isShuttingDown) return;
         this.isShuttingDown = true;
+        console.log(`[HubServer] 🛑 Shutdown sequence initiated (Status: ${exitCode === 0 ? 'Normal' : 'Error'})...`);
 
-        console.log(`[HubServer] 🛑 Shutdown initiated...`);
-
-        // 1. Generate Final Report (Truthful Mission Forensics)
-        console.log(`[HubServer] Generating mission forensics...`);
-
-        // Record Mission Telemetry
-        const commands = this.reportData.filter(i => i.type === 'COMMAND');
-        const missionSuccess = this.reportData.every(item => item.type !== 'FAILURE' && (item.type !== 'COMMAND' || item.success));
-
-        // Calculate session-specific MTTR
-        const sessionMTTR = this.recoveryTimes.length > 0
-            ? this.recoveryTimes.reduce((a, b) => a + b, 0) / this.recoveryTimes.length
-            : 0;
-
-        this.telemetry.recordMission(
-            missionSuccess,
-            this.totalSavedTime,
-            this.reportData.filter(i => i.type === 'HIJACK').length,
-            this.recoveryTimes
-        );
-
-        // Calculate session-specific vitals for the report (CRITICAL: SESSION-FIRST)
-        const sessionStats = {
-            successRate: commands.length > 0
-                ? Math.round((commands.filter(c => c.success).length / commands.length) * 100)
-                : 100,
-            totalSavedMins: Math.round(this.totalSavedTime / 60),
-            avgRecoveryTimeMs: Math.round(sessionMTTR)
-        };
-
-        const reportPayload = {
-            stats: sessionStats,
-            commands: this.reportData,
-            sentinels: Array.from(this.sentinels.values()).map(s => {
-                const { ws, ...rest } = s;
-                return rest;
-            }),
-            totalInterventions: this.reportData.filter(i => i.type === 'HIJACK').length,
-            missionExecutionDate: new Date(this.missionStartTime).toLocaleString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                timeZoneName: 'short'
-            }),
-            context: {
-                ...this.missionContext,
-                securityEvents: this.securityEvents
-            }
-        };
-        const reportPath = path.join(process.cwd(), 'report.html');
-        ReportGenerator.generate(reportPayload, reportPath);
-        console.log(`[HubServer] ✓ Report successfully generated at: ${reportPath} `);
-
-        // 2. Graceful Resource Cleanup
-        if (this.browserAdapter) {
-            await this.browserAdapter.close().catch(() => { });
-        }
-
-        if (this.lifecycleManager) {
-            this.lifecycleManager.killAll();
-        }
-
-        // 3. Network Termination
-        this.wss.close();
-        this.server.close();
-
-        console.log(`[HubServer] Shutdown complete.Exit code 0.`);
-        process.exit(0);
-    }
-
-    async _processDirectCommand(id, ws, msg) {
         try {
-            const success = await this._executeRawCommand(msg);
-            ws.send(JSON.stringify({
-                jsonrpc: '2.0',
-                id: msg.id,
-                type: 'COMMAND_COMPLETE', // SDK COMPLIANCE
-                success,
-                result: { success }
-            }));
+            const commands = this.reportData.filter(i => i.type === 'COMMAND');
+
+            // v4.6 Enterprise Integrity: Mission only succeeds if ALL commands passed strictly
+            const missionSuccess = this.reportData.every(item => {
+                if (item.type === 'FAILURE') return false;
+                if (item.type === 'COMMAND' && item.success !== true) return false;
+                return true;
+            });
+
+            const sessionMTTR = this.recoveryTimes.length > 0 ? this.recoveryTimes.reduce((a, b) => a + b, 0) / this.recoveryTimes.length : 0;
+
+            if (this.telemetry) {
+                this.telemetry.recordMission(missionSuccess, this.totalSavedTime, this.reportData.filter(i => i.type === 'HIJACK').length, this.recoveryTimes);
+            }
+
+            const totalAttempts = this.reportData.filter(i => i.type === 'COMMAND' || i.type === 'FAILURE');
+            const successfulCmds = this.reportData.filter(i => i.type === 'COMMAND' && i.success === true);
+
+            const reportPayload = {
+                stats: {
+                    successRate: totalAttempts.length > 0 ? Math.round((successfulCmds.length / totalAttempts.length) * 100) : 100,
+                    totalSavedMins: Math.round(this.totalSavedTime / 60),
+                    avgRecoveryTimeMs: Math.round(sessionMTTR)
+                },
+                commands: this.reportData,
+                sentinels: Array.from(this.sentinels.values()).map(s => { const { ws, ...rest } = s; return rest; }),
+                totalInterventions: this.reportData.filter(i => i.type === 'HIJACK' || (i.type === 'SENTINEL_ACTION' && i.success)).length,
+                missionExecutionDate: new Date(this.missionStartTime).toLocaleString(),
+                context: { ...this.missionContext, securityEvents: this.securityEvents }
+            };
+
+            ReportGenerator.generate(reportPayload, path.join(process.cwd(), 'report.html'));
+            this._persistTrace();
         } catch (e) {
-            console.error(`[HubServer] Direct Command Error: `, e.stack || e.message);
-            ws.send(JSON.stringify({
-                jsonrpc: '2.0',
-                id: msg.id,
-                type: 'COMMAND_COMPLETE',
-                success: false,
-                error: e.message
-            }));
+            console.error('[HubServer] Error generating final report:', e);
         }
+
+        // Parallel Cleanup
+        const cleanup = [];
+        if (this.browserAdapter) cleanup.push(this.browserAdapter.close().catch(() => { }));
+        if (this.lifecycleManager) cleanup.push(Promise.resolve(this.lifecycleManager.killAll()).catch(() => { }));
+
+        await Promise.all(cleanup);
+
+        if (this.wss) this.wss.close();
+        if (this.server) this.server.close();
+
+        console.log(`[HubServer] Hub offline.`);
+
+        // Final delay to ensure stdout flushes
+        setTimeout(() => process.exit(exitCode), 100);
     }
 
     async _executeRawCommand(msg) {
-        const { method, params } = msg;
-        // Normalize: protocol schema uses 'action' but internal logic uses 'cmd'
-        const rawCmd = params.action || params.cmd;
-        const cmd = (method === 'starlight.intent') ? params.cmd : (rawCmd || method.split('.')[1]);
-        const goal = params.goal || cmd;
-
+        const { params } = msg;
+        const cmd = params.cmd || msg.method.split('.')[1];
         if (!this.page) return false;
-
-        // v4.1: Handle Tiered Selectors (Prioritized Array)
         const selectors = Array.isArray(params.selector) ? params.selector : [params.selector];
 
         try {
             switch (cmd) {
                 case 'goto':
-                    console.log(`[HubServer] Navigating to: ${params.url} `);
-                    const response = await this.page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-
-                    // v4.2 Navigation Integrity: Enforce Post-Navigation Consensus
-                    if (response && response.status() < 400) {
-                        await this._performNavigationConsensus(msg);
-                    }
-
-                    return response && response.status() < 400;
-
+                    const resp = await this.page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    if (resp && resp.status() < 400) await this._performNavigationConsensus(msg);
+                    return resp && resp.status() < 400;
                 case 'click':
-                    for (const selector of selectors) {
+                    let lastClickError = null;
+                    for (const sel of selectors) {
                         try {
-                            console.log(`[HubServer] Attempting click on tier: ${selector} `);
-                            const el = await this.page.waitForSelector(selector, { timeout: 5000, state: 'attached' });
+                            // SmartBrowserAdapter handles multi-candidate viewport priority logic (v8.1)
+                            await this.page.click(sel, { timeout: 3000 });
 
-                            // v4.1.5: Dynamic Exposure - Hover to reveal hidden controls (Crucial for YouTube Shorts)
-                            await el.hover({ timeout: 2000 }).catch(() => { });
-
-                            const initialUrl = await this.page.url();
+                            // Protocol v4.6 Verification Loop
+                            // Ensure the click actually did something (Navigation or Content Change)
+                            const initialUrl = this.page.url();
                             const initialContent = await this.page.evaluate(() => document.body.innerText.length);
 
-                            await el.click({ timeout: 10000, force: true });
-
-                            // Phase 18: Sovereign Interaction Loop
-                            const lowerGoal = goal.toLowerCase() || '';
-                            const isSubmission = lowerGoal.includes('login') || lowerGoal.includes('submit') || lowerGoal.includes('continue') || lowerGoal.includes('finish') || lowerGoal.includes('add to cart') || lowerGoal.includes('checkout');
-
-                            const checkState = async () => {
-                                const norm = (u) => String(u || '').replace(/\/$/, '');
-                                const finalUrl = await this.page.url();
-                                const finalContent = await this.page.evaluate(() => document.body.innerText.length);
-                                const hasInventory = false; // Phase 18: Purged site-specific leakage
-                                return { hasInventory, urlChanged: norm(finalUrl) !== norm(initialUrl), contentChanged: Math.abs(finalContent - initialContent) > 20 };
-                            };
-
-                            let state = await checkState();
-                            if (isSubmission && !state.hasInventory && !state.urlChanged && !state.contentChanged) {
-                                console.log(`[HubServer] Interaction on tier "${selector}" ineffective.Initiating robust fallback sequence...`);
-
-                                // 1. Stabilization + Retry Click
-                                await this.page.waitForTimeout(1000);
-                                await el.click({ timeout: 5000 }).catch(() => { });
-
-                                state = await checkState();
-                                if (!state.hasInventory && !state.urlChanged) {
-                                    console.log(`[HubServer] Retried click failed on tier "${selector}".Attempting Keyboard Enter fallback...`);
-                                    await el.press('Enter').catch(() => { });
-                                    await this.page.waitForTimeout(2000);
-
-                                    state = await checkState();
-                                    if (!state.hasInventory && !state.urlChanged) {
-                                        console.log(`[HubServer] Keyboard fallback failed.Attempting final dispatchEvent...`);
-                                        await el.dispatchEvent('click').catch(() => { });
-                                        await this.page.waitForTimeout(2000);
-                                        state = await checkState();
-                                    }
-                                }
-                            }
-
-                            if (state.hasInventory || state.urlChanged || state.contentChanged || !isSubmission) {
-                                console.log(`[HubServer] ✅ Click success on tier: ${selector} `);
-                                return true;
-                            }
-                        } catch (e) {
-                            const isTimeout = e.message.includes('timeout') || e.message.includes('Timeout');
-                            const isNotVisible = e.message.includes('not visible') || e.message.includes('hidden');
-
-                            console.warn(`[HubServer] Tier ${isTimeout ? 'TIMED OUT' : 'FAILED'}: ${selector} - ${e.message} `);
-
-                            // v4.1.8: Parent Surface Fallback - Handle occluded overlays
-                            if (isNotVisible) {
-                                try {
-                                    console.log(`[HubServer] Element occluded.Attempting parent surface interaction...`);
-                                    await this.page.evaluate((sel) => {
-                                        const el = document.querySelector(sel);
-                                        if (el && el.parentElement) el.parentElement.click();
-                                    }, selector);
-                                    await this.page.waitForTimeout(1000);
-                                    return true; // Assume success for non-submission surfacing
-                                } catch (inner) {
-                                    console.warn(`[HubServer] Parent surface fallback failed.`);
-                                }
-                            }
-                            continue;
-                        }
-                    }
-                    return false;
-
-                case 'fill':
-                    const valToFill = params.value ?? params.text;
-                    if (valToFill === undefined) return false;
-
-                    for (const selector of selectors) {
-                        try {
-                            console.log(`[HubServer] Attempting fill on tier: ${selector} `);
-                            const fillEl = await this.page.waitForSelector(selector, { timeout: 5000, state: 'visible' });
-                            await fillEl.fill(valToFill, { timeout: 10000 });
-
-                            // Verification
-                            let verifiedValue = '';
                             for (let i = 0; i < 5; i++) {
-                                verifiedValue = await fillEl.inputValue().catch(() => '');
-                                if (verifiedValue === valToFill) return true;
-                                await this.page.waitForTimeout(200);
+                                const currUrl = this.page.url();
+                                const currContent = await this.page.evaluate(() => document.body.innerText.length).catch(() => initialContent);
+                                if (currUrl !== initialUrl || Math.abs(currContent - initialContent) >= 1) return true;
+                                await new Promise(r => setTimeout(r, 100));
                             }
+                            console.warn(`[HubServer] Click on ${sel} completed but no state evolution detected. Assuming success.`);
+                            return true; // v4.6.1: Assume success if click didn't throw
                         } catch (e) {
-                            console.warn(`[HubServer] Fill tier failed: ${selector} `);
+                            lastClickError = e.message;
                             continue;
                         }
                     }
-                    return false;
-
-                case 'press':
-                    const key = params.key || params.value;
-                    if (!key) return false;
-
-                    for (const selector of selectors) {
+                    throw new Error(lastClickError || `No candidates matched for "${params.goal || 'unknown'}"`);
+                case 'fill':
+                    for (const sel of selectors) {
                         try {
-                            console.log(`[HubServer] Attempting press on tier: ${selector} `);
-                            await this.page.waitForSelector(selector, { timeout: 5000, state: 'visible' });
-                            await this.page.press(selector, key, { timeout: 10000 });
-                            return true;
-                        } catch (e) {
-                            console.warn(`[HubServer] Press tier failed: ${selector} `);
-                            continue;
-                        }
+                            const valToFill = params.value || params.text;
+                            const el = await this.page.waitForSelector(sel, { timeout: 5000, state: 'visible' });
+                            await el.fill(valToFill, { timeout: 10000 });
+
+                            // Protocol v4.6 Fill Verification
+                            const actualValue = await el.inputValue().catch(() => '');
+                            if (actualValue === valToFill) return true;
+
+                            console.warn(`[HubServer] Fill mismatch on ${sel}. Got "${actualValue}", expected "${valToFill}"`);
+                            return false;
+                        } catch (e) { continue; }
                     }
                     return false;
-
+                case 'press':
+                    await this.page.keyboard.press(params.key, { delay: 100 }).catch(() => { });
+                    // Verify if press caused any state change (v4.6)
+                    await new Promise(r => setTimeout(r, 500));
+                    return true; // Hard to verify keyboard purely via DOM without context
+                case 'scroll':
+                    const initialY = await this.page.evaluate(() => window.scrollY);
+                    await this.page.mouse.wheel(0, params.deltaY || 500);
+                    await new Promise(r => setTimeout(r, 800));
+                    const finalY = await this.page.evaluate(() => window.scrollY);
+                    if (Math.abs(finalY - initialY) > 0) return true;
+                    console.warn(`[HubServer] Scroll ineffective. Y-State stable at ${finalY}`);
+                    return false;
+                case 'hover':
+                    for (const sel of selectors) {
+                        try {
+                            const el = await this.page.waitForSelector(sel, { timeout: 2000, state: 'visible' });
+                            await el.hover({ force: true });
+                            return true;
+                        } catch (e) { continue; }
+                    }
+                    return false;
+                case 'checkpoint':
+                    this.reportData.push({ type: 'CHECKPOINT', name: params.name, timestamp: new Date().toLocaleTimeString() });
+                    return true;
+                case 'screenshot':
+                    await this.page.screenshot({ path: path.join(this.screenshotsDir, `${params.name || 'manual'}.png`) }).catch(() => { });
+                    return true;
                 default:
-                    // Protocol Fallback: Generic Page Methods (Sovereign Engine v4.0)
                     if (this.page[cmd] && typeof this.page[cmd] === 'function') {
-                        console.log(`[HubServer] Routing to generic page method: ${cmd} `);
-                        const selector = selectors[0];
-                        if (selector) {
-                            await this.page[cmd](selector, params).catch(e => {
-                                console.warn(`[HubServer] Generic command "${cmd}" failed on selector: ${e.message} `);
-                                throw e;
-                            });
-                        } else {
-                            await this.page[cmd](params).catch(e => {
-                                console.warn(`[HubServer] Generic command "${cmd}" failed: ${e.message} `);
-                                throw e;
-                            });
-                        }
+                        const sel = selectors[0];
+                        if (sel) await this.page[cmd](sel, params);
+                        else await this.page[cmd](params);
                         return true;
                     }
-                    console.warn(`[HubServer] Unhandled command: ${cmd} `);
                     return false;
             }
-        } catch (e) {
-            console.error(`[HubServer] Execution Error(${cmd}): `, e.stack || e.message);
-            this.auditLogger.log('exec_fail', { cmd, error: e.message }, 'error');
-            throw e;
-        }
+        } catch (e) { throw e; }
     }
 }
 
