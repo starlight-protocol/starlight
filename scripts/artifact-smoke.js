@@ -37,10 +37,12 @@ try {
         'src/index.js',
         'src/platform/index.js',
         'src/platform/store.js',
+        'src/platform/http-json.js',
         'types/platform.d.ts',
         'bin/starlight-platform.js',
         'examples/data-report/agents.cjs',
         'examples/data-report/orders.json',
+        'examples/service-health/demo.cjs',
         'docs/OBJECTIVE.md',
         'types/core.d.ts',
         'schemas/starlight.core.schema.json',
@@ -61,7 +63,9 @@ try {
         "const root = require('@starlight-protocol/starlight');",
         "assert.equal(root.Coordinator, require('@starlight-protocol/starlight/core').Coordinator);",
         "assert.equal(root.AgentPlatform, require('@starlight-protocol/starlight/platform').AgentPlatform);",
-        "assert.equal(root.FileRunStore, require('@starlight-protocol/starlight/platform').FileRunStore);"
+        "assert.equal(root.FileRunStore, require('@starlight-protocol/starlight/platform').FileRunStore);",
+        "assert.equal(typeof root.createHttpJsonAgent, 'function');",
+        "assert.equal(root.validateMission('Check').steps.length, 1);"
     ].join('\n')], { cwd: consumer });
     const cli = path.join(
         consumer, 'node_modules', '.bin',
@@ -84,6 +88,14 @@ try {
     const runs = JSON.parse(run(npm, ['exec', '--offline', '--', 'starlight', 'runs', '--status', 'completed'], { cwd: consumer }));
     assert.equal(runs[0].id, demo.id);
     assert.equal(runs[0].completedSteps, 2);
+    const health = JSON.parse(run(npm, ['exec', '--offline', '--', 'starlight', 'demo', '--example', 'service-health'], { cwd: consumer }));
+    assert.equal(health.status, 'completed');
+    assert.equal(health.steps[0].result.evidence[0].status, 200);
+    assert.match(fs.readFileSync(health.steps[1].result.value.path, 'utf8'), /worker: healthy/);
+    const validated = JSON.parse(run(npm, ['exec', '--offline', '--', 'starlight', 'validate',
+        path.join(installed, 'examples/data-report/mission.json')], { cwd: consumer }));
+    assert.equal(validated.valid, true);
+    assert.equal(validated.stepCount, 2);
     const proof = JSON.parse(run(process.execPath, [path.join(installed, 'scripts', 'proof-e2e.js')], {
         cwd: consumer
     }));
@@ -94,6 +106,7 @@ try {
         proof: 'installed-artifact',
         package: pack.filename,
         platformDemo: demo.status,
+        serviceHealthDemo: health.status,
         files: names.length
     }) + '\n');
 } finally {

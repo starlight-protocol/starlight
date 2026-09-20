@@ -8,6 +8,20 @@ export type Mission = {
 };
 
 export type AgentExecution = Parameters<SentinelDefinition['execute']>[1];
+export type NormalizedMission = Required<Omit<Mission, 'steps'>> & {
+    steps: Array<Required<Omit<Intent, 'id'>>>;
+};
+export function validateMission(mission: string | Mission): NormalizedMission;
+export function createHttpJsonAgent(options: {
+    allowedOrigins: string[];
+    name?: string;
+    goal?: string;
+    headers?: Record<string, string>;
+    maxResponseBytes?: number;
+    timeoutMs?: number;
+    capacity?: number;
+    validate?: (value: unknown, intent: Readonly<Intent>, execution: AgentExecution) => boolean | Promise<boolean>;
+}): AgentDefinition;
 export type AgentDefinition = Pick<SentinelDefinition, 'id' | 'name' | 'version' | 'priority' | 'capacity' | 'capabilities'> & {
     canHandle: SentinelDefinition['offer'];
     run: SentinelDefinition['execute'];

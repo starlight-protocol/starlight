@@ -1,4 +1,5 @@
-import { AgentPlatform, AgentDefinition, Mission, MissionRun, FileRunStore, RunEvent, RunSummary } from '@starlight-protocol/starlight';
+import { AgentPlatform, AgentDefinition, Mission, MissionRun, FileRunStore, RunEvent, RunSummary,
+    createHttpJsonAgent, validateMission, NormalizedMission } from '@starlight-protocol/starlight';
 import { AgentPlatform as PlatformExport } from '@starlight-protocol/starlight/platform';
 
 const agent: AgentDefinition = {
@@ -30,6 +31,14 @@ store.list({ status: 'interrupted' });
 new AgentPlatform({ store: { save: async () => {} } });
 void saved;
 void summaries;
+const normalized: NormalizedMission = validateMission(mission);
+platform.register(createHttpJsonAgent({ allowedOrigins: ['https://api.example.com'],
+    validate: value => typeof value === 'object', maxResponseBytes: 8192, timeoutMs: 1000 }));
+// @ts-expect-error origin allowlist is required
+createHttpJsonAgent({ name: 'unrestricted' });
+// @ts-expect-error validation must return a boolean
+createHttpJsonAgent({ allowedOrigins: ['https://api.example.com'], validate: () => 'valid' });
+void normalized;
 platform.agents()[0].active;
 platform.getRun(handle.id)?.steps[0].result?.sentinel.name;
 handle.cancel();

@@ -2,6 +2,17 @@
 
 All notable changes to Starlight are documented here. The project follows Semantic Versioning.
 
+## [5.0.0-alpha.4] - 2026-09-20
+
+### Added
+
+- `createHttpJsonAgent` for GET requests to configured HTTP(S) origins, with streaming response limits, JSON parsing, request deadlines, cancellation, HTTP evidence, and optional domain verification.
+- `starlight demo --example service-health`: a real loopback HTTP request followed by verified Markdown output, available in the installed package.
+- `starlight validate <mission.json>` and SDK `validateMission` for immutable plan normalization before loading or executing agents.
+- Integration coverage for redirects, blocked origins, compressed/streamed oversized responses, malformed JSON, credentials, verification failure, and stalled request cancellation.
+
+Requests never automatically follow redirects or retry failures. Origin restrictions do not replace host egress controls. The wire protocol remains 1.0.
+
 ## [5.0.0-alpha.3] - 2026-09-20
 
 ### Added

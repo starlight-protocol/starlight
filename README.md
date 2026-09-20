@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **Current platform: [v5.0.0-alpha.3](https://github.com/starlight-protocol/starlight/releases/tag/v5.0.0-alpha.3) — Node.js 22+ preview.**
+> **Current platform: [v5.0.0-alpha.4](https://github.com/starlight-protocol/starlight/releases/tag/v5.0.0-alpha.4) — Node.js 22+ preview.**
 > GitHub's **Latest** badge points to **legacy v1.3.4**, the old browser implementation.
 > For the current general-purpose agent platform, use the **5.x alpha linked above**.
 
@@ -38,6 +38,7 @@ The CLI prints the run ID, results, evidence, and report path.
 ```bash
 node bin/starlight-platform.js inspect <run-id>
 node bin/starlight-platform.js runs --status completed --limit 10
+node bin/starlight-platform.js validate examples/data-report/mission.json
 node bin/starlight-platform.js agents --agents examples/data-report/agents.cjs
 node bin/starlight-platform.js run examples/data-report/mission.json --agents examples/data-report/agents.cjs
 ```
@@ -45,7 +46,7 @@ node bin/starlight-platform.js run examples/data-report/mission.json --agents ex
 The last command writes `.starlight/order-summary.md` and fails if it already exists. Change
 the mission's output path for another run, or use `npm run demo` for a fresh path each time.
 After installing a package built from this checkout, the equivalent commands are `starlight demo`,
-`starlight run`, `starlight agents`, `starlight inspect`, and `starlight runs`.
+`starlight run`, `starlight agents`, `starlight validate`, `starlight inspect`, and `starlight runs`.
 
 ## Write an agent
 
@@ -123,6 +124,23 @@ platform.subscribe(event => console.log(event.type, event.run.id));
 Storage failure stops new work and rejects the run handle. An interrupted run preserves its
 last checkpoint; a saved `running` step may already have produced an effect. Inspect its
 evidence before starting fresh work. See [run storage, deadlines, and recovery boundaries](docs/RUNS.md).
+
+## Connect an API to a mission
+
+`createHttpJsonAgent` provides HTTP GET integration with an explicit origin allowlist, response
+size limits, cancellation, JSON parsing, and optional domain verification. Results and HTTP
+evidence flow into later mission steps. Credentials stay in agent configuration.
+
+Try the service-health workflow against its temporary local fixture endpoint:
+
+```bash
+node bin/starlight-platform.js demo --example service-health --events --timeout-ms 10000
+```
+
+It fetches three service-health records, verifies them, and writes a Markdown report with
+read-back verification. See [API agents and mission validation](docs/HTTP_AGENTS.md) to connect
+your own service. `starlight validate <mission.json>` checks a plan without running agents;
+the SDK equivalent is `validateMission(mission)`.
 
 ## The protocol underneath
 

@@ -147,6 +147,13 @@ for filesystem assumptions and explicit crash semantics.
 
 ## Remaining limits and risks
 
+Alpha.4 adds a bounded HTTP JSON agent and a reproducible service-health integration. HTTP tests
+exercise origin refusal, rejected redirects, streamed and compressed size limits, invalid data,
+credential handling, verification failures, and cancellation of stalled response bodies. Mission
+preflight uses the runtime's existing validation without loading agents or creating runs. The
+installed-package gate exercises both demos and the `validate` command. Origin restrictions
+are a URL policy, not a DNS or network sandbox; see [API integration boundaries](HTTP_AGENTS.md).
+
 1. **No crash-safe resume or durable exactly-once effects.** Atomic progress records survive process
    exit but do not reconstruct agent state or resolve whether an unfinished step caused an effect.
 2. **Cooperative execution.** JavaScript cannot preempt CPU-bound code or undo external effects.

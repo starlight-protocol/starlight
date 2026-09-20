@@ -5,15 +5,16 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { AgentPlatform, FileRunStore } = require('../src/platform');
+const { AgentPlatform, FileRunStore, validateMission } = require('../src/platform');
 
 function usage() {
     process.stdout.write(`Starlight agent platform
 
 Usage:
-  starlight demo [--output-dir <directory>]
+  starlight demo [--example data-report|service-health] [--output-dir <directory>]
   starlight run <mission.json> --agents <agents.js> [--output-dir <directory>]
   starlight agents --agents <agents.js>
+  starlight validate <mission.json>
   starlight inspect <run-id> [--output-dir <directory>]
   starlight runs [--status <status>] [--limit <count>] [--offset <count>] [--output-dir <directory>]
 
@@ -37,7 +38,7 @@ function parse(args) {
             flags[arg] = true;
             continue;
         }
-        if (!['--agents', '--output-dir', '--timeout-ms', '--status', '--limit', '--offset'].includes(arg)) {
+        if (!['--agents', '--output-dir', '--timeout-ms', '--status', '--limit', '--offset', '--example'].includes(arg)) {
             throw new Error(`unknown option: ${arg}`);
         }
         if (!args[index + 1] || args[index + 1].startsWith('--') || flags[arg]) {
@@ -61,17 +62,25 @@ async function main(args = process.argv.slice(2)) {
     const [command, input] = positional;
     const outputDir = path.resolve(flags['--output-dir'] || '.starlight/runs');
     const allowed = {
-        demo: ['--output-dir', '--timeout-ms', '--events'],
+        demo: ['--output-dir', '--timeout-ms', '--events', '--example'],
         run: ['--agents', '--output-dir', '--timeout-ms', '--events'],
-        agents: ['--agents'], inspect: ['--output-dir'],
+        agents: ['--agents'], inspect: ['--output-dir'], validate: [],
         runs: ['--output-dir', '--status', '--limit', '--offset']
     };
     if (!Object.hasOwn(allowed, command)) throw new Error(`unknown command: ${command}`);
-    if (positional.length !== (['run', 'inspect'].includes(command) ? 2 : 1)) {
+    if (positional.length !== (['run', 'inspect', 'validate'].includes(command) ? 2 : 1)) {
         throw new Error(`invalid arguments for ${command}; see starlight --help`);
     }
     for (const flag of Object.keys(flags)) {
         if (!allowed[command].includes(flag)) throw new Error(`${command} does not accept ${flag}`);
+    }
+    if (command === 'validate') {
+        const mission = validateMission(JSON.parse(await fs.readFile(path.resolve(input), 'utf8')));
+        process.stdout.write(JSON.stringify({ valid: true, stepCount: mission.steps.length, mission }, null, 2) + '\n');
+        return;
+    }
+    if (command === 'demo' && flags['--example'] && !['data-report', 'service-health'].includes(flags['--example'])) {
+        throw new Error('--example must be data-report or service-health');
     }
     const integer = flag => {
         if (flags[flag] === undefined) return undefined;
@@ -95,7 +104,15 @@ async function main(args = process.argv.slice(2)) {
     const platform = new AgentPlatform({ store });
     if (flags['--events']) platform.subscribe(event => process.stderr.write(JSON.stringify(event) + '\n'));
     let mission;
-    if (command === 'demo') {
+    let demo;
+    if (command === 'demo' && flags['--example'] === 'service-health') {
+        // Validate the execution budget before opening the demo's local fixture server.
+        const budget = integer('--timeout-ms');
+        if (budget !== undefined && (budget < 1 || budget > 86400000)) throw new Error('--timeout-ms must be 1–86400000');
+        demo = await require('../examples/service-health/demo.cjs').createDemo(outputDir);
+        for (const agent of demo.agents) platform.register(agent);
+        mission = demo.mission;
+    } else if (command === 'demo') {
         const example = path.resolve(__dirname, '../examples/data-report');
         await loadAgents(platform, path.join(example, 'agents.cjs'));
         const template = JSON.parse(await fs.readFile(path.join(example, 'mission.json'), 'utf8'));
@@ -126,6 +143,7 @@ async function main(args = process.argv.slice(2)) {
     } finally {
         process.removeListener('SIGINT', cancel);
         process.removeListener('SIGTERM', cancel);
+        await demo?.close();
     }
 }
 

@@ -99,3 +99,29 @@ test('CLI saves timed-out missions and exits unsuccessfully', t => {
     assert.equal(report.error.code, 'TIMEOUT');
     assert.equal(JSON.parse(fs.readFileSync(report.reportPath)).error.code, 'TIMEOUT');
 });
+
+test('CLI preflight validates plans without loading agents or creating reports', t => {
+    const cwd = workspace(t);
+    fs.writeFileSync(path.join(cwd, 'mission.json'), JSON.stringify({ goal: 'Check', steps: ['One', 'Two'] }));
+    const valid = run(cwd, ['validate', 'mission.json']);
+    assert.equal(valid.status, 0, valid.stderr);
+    assert.equal(JSON.parse(valid.stdout).stepCount, 2);
+    assert.equal(fs.existsSync(path.join(cwd, '.starlight')), false);
+    assert.equal(run(cwd, ['validate', 'mission.json', '--agents', 'untrusted.cjs']).status, 1);
+    fs.writeFileSync(path.join(cwd, 'mission.json'), JSON.stringify({ goal: 'Invalid', steps: [] }));
+    assert.equal(run(cwd, ['validate', 'mission.json']).status, 1);
+});
+
+test('service-health demo fetches a real endpoint and verifies a saved report', t => {
+    const cwd = workspace(t);
+    const demo = run(cwd, ['demo', '--example', 'service-health', '--timeout-ms', '10000']);
+    assert.equal(demo.status, 0, demo.stderr || demo.error?.message);
+    const report = JSON.parse(demo.stdout);
+    assert.equal(report.status, 'completed');
+    assert.equal(report.steps[0].result.sentinel.name, 'service-health-reader');
+    assert.equal(report.steps[0].result.evidence[0].status, 200);
+    assert.equal(report.steps[1].result.value.services, 3);
+    assert.match(fs.readFileSync(report.steps[1].result.value.path, 'utf8'), /- api: healthy\n- queue: healthy\n- worker: healthy/);
+    assert.equal(run(cwd, ['demo', '--example', 'unknown']).status, 1);
+    assert.equal(run(cwd, ['demo', '--example', 'service-health', '--timeout-ms', '0']).status, 1);
+});

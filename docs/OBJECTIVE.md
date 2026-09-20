@@ -61,14 +61,16 @@ remains available in Git history. The [migration guide](MIGRATION.md) identifies
 - Default dependencies support only the active implementation and checks.
 - Killing a CLI process preserves completed-step evidence and an explicit unfinished step.
 - Failed checkpoint writes stop new effects; run history is readable after a restart.
+- A second integration fetches health records over HTTP, verifies them, and writes a checked report.
+- Mission plans can be validated without loading agents, making requests, or creating run files.
 
 The [audit](AUDIT.md) records evidence and limitations. The [video](DEMO.md) demonstrates
 real CLI execution and a failing constraint, not a proposed graphical interface.
 
 ## Next decisions, guided by usage
 
-1. Build a second useful agent integration around an actual user workflow; let it determine tool
-   and model integration needs.
+1. Extend the file-report and HTTP service-health integrations around actual user workflows;
+   let those workflows determine further tool and model integration needs.
 2. Build recovery on the existing atomic progress store only when agents can reconcile ambiguous
    effects. Saved progress is inspectable today; automatic replay and resumable agent state are not.
 3. Add an operator interface when run volume makes the CLI insufficient.

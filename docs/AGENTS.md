@@ -30,6 +30,9 @@ Agent exceptions become terminal failures. The platform's default Coordinator us
 supplied Coordinator retains its own policy. The standalone core keeps its error-fallback
 default for compatibility; opt out when ambiguous side effects are possible.
 
+For HTTP JSON APIs, [the built-in agent factory](HTTP_AGENTS.md) supplies origin restrictions,
+bounded reads, cancellation, response evidence, and optional verification without another dependency.
+
 Verification runs within the execution deadline and capacity slot. A false/non-boolean return
 or exception prevents downstream steps. Agent-supplied verification is not an independent
 platform guarantee that arbitrary natural-language goals have been satisfied.
@@ -40,6 +43,9 @@ A mission is a string or `{ goal, context?, constraints?, steps? }`. Omit steps 
 otherwise supply 1–100 strings or `{ goal, context?, constraints? }` objects. The whole plan is
 validated before work begins. Extra fields and caller-assigned step IDs are rejected. All data
 must contain finite, acyclic JSON values.
+
+Use `validateMission(input)` or `starlight validate mission.json` to check and normalize these
+rules before execution. Validation does not load agents or predict whether an agent can finish the task.
 
 Steps run sequentially. Step context overrides shared context. Mission constraints reach every
 step; steps may add new constraint keys but cannot redefine mission constraint keys. Agents

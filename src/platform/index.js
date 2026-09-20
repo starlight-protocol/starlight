@@ -6,6 +6,7 @@ const { Coordinator, ProtocolError, ERROR_CODES } = require('../core');
 const { normalizeIntent, normalizeOutcome } = require('../core/contract');
 const { snapshot } = require('../core/json');
 const { FileRunStore } = require('./store');
+const { createHttpJsonAgent } = require('./http-json');
 
 function invalid(message) {
     return new ProtocolError(ERROR_CODES.INVALID_REQUEST, message);
@@ -268,4 +269,4 @@ class AgentPlatform {
     }
 }
 
-module.exports = { AgentPlatform, FileRunStore };
+module.exports = { AgentPlatform, FileRunStore, validateMission: normalizeMission, createHttpJsonAgent };
