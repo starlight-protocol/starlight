@@ -23,12 +23,16 @@ export type RunStep = {
     status: 'running' | 'completed' | 'failed' | 'cancelled';
     result?: IntentResult;
     error?: RunError;
+    startedAt?: string;
+    finishedAt?: string;
+    durationMs?: number;
 };
 export type MissionRun = {
     id: string;
     goal: string;
     status: 'running' | 'completed' | 'failed' | 'cancelled';
     startedAt: string;
+    deadlineAt?: string;
     finishedAt?: string;
     durationMs?: number;
     mission: Mission;
@@ -41,17 +45,42 @@ export type RunHandle = {
     cancel(): boolean;
 };
 
+export type RunOptions = { signal?: AbortSignal; timeoutMs?: number };
+export type RunEvent = {
+    type: 'run.started' | 'step.started' | 'step.finished' | 'run.finished' | 'run.persistence_failed';
+    run: MissionRun;
+};
+export type RunStore = {
+    create(report: MissionRun): void | Promise<void>;
+    save(report: MissionRun): void | Promise<void>;
+};
+export type RunSummary = Pick<MissionRun, 'id' | 'goal' | 'status' | 'startedAt' | 'finishedAt'> & {
+    completedSteps: number;
+    totalSteps: number;
+};
+export class FileRunStore implements RunStore {
+    constructor(directory?: string);
+    readonly directory: string;
+    pathFor(id: string): string;
+    create(report: MissionRun): Promise<void>;
+    save(report: MissionRun): Promise<void>;
+    get(id: string): Promise<MissionRun | undefined>;
+    list(options?: { status?: MissionRun['status']; limit?: number; offset?: number }): Promise<RunSummary[]>;
+}
+
 export class AgentPlatform {
     constructor(options?: {
         coordinator?: Coordinator;
         coordinatorOptions?: Omit<NonNullable<ConstructorParameters<typeof Coordinator>[0]>, 'fallbackOnError'>;
         maxRuns?: number;
+        store?: RunStore;
     });
     readonly coordinator: Coordinator;
     register(agent: AgentDefinition): () => boolean;
     agents(): SentinelDescription[];
-    submit(mission: string | Mission, options?: { signal?: AbortSignal }): RunHandle;
-    run(mission: string | Mission, options?: { signal?: AbortSignal }): Promise<MissionRun>;
+    submit(mission: string | Mission, options?: RunOptions): RunHandle;
+    run(mission: string | Mission, options?: RunOptions): Promise<MissionRun>;
+    subscribe(listener: (event: RunEvent) => unknown): () => boolean;
     getRun(id: string): MissionRun | undefined;
     listRuns(): MissionRun[];
     cancel(id: string): boolean;

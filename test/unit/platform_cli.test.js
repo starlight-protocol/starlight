@@ -59,9 +59,43 @@ test('CLI loads CommonJS and ESM agents and persists failed runs with partial hi
 test('CLI rejects invalid commands, missing agents, and traversal in run IDs', t => {
     const cwd = workspace(t);
     for (const args of [['unknown'], ['run', 'mission.json'], ['demo', '--typo', 'x'],
-        ['inspect', '../secret'], ['demo', 'extra']]) {
+        ['inspect', '../secret'], ['demo', 'extra'], ['runs', '--status', 'unknown'],
+        ['runs', '--limit', '0'], ['runs', '--offset', '-1'], ['inspect', 'id', '--events'],
+        ['demo', '--timeout-ms', 'Infinity'], ['demo', '--timeout-ms', '0']]) {
         const result = run(cwd, args);
         assert.equal(result.status, 1, `unexpected success: ${args.join(' ')}`);
         assert(result.stderr.trim());
     }
+});
+
+test('CLI emits progress separately from JSON output and lists persisted history', t => {
+    const cwd = workspace(t);
+    assert.deepEqual(JSON.parse(run(cwd, ['runs']).stdout), []);
+    const result = run(cwd, ['demo', '--events', '--timeout-ms', '10000']);
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    const events = result.stderr.trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(events[0].type, 'run.started');
+    assert.equal(events.at(-1).type, 'run.finished');
+    assert.equal(events.at(-1).run.id, report.id);
+    assert(report.deadlineAt);
+    const listing = run(cwd, ['runs', '--status', 'completed', '--limit', '1']);
+    assert.equal(listing.status, 0, listing.stderr);
+    assert.equal(JSON.parse(listing.stdout)[0].id, report.id);
+    assert.equal(JSON.parse(listing.stdout)[0].completedSteps, 2);
+    assert.deepEqual(JSON.parse(run(cwd, ['runs', '--offset', '1']).stdout), []);
+});
+
+test('CLI saves timed-out missions and exits unsuccessfully', t => {
+    const cwd = workspace(t);
+    fs.writeFileSync(path.join(cwd, 'agents.cjs'), `module.exports = {
+        name: 'slow', canHandle: () => true, run: () => new Promise(() => {})
+    };`);
+    fs.writeFileSync(path.join(cwd, 'mission.json'), JSON.stringify({ goal: 'Deadline' }));
+    const result = run(cwd, ['run', 'mission.json', '--agents', 'agents.cjs', '--timeout-ms', '100']);
+    assert.equal(result.status, 1, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.status, 'failed');
+    assert.equal(report.error.code, 'TIMEOUT');
+    assert.equal(JSON.parse(fs.readFileSync(report.reportPath)).error.code, 'TIMEOUT');
 });

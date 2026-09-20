@@ -36,6 +36,7 @@ try {
         'src/core/index.js',
         'src/index.js',
         'src/platform/index.js',
+        'src/platform/store.js',
         'types/platform.d.ts',
         'bin/starlight-platform.js',
         'examples/data-report/agents.cjs',
@@ -59,7 +60,8 @@ try {
         "const assert = require('node:assert/strict');",
         "const root = require('@starlight-protocol/starlight');",
         "assert.equal(root.Coordinator, require('@starlight-protocol/starlight/core').Coordinator);",
-        "assert.equal(root.AgentPlatform, require('@starlight-protocol/starlight/platform').AgentPlatform);"
+        "assert.equal(root.AgentPlatform, require('@starlight-protocol/starlight/platform').AgentPlatform);",
+        "assert.equal(root.FileRunStore, require('@starlight-protocol/starlight/platform').FileRunStore);"
     ].join('\n')], { cwd: consumer });
     const cli = path.join(
         consumer, 'node_modules', '.bin',
@@ -79,6 +81,9 @@ try {
     const inspected = JSON.parse(run(npm, ['exec', '--offline', '--', 'starlight', 'inspect', demo.id], { cwd: consumer }));
     assert.equal(inspected.id, demo.id);
     assert.equal(inspected.status, 'completed');
+    const runs = JSON.parse(run(npm, ['exec', '--offline', '--', 'starlight', 'runs', '--status', 'completed'], { cwd: consumer }));
+    assert.equal(runs[0].id, demo.id);
+    assert.equal(runs[0].completedSteps, 2);
     const proof = JSON.parse(run(process.execPath, [path.join(installed, 'scripts', 'proof-e2e.js')], {
         cwd: consumer
     }));

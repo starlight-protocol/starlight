@@ -127,10 +127,28 @@ The 216-second replacement passed full audio/video decoding and local browser pl
 captions loaded. Audio is normalized to a −16 LUFS target with a −1.5 dBTP ceiling; the encoded
 track's measured true peak was −1.7 dBFS. The six captured report objects are unchanged.
 
+## Mission reliability update — 2026-09-20
+
+Alpha.3 adds atomic progress records through `FileRunStore`, used by default in the CLI and
+optional in the SDK. Writes precede dispatch and follow step settlement. Storage errors stop
+further dispatch and reject the run handle, including failures of the final write. An active
+record cannot be evicted while its final checkpoint is pending.
+
+Whole-mission deadlines cover step handoff, routing, execution, and verification; remote
+handlers receive cancellation. Progress subscribers receive immutable snapshots and cannot
+change execution outcomes by throwing or rejecting. Run listings filter and paginate persisted
+summaries, including records written by prior processes.
+
+Regression tests kill a CLI process after a side effect, inspect preserved completed-step
+evidence, inject write failures before and after effects, read while snapshots are replaced,
+and check remote deadlines, late synchronous results, and CLI JSON output. The installed-package
+smoke check also verifies `FileRunStore` exports and the history command. See [the run guide](RUNS.md)
+for filesystem assumptions and explicit crash semantics.
+
 ## Remaining limits and risks
 
-1. **No crash-safe resume or durable exactly-once effects.** History is bounded and process-local;
-   final CLI reports can be inspected after exit but do not reconstruct live agent state.
+1. **No crash-safe resume or durable exactly-once effects.** Atomic progress records survive process
+   exit but do not reconstruct agent state or resolve whether an unfinished step caused an effect.
 2. **Cooperative execution.** JavaScript cannot preempt CPU-bound code or undo external effects.
    A process restart cannot prove an old worker stopped; hard isolation requires external ownership.
 3. **Agent-supplied truth.** Constraints and evidence are data. Verifiers improve a domain workflow

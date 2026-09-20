@@ -89,6 +89,12 @@ Only started steps appear. Failed/cancelled missions resolve to reports. Invalid
 exhausted active-run capacity reject/throw. History defaults to 100 runs; new runs evict the
 oldest settled run when full, never active work.
 
+Add `{ store: new FileRunStore('./runs') }` for atomic progress records. Storage errors reject
+with `STORE_ERROR` and stop subsequent steps. Pass `{ timeoutMs: 60000 }` to `submit` or `run`
+to bound the whole mission, including routing and verification. `platform.subscribe(listener)`
+publishes immutable progress snapshots. See [the run reliability guide](RUNS.md) for APIs,
+event ordering, storage semantics, and inspection after a crash.
+
 Each submission is a fresh execution. There is no mission-level replay or resume API. Core
 step IDs derive from the run UUID and step number.
 
@@ -101,11 +107,14 @@ loads trusted code with the process's permissions. All paths resolve from the wo
 starlight agents --agents ./agents.cjs
 starlight run ./mission.json --agents ./agents.cjs --output-dir ./runs
 starlight inspect <run-id> --output-dir ./runs
+starlight runs --output-dir ./runs --status failed --limit 20
+starlight demo --timeout-ms 10000 --events
 ```
 
 Reports are saved to `<output-dir>/<run-id>.json`. Failed and cancelled missions exit with code
-1. SIGINT/SIGTERM request cancellation. Final reports survive exit; a crash may leave an
-incomplete file. Reports do not checkpoint agents or make external effects transactional.
+1. SIGINT/SIGTERM request cancellation. Atomic snapshots preserve the last saved mission and
+step state after a process exit. An unfinished snapshot does not prove the process is alive.
+Reports do not checkpoint agent internals or make external effects transactional.
 Keep credentials out of mission context and evidence.
 
 ## Remote agents

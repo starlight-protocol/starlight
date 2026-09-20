@@ -40,7 +40,7 @@ more protocol features would not solve that developer problem.
 
 | Layer | Owns | Outside its responsibility |
 | --- | --- | --- |
-| Mission runtime | Steps, context handoff, progress, cancellation, reports | Universal goal interpretation, automatic crash recovery |
+| Mission runtime | Steps, context handoff, progress checkpoints, cancellation, deadlines, reports | Universal goal interpretation, automatic crash recovery |
 | Agent | Planning, tools, credentials, domain constraints, execution, verification | Global routing, unrelated agents' resources |
 | Protocol | Claims, deterministic routing, bounded attempts, capacity, remote interoperability | Browser behavior, LLM prompts, product workflows |
 | Host application | UI, permissions, storage, deployment, shared resource isolation | New wire methods for every product feature |
@@ -59,6 +59,8 @@ remains available in Git history. The [migration guide](MIGRATION.md) identifies
 - Mission data cannot be changed behind another agent's back.
 - Existing remote protocol checks still pass.
 - Default dependencies support only the active implementation and checks.
+- Killing a CLI process preserves completed-step evidence and an explicit unfinished step.
+- Failed checkpoint writes stop new effects; run history is readable after a restart.
 
 The [audit](AUDIT.md) records evidence and limitations. The [video](DEMO.md) demonstrates
 real CLI execution and a failing constraint, not a proposed graphical interface.
@@ -67,8 +69,8 @@ real CLI execution and a failing constraint, not a proposed graphical interface.
 
 1. Build a second useful agent integration around an actual user workflow; let it determine tool
    and model integration needs.
-2. Add durable storage and recovery with explicit crash, replay, and side-effect semantics.
-   Final reports are not resumable workflow checkpoints.
+2. Build recovery on the existing atomic progress store only when agents can reconcile ambiguous
+   effects. Saved progress is inspectable today; automatic replay and resumable agent state are not.
 3. Add an operator interface when run volume makes the CLI insufficient.
 4. Add planner agents where dynamic decomposition is needed. Keep model choices inside agents.
 

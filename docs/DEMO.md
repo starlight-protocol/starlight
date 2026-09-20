@@ -10,6 +10,9 @@ voice at −3% rate, generated with `edge-tts`). It is a paced technical
 walkthrough, not a graphical product recording or a runtime-duration claim. The website's
 report explorer is read-only and displays the six captured reports behind the video.
 
+The recording demonstrates alpha.2. Alpha.3 adds atomic progress storage, mission deadlines,
+and event streaming; follow the [run reliability guide](RUNS.md) to exercise those features.
+
 | Time | Demonstration |
 | --- | --- |
 | 00:00 | Mission, agent, verification, and report responsibilities |

@@ -2,11 +2,10 @@
 'use strict';
 
 const fs = require('node:fs/promises');
-const fileSystem = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { pathToFileURL } = require('node:url');
-const { AgentPlatform } = require('../src/platform');
+const { AgentPlatform, FileRunStore } = require('../src/platform');
 
 function usage() {
     process.stdout.write(`Starlight agent platform
@@ -16,9 +15,13 @@ Usage:
   starlight run <mission.json> --agents <agents.js> [--output-dir <directory>]
   starlight agents --agents <agents.js>
   starlight inspect <run-id> [--output-dir <directory>]
+  starlight runs [--status <status>] [--limit <count>] [--offset <count>] [--output-dir <directory>]
+
+Run/demo options: --timeout-ms <milliseconds> (whole mission), --events (JSONL on stderr).
 
 Agent modules export an agent or an array of agents (CommonJS or ESM).
-Reports default to .starlight/runs. Paths resolve from the working directory.
+Atomic progress reports default to .starlight/runs. Paths resolve from the working directory.
+Saved 'running' means unfinished at the last checkpoint, not proof of a live process.
 Agent modules execute trusted local code with this process's permissions.
 `);
 }
@@ -29,7 +32,14 @@ function parse(args) {
     for (let index = 0; index < args.length; index++) {
         const arg = args[index];
         if (!arg.startsWith('--')) { positional.push(arg); continue; }
-        if (!['--agents', '--output-dir'].includes(arg)) throw new Error(`unknown option: ${arg}`);
+        if (arg === '--events') {
+            if (flags[arg]) throw new Error('--events must appear once');
+            flags[arg] = true;
+            continue;
+        }
+        if (!['--agents', '--output-dir', '--timeout-ms', '--status', '--limit', '--offset'].includes(arg)) {
+            throw new Error(`unknown option: ${arg}`);
+        }
         if (!args[index + 1] || args[index + 1].startsWith('--') || flags[arg]) {
             throw new Error(`${arg} requires one value and must appear once`);
         }
@@ -50,22 +60,40 @@ async function main(args = process.argv.slice(2)) {
     const { positional, flags } = parse(args);
     const [command, input] = positional;
     const outputDir = path.resolve(flags['--output-dir'] || '.starlight/runs');
-    if (!['demo', 'run', 'agents', 'inspect'].includes(command)) throw new Error(`unknown command: ${command}`);
+    const allowed = {
+        demo: ['--output-dir', '--timeout-ms', '--events'],
+        run: ['--agents', '--output-dir', '--timeout-ms', '--events'],
+        agents: ['--agents'], inspect: ['--output-dir'],
+        runs: ['--output-dir', '--status', '--limit', '--offset']
+    };
+    if (!Object.hasOwn(allowed, command)) throw new Error(`unknown command: ${command}`);
     if (positional.length !== (['run', 'inspect'].includes(command) ? 2 : 1)) {
         throw new Error(`invalid arguments for ${command}; see starlight --help`);
     }
-    if (['demo', 'inspect'].includes(command) && flags['--agents']) {
-        throw new Error(`${command} does not accept --agents`);
+    for (const flag of Object.keys(flags)) {
+        if (!allowed[command].includes(flag)) throw new Error(`${command} does not accept ${flag}`);
     }
-    if (command === 'inspect') {
-        if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(input)) {
-            throw new Error('inspect requires a run UUID');
+    const integer = flag => {
+        if (flags[flag] === undefined) return undefined;
+        if (!/^\d+$/.test(flags[flag]) || !Number.isSafeInteger(Number(flags[flag]))) {
+            throw new Error(`${flag} requires an integer`);
         }
-        const report = JSON.parse(await fs.readFile(path.join(outputDir, `${input}.json`), 'utf8'));
+        return Number(flags[flag]);
+    };
+    const store = new FileRunStore(outputDir);
+    if (command === 'inspect') {
+        const report = await store.get(input);
+        if (!report) throw new Error(`run not found: ${input}`);
         process.stdout.write(JSON.stringify(report, null, 2) + '\n');
         return;
     }
-    const platform = new AgentPlatform();
+    if (command === 'runs') {
+        const reports = await store.list({ status: flags['--status'], limit: integer('--limit'), offset: integer('--offset') });
+        process.stdout.write(JSON.stringify(reports, null, 2) + '\n');
+        return;
+    }
+    const platform = new AgentPlatform({ store });
+    if (flags['--events']) platform.subscribe(event => process.stderr.write(JSON.stringify(event) + '\n'));
     let mission;
     if (command === 'demo') {
         const example = path.resolve(__dirname, '../examples/data-report');
@@ -86,31 +114,18 @@ async function main(args = process.argv.slice(2)) {
         }
         mission = JSON.parse(await fs.readFile(path.resolve(input), 'utf8'));
     }
-    // Check report storage before allowing agents to change anything.
-    await fs.mkdir(outputDir, { recursive: true });
-    const handle = platform.submit(mission);
-    const reportPath = path.join(outputDir, `${handle.id}.json`);
-    let file;
-    try {
-        // Synchronous reservation happens before submit's execution microtask.
-        file = fileSystem.openSync(reportPath, 'wx');
-    } catch (error) {
-        handle.cancel();
-        await handle.done;
-        throw error;
-    }
+    const handle = platform.submit(mission, { timeoutMs: integer('--timeout-ms') });
+    const reportPath = store.pathFor(handle.id);
     const cancel = () => handle.cancel();
     process.once('SIGINT', cancel);
     process.once('SIGTERM', cancel);
     try {
         const report = await handle.done;
-        fileSystem.writeFileSync(file, JSON.stringify(report, null, 2) + '\n');
         process.stdout.write(JSON.stringify({ ...report, reportPath }, null, 2) + '\n');
         if (report.status !== 'completed') process.exitCode = 1;
     } finally {
         process.removeListener('SIGINT', cancel);
         process.removeListener('SIGTERM', cancel);
-        fileSystem.closeSync(file);
     }
 }
 

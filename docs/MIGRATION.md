@@ -38,7 +38,9 @@ Coordinator observer exceptions no longer change outcomes; subscribe to `observe
 
 ## Reports and storage
 
-Each submission gets a new run UUID. History retains 100 runs by default; the CLI saves final
-reports in `.starlight/runs/`. These are inspection records, not durable resume checkpoints.
+Each submission gets a new run UUID. History retains 100 runs in memory by default. Starting with
+alpha.3, the CLI saves atomic progress checkpoints in `.starlight/runs/`; SDK users can opt into
+`FileRunStore`. Older final reports remain readable. See [run storage and deadlines](RUNS.md).
+Checkpoints preserve observed progress without automatically resuming or repeating work.
 Repeated missions can repeat external effects. The included writer refuses to overwrite an
 existing report. Keep credentials in agent configuration, outside submitted context and evidence.

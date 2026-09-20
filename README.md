@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **Current platform: [v5.0.0-alpha.2](https://github.com/starlight-protocol/starlight/releases/tag/v5.0.0-alpha.2) — Node.js 22+ preview.**
+> **Current platform: [v5.0.0-alpha.3](https://github.com/starlight-protocol/starlight/releases/tag/v5.0.0-alpha.3) — Node.js 22+ preview.**
 > GitHub's **Latest** badge points to **legacy v1.3.4**, the old browser implementation.
 > For the current general-purpose agent platform, use the **5.x alpha linked above**.
 
@@ -37,6 +37,7 @@ The CLI prints the run ID, results, evidence, and report path.
 
 ```bash
 node bin/starlight-platform.js inspect <run-id>
+node bin/starlight-platform.js runs --status completed --limit 10
 node bin/starlight-platform.js agents --agents examples/data-report/agents.cjs
 node bin/starlight-platform.js run examples/data-report/mission.json --agents examples/data-report/agents.cjs
 ```
@@ -44,7 +45,7 @@ node bin/starlight-platform.js run examples/data-report/mission.json --agents ex
 The last command writes `.starlight/order-summary.md` and fails if it already exists. Change
 the mission's output path for another run, or use `npm run demo` for a fresh path each time.
 After installing a package built from this checkout, the equivalent commands are `starlight demo`,
-`starlight run`, `starlight agents`, and `starlight inspect`.
+`starlight run`, `starlight agents`, `starlight inspect`, and `starlight runs`.
 
 ## Write an agent
 
@@ -104,6 +105,25 @@ redefined by a step. Failure, verification failure, cancellation, or a deadline 
 their history. Invalid mission definitions throw before execution. Calling `run` again creates
 a new execution with a new ID.
 
+## Keep progress across process exits
+
+The CLI now saves atomic progress checkpoints before and after each step. Add `--events`
+for JSONL progress on stderr and `--timeout-ms 60000` for a whole-mission execution budget.
+The SDK exposes the same features:
+
+```js
+const { AgentPlatform, FileRunStore } = require('@starlight-protocol/starlight');
+const store = new FileRunStore('./runs');
+const platform = new AgentPlatform({ store });
+platform.subscribe(event => console.log(event.type, event.run.id));
+// Register your agents, then run a mission with { timeoutMs: 60000 }.
+// await store.list({ status: 'failed' }) finds saved run summaries after a restart.
+```
+
+Storage failure stops new work and rejects the run handle. An interrupted run preserves its
+last checkpoint; a saved `running` step may already have produced an effect. Inspect its
+evidence before starting fresh work. See [run storage, deadlines, and recovery boundaries](docs/RUNS.md).
+
 ## The protocol underneath
 
 ```text
@@ -128,7 +148,7 @@ anonymous loopback development is explicitly enabled.
 - Capacity applies per registration. Different agents sharing a resource need a common owner or external lock.
 - Agents must honor `execution.signal`. Cancellation cannot forcibly stop or undo external work.
 - The platform stops on ambiguous errors and timeouts. Explicit `retry` or `unhandled` outcomes authorize another attempt or agent.
-- The SDK retains 100 runs by default in memory. CLI reports are final records, not durable workflow checkpoints; there is no automatic crash recovery.
+- The SDK retains 100 runs in memory by default and supports optional file storage. The CLI saves progress checkpoints; neither API automatically resumes or replays interrupted work.
 - Core intent replay is bounded and process-local, not durable exactly-once delivery.
 - Remote handlers receive an AbortSignal. Timed-out work retains capacity until settlement or disconnection; the Sentinel SDK preserves local capacity across reconnects.
 - Reports include context and evidence. Keep secrets in agent configuration rather than mission data.

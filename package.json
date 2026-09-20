@@ -1,6 +1,6 @@
 {
   "name": "@starlight-protocol/starlight",
-  "version": "5.0.0-alpha.2",
+  "version": "5.0.0-alpha.3",
   "description": "A general-purpose agent runtime for intent-driven missions, verified outcomes, and interoperable agents",
   "main": "src/index.js",
   "exports": {

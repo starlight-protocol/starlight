@@ -2,6 +2,25 @@
 
 All notable changes to Starlight are documented here. The project follows Semantic Versioning.
 
+## [5.0.0-alpha.3] - 2026-09-20
+
+### Added
+
+- Atomic progress storage before and after every mission step, enabled by default in the CLI and available through the optional SDK `FileRunStore` adapter.
+- `starlight runs` with status filters and pagination; persisted summaries and reports remain readable after a restart.
+- Whole-mission `timeoutMs` / `--timeout-ms` budgets with remote cancellation and step timing in reports.
+- Immutable SDK progress subscriptions and CLI `--events` JSONL output on stderr.
+- Explicit storage failure semantics: failed writes stop further dispatch and reject the run handle while preserving observed results in memory.
+- Crash, concurrent read/write, storage fault, deadline, observer, and installed-package history coverage.
+
+### Fixed
+
+- CLI process crashes no longer leave an empty reserved report in place of completed-step evidence.
+- Run retention cannot evict a record while its final checkpoint is still being saved.
+- Late synchronous agent results cannot turn an expired mission into success.
+
+Progress records support inspection, not automatic replay or resume. Agents still own safe handling of ambiguous external effects. The protocol remains 1.0.
+
 ## [5.0.0-alpha.2] - 2026-09-05
 
 ### Website and demo

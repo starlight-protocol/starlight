@@ -1,9 +1,11 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { performance } = require('node:perf_hooks');
 const { Coordinator, ProtocolError, ERROR_CODES } = require('../core');
 const { normalizeIntent, normalizeOutcome } = require('../core/contract');
 const { snapshot } = require('../core/json');
+const { FileRunStore } = require('./store');
 
 function invalid(message) {
     return new ProtocolError(ERROR_CODES.INVALID_REQUEST, message);
@@ -57,6 +59,11 @@ class AgentPlatform {
             throw invalid('maxRuns must be an integer between 1 and 100000');
         }
         this.records = new Map();
+        this.store = options.store;
+        if (this.store !== undefined && (!this.store || typeof this.store.create !== 'function' || typeof this.store.save !== 'function')) {
+            throw invalid('store must implement create() and save()');
+        }
+        this.listeners = new Set();
     }
 
     register(agent) {
@@ -101,28 +108,71 @@ class AgentPlatform {
 
     agents() { return this.coordinator.list(); }
 
+    subscribe(listener) {
+        if (typeof listener !== 'function') throw invalid('listener must be a function');
+        this.listeners.add(listener);
+        return () => this.listeners.delete(listener);
+    }
+
+    notify(type, report) {
+        const event = snapshot({ type, run: report });
+        for (const listener of [...this.listeners]) {
+            // Observers must not change mission outcomes, including asynchronous failures.
+            try { Promise.resolve(listener(event)).catch(() => {}); } catch { /* observational */ }
+        }
+    }
+
+    async checkpoint(record, type) {
+        if (this.store) {
+            const operation = type === 'run.started' ? 'create' : 'save';
+            try { await this.store[operation](snapshot(record.report)); }
+            catch (error) {
+                throw new ProtocolError('STORE_ERROR', `could not ${operation} run checkpoint: ${errorDetails(error).message}`, {
+                    runId: record.report.id, operation
+                });
+            }
+        }
+        this.notify(type, record.report);
+    }
+
     submit(input, options = {}) {
         const mission = normalizeMission(input);
+        const { timeoutMs, signal } = options;
+        if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 86_400_000)) {
+            throw invalid('timeoutMs must be an integer between 1 and 86400000');
+        }
+        if (signal !== undefined && !(signal instanceof AbortSignal)) {
+            throw invalid('signal must be an AbortSignal');
+        }
         if (this.records.size >= this.maxRuns) {
-            const settled = [...this.records].find(([, record]) => record.report.status !== 'running');
+            const settled = [...this.records].find(([, record]) => record.settled);
             if (!settled) throw new ProtocolError(ERROR_CODES.RESOURCE_EXHAUSTED, 'all retained runs are active');
             this.records.delete(settled[0]);
         }
         const id = crypto.randomUUID();
         const controller = new AbortController();
+        const startedAt = Date.now();
+        const startedTick = performance.now();
         const record = {
-            controller,
-            report: { id, goal: mission.goal, status: 'running', startedAt: new Date().toISOString(),
+            controller, settled: false, startedTick,
+            expiresAt: timeoutMs === undefined ? Infinity : startedTick + timeoutMs,
+            report: { id, goal: mission.goal, status: 'running', startedAt: new Date(startedAt).toISOString(),
+                ...(timeoutMs === undefined ? {} : { deadlineAt: new Date(startedAt + timeoutMs).toISOString() }),
                 mission, steps: [] },
             done: null
         };
         this.records.set(id, record);
         const onAbort = () => this.cancel(id);
-        if (options.signal?.aborted) onAbort();
-        else options.signal?.addEventListener('abort', onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+        else signal?.addEventListener('abort', onAbort, { once: true });
+        const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
+            controller.abort(new ProtocolError(ERROR_CODES.TIMEOUT, `mission exceeded its ${timeoutMs}ms deadline`));
+        }, timeoutMs);
         // Defer execution until the caller has received its cancellation handle.
         record.done = Promise.resolve().then(() => this.execute(record)).finally(() => {
-            options.signal?.removeEventListener('abort', onAbort);
+            record.settled = true;
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
         });
         return Object.freeze({ id, done: record.done, cancel: () => this.cancel(id) });
     }
@@ -144,9 +194,29 @@ class AgentPlatform {
     }
 
     async execute(record) {
+        try { return await this.executeSteps(record); }
+        catch (error) {
+            // A failed write stops scheduling. Keep the last observed result in memory;
+            // the saved checkpoint may still describe an ambiguous in-flight operation.
+            record.report.status = 'failed';
+            record.report.error = errorDetails(error);
+            record.report.finishedAt = new Date().toISOString();
+            record.report.durationMs = Math.round(performance.now() - record.startedTick);
+            this.notify('run.persistence_failed', record.report);
+            throw error;
+        }
+    }
+
+    async executeSteps(record) {
         const { report, controller } = record;
         const { mission } = report;
-        const startedAt = Date.now();
+        const abortStatus = () => controller.signal.reason?.code === ERROR_CODES.CANCELLED ? 'cancelled' : 'failed';
+        const checkDeadline = () => {
+            if (!controller.signal.aborted && performance.now() >= record.expiresAt) {
+                controller.abort(new ProtocolError(ERROR_CODES.TIMEOUT, 'mission deadline expired'));
+            }
+        };
+        await this.checkpoint(record, 'run.started');
         for (let index = 0; index < mission.steps.length; index++) {
             const step = mission.steps[index];
             const intent = {
@@ -157,29 +227,45 @@ class AgentPlatform {
                         results: report.steps.map(previous => previous.result) } },
                 constraints: { ...mission.constraints, ...step.constraints }
             };
+            checkDeadline();
             if (controller.signal.aborted) {
-                report.status = 'cancelled';
+                report.status = abortStatus();
                 report.error = errorDetails(controller.signal.reason);
                 break;
             }
-            const progress = { index: index + 1, intentId: intent.id, goal: step.goal, status: 'running' };
+            const progress = { index: index + 1, intentId: intent.id, goal: step.goal, status: 'running',
+                startedAt: new Date().toISOString() };
+            const stepStarted = performance.now();
             report.steps.push(progress);
+            await this.checkpoint(record, 'step.started');
             try {
+                checkDeadline();
+                if (controller.signal.aborted) throw controller.signal.reason;
                 progress.result = await this.coordinator.dispatch(intent, { signal: controller.signal });
+                checkDeadline();
+                if (controller.signal.aborted) throw controller.signal.reason;
                 progress.status = 'completed';
             } catch (error) {
-                progress.status = controller.signal.aborted ? 'cancelled' : 'failed';
+                progress.status = controller.signal.aborted ? abortStatus() : 'failed';
                 progress.error = errorDetails(error);
                 report.status = progress.status;
                 report.error = progress.error;
-                break;
             }
+            progress.finishedAt = new Date().toISOString();
+            progress.durationMs = Math.round(performance.now() - stepStarted);
+            await this.checkpoint(record, 'step.finished');
+            if (report.status !== 'running') break;
         }
-        if (report.status === 'running') report.status = 'completed';
+        checkDeadline();
+        if (report.status === 'running') {
+            report.status = controller.signal.aborted ? abortStatus() : 'completed';
+            if (controller.signal.aborted) report.error = errorDetails(controller.signal.reason);
+        }
         report.finishedAt = new Date().toISOString();
-        report.durationMs = Date.now() - startedAt;
+        report.durationMs = Math.round(performance.now() - record.startedTick);
+        await this.checkpoint(record, 'run.finished');
         return snapshot(report);
     }
 }
 
-module.exports = { AgentPlatform };
+module.exports = { AgentPlatform, FileRunStore };
