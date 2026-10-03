@@ -12,19 +12,19 @@ function digestToken(token) {
 }
 
 function createTokenAuthenticator(tokenDigests) {
-    const allowed = new Set(tokenDigests || []);
-    for (const digest of allowed) {
+    const allowed = [...new Set(tokenDigests || [])].map(digest => {
         if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/i.test(digest)) {
             throw new TypeError('tokenDigests must contain SHA-256 hex digests');
         }
-    }
+        return { identity: `token:${digest.toLowerCase()}`, bytes: Buffer.from(digest, 'hex') };
+    });
     return registration => {
         if (typeof registration.token !== 'string' || registration.token.length < 16) return false;
         const candidateHex = digestToken(registration.token);
         const candidate = Buffer.from(candidateHex, 'hex');
         for (const digest of allowed) {
-            if (crypto.timingSafeEqual(candidate, Buffer.from(digest, 'hex'))) {
-                return `token:${digest.toLowerCase()}`;
+            if (crypto.timingSafeEqual(candidate, digest.bytes)) {
+                return digest.identity;
             }
         }
         return false;
