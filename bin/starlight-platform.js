@@ -17,6 +17,7 @@ Usage:
   starlight validate <mission.json>
   starlight inspect <run-id> [--output-dir <directory>]
   starlight runs [--status <status>] [--limit <count>] [--offset <count>] [--output-dir <directory>]
+  starlight studio [--agents <agents.js>] [--port <port>] [--output-dir <directory>]
 
 Run/demo options: --timeout-ms <milliseconds> (whole mission), --events (JSONL on stderr).
 
@@ -38,7 +39,7 @@ function parse(args) {
             flags[arg] = true;
             continue;
         }
-        if (!['--agents', '--output-dir', '--timeout-ms', '--status', '--limit', '--offset', '--example'].includes(arg)) {
+        if (!['--agents', '--output-dir', '--timeout-ms', '--status', '--limit', '--offset', '--example', '--port'].includes(arg)) {
             throw new Error(`unknown option: ${arg}`);
         }
         if (!args[index + 1] || args[index + 1].startsWith('--') || flags[arg]) {
@@ -49,11 +50,15 @@ function parse(args) {
     return { positional, flags };
 }
 
-async function loadAgents(platform, filename) {
+async function readAgents(filename) {
     const module = await import(pathToFileURL(path.resolve(filename)).href);
     const agents = Array.isArray(module.default) ? module.default : [module.default];
     if (!agents.length) throw new Error('agent module must export at least one agent');
-    for (const agent of agents) platform.register(agent);
+    return agents;
+}
+
+async function loadAgents(platform, filename) {
+    for (const agent of await readAgents(filename)) platform.register(agent);
 }
 
 async function main(args = process.argv.slice(2)) {
@@ -65,7 +70,8 @@ async function main(args = process.argv.slice(2)) {
         demo: ['--output-dir', '--timeout-ms', '--events', '--example'],
         run: ['--agents', '--output-dir', '--timeout-ms', '--events'],
         agents: ['--agents'], inspect: ['--output-dir'], validate: [],
-        runs: ['--output-dir', '--status', '--limit', '--offset']
+        runs: ['--output-dir', '--status', '--limit', '--offset'],
+        studio: ['--agents', '--output-dir', '--port']
     };
     if (!Object.hasOwn(allowed, command)) throw new Error(`unknown command: ${command}`);
     if (positional.length !== (['run', 'inspect', 'validate'].includes(command) ? 2 : 1)) {
@@ -89,6 +95,26 @@ async function main(args = process.argv.slice(2)) {
         }
         return Number(flags[flag]);
     };
+    if (command === 'studio') {
+        const { startStudio } = require('../src/studio/server');
+        const studio = await startStudio({ port: integer('--port') ?? 0, outputDir,
+            agents: flags['--agents'] ? await readAgents(flags['--agents']) : [] });
+        let stopping;
+        const shutdown = () => {
+            stopping ||= studio.close().catch(error => {
+                process.stderr.write(`Studio shutdown failed: ${error.message}\n`);
+                process.exitCode = 1;
+            }).finally(() => {
+                process.removeListener('SIGINT', shutdown);
+                process.removeListener('SIGTERM', shutdown);
+            });
+        };
+        process.once('SIGINT', shutdown);
+        process.once('SIGTERM', shutdown);
+        process.stdout.write(`Starlight Mission Studio\n\nOpen this private local URL:\n${studio.url}\n\n` +
+            `Reports: ${outputDir}\nPress Ctrl+C to stop. This URL controls local agents; keep it private.\n`);
+        return;
+    }
     const store = new FileRunStore(outputDir);
     if (command === 'inspect') {
         const report = await store.get(input);

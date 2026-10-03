@@ -145,7 +145,7 @@ and check remote deadlines, late synchronous results, and CLI JSON output. The i
 smoke check also verifies `FileRunStore` exports and the history command. See [the run guide](RUNS.md)
 for filesystem assumptions and explicit crash semantics.
 
-## Remaining limits and risks
+## HTTP integration update — 2026-09-20
 
 Alpha.4 adds a bounded HTTP JSON agent and a reproducible service-health integration. HTTP tests
 exercise origin refusal, rejected redirects, streamed and compressed size limits, invalid data,
@@ -153,6 +153,36 @@ credential handling, verification failures, and cancellation of stalled response
 preflight uses the runtime's existing validation without loading agents or creating runs. The
 installed-package gate exercises both demos and the `validate` command. Origin restrictions
 are a URL policy, not a DNS or network sandbox; see [API integration boundaries](HTTP_AGENTS.md).
+
+## Mission Studio update — 2026-10-03
+
+Alpha.5 adds a local interface over the existing runtime, with two executable presets, custom
+mission validation, live progress, cancellation, saved history, report export, and bounded
+preview of artifacts created by its built-in examples. It loads trusted agents at startup.
+The public website explains how to launch Studio; it does not run agents in GitHub Pages.
+
+Studio binds to IPv4 loopback, requires a fresh bearer token for every API request, checks
+Host and Origin, and serves an explicit static-file allowlist with a restrictive content policy.
+Request size, concurrent runs, event streams, retained history, and shutdown are bounded.
+Tests cover unauthorized requests, hostile origins, traversal, real example output, deadlines,
+cancellation, persistence errors, restart inspection, and artifact containment. A separate proof
+runs both presets and cancellation from the installed package, including its static assets.
+
+Independent review found that an in-memory storage failure could disappear on reconnect when
+the history endpoint only read disk. Current-session summaries now override stale disk records,
+and unavailable storage is surfaced alongside reports that remain in memory. Saved running
+checkpoints are displayed as unfinished when no corresponding live execution exists.
+
+Final Windows verification passed 99 unit/integration tests, 19 protocol checks, lint,
+TypeScript, schema and documentation checks, the process-boundary proof, walkthrough assertions,
+website build, and the 53-file installed artifact proof. Browser checks exercised both presets,
+custom-agent cancellation, invalid/valid mission validation, authenticated reload, JSON download,
+artifact preview, and a 390-pixel mobile viewport without horizontal overflow. Focused frontend
+regressions cover delayed responses, event ordering, unresolved storage failures, bounded preview
+caching, and ambiguous submission failures without automatic retry. Compatible brace-expansion
+and fast-uri updates leave the full dependency audit at zero reported vulnerabilities.
+
+## Remaining limits and risks
 
 1. **No crash-safe resume or durable exactly-once effects.** Atomic progress records survive process
    exit but do not reconstruct agent state or resolve whether an unfinished step caused an effect.
@@ -165,9 +195,9 @@ are a URL policy, not a DNS or network sandbox; see [API integration boundaries]
 5. **Deployment security remains operator work.** TLS termination, credential scope/rotation,
    authorization, storage permissions, retention, and sandboxing require configuration.
 6. **No hosted execution UI or general planner is included.** The public website explores recorded
-   runs; it does not execute agents. The CLI/SDK support explicit missions and
+   runs; it does not execute agents. The local Studio, CLI, and SDK support explicit missions and
    arbitrary agent implementations; they do not themselves select an LLM or generate plans.
 
 These are public alpha boundaries, not hidden claims of completed features. The next useful
-investment is a second real domain integration, followed by durable execution semantics driven
-by that workflow, as described in [the objective](OBJECTIVE.md).
+investment is deeper domain integrations and deliberate approval/recovery semantics driven
+by real workflows, as described in [the objective](OBJECTIVE.md).

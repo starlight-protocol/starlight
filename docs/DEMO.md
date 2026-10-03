@@ -13,6 +13,10 @@ report explorer is read-only and displays the six captured reports behind the vi
 The recording demonstrates alpha.2. Alpha.3 adds atomic progress storage, mission deadlines,
 and event streaming; follow the [run reliability guide](RUNS.md) to exercise those features.
 
+For a hands-on demonstration of the current runtime, launch [Mission Studio](STUDIO.md) with
+`npm run studio`. Its local interface executes actual missions and displays their results;
+the video and public report explorer remain historical recordings.
+
 | Time | Demonstration |
 | --- | --- |
 | 00:00 | Mission, agent, verification, and report responsibilities |

@@ -38,6 +38,12 @@ try {
         'src/platform/index.js',
         'src/platform/store.js',
         'src/platform/http-json.js',
+        'src/studio/server.js',
+        'src/studio/public/index.html',
+        'src/studio/public/app.js',
+        'src/studio/public/style.css',
+        'types/studio.d.ts',
+        'scripts/proof-studio.js',
         'types/platform.d.ts',
         'bin/starlight-platform.js',
         'examples/data-report/agents.cjs',
@@ -65,7 +71,8 @@ try {
         "assert.equal(root.AgentPlatform, require('@starlight-protocol/starlight/platform').AgentPlatform);",
         "assert.equal(root.FileRunStore, require('@starlight-protocol/starlight/platform').FileRunStore);",
         "assert.equal(typeof root.createHttpJsonAgent, 'function');",
-        "assert.equal(root.validateMission('Check').steps.length, 1);"
+        "assert.equal(root.validateMission('Check').steps.length, 1);",
+        "assert.equal(typeof require('@starlight-protocol/starlight/studio').startStudio, 'function');"
     ].join('\n')], { cwd: consumer });
     const cli = path.join(
         consumer, 'node_modules', '.bin',
@@ -101,12 +108,17 @@ try {
     }));
     assert.equal(proof.ok, true);
     assert.equal(proof.replaySideEffects, 1);
+    const studioProof = JSON.parse(run(process.execPath, [path.join(installed, 'scripts', 'proof-studio.js')], {
+        cwd: consumer
+    }));
+    assert.equal(studioProof.ok, true);
     process.stdout.write(JSON.stringify({
         ok: true,
         proof: 'installed-artifact',
         package: pack.filename,
         platformDemo: demo.status,
         serviceHealthDemo: health.status,
+        missionStudio: studioProof.ok,
         files: names.length
     }) + '\n');
 } finally {

@@ -45,7 +45,7 @@ more protocol features would not solve that developer problem.
 | Protocol | Claims, deterministic routing, bounded attempts, capacity, remote interoperability | Browser behavior, LLM prompts, product workflows |
 | Host application | UI, permissions, storage, deployment, shared resource isolation | New wire methods for every product feature |
 
-The alpha now provides a local SDK and CLI. Existing core exports remain available. `/platform`
+The alpha now provides a local SDK, CLI, and [Mission Studio](STUDIO.md). Existing core exports remain available. `/platform`
 and `starlight` serve the application layer; `/core` and `starlight-core` serve interoperability.
 Wire contract 1.0 is unchanged. Historical code has been removed from the versioned tree and
 remains available in Git history. The [migration guide](MIGRATION.md) identifies the boundary.
@@ -63,6 +63,8 @@ remains available in Git history. The [migration guide](MIGRATION.md) identifies
 - Failed checkpoint writes stop new effects; run history is readable after a restart.
 - A second integration fetches health records over HTTP, verifies them, and writes a checked report.
 - Mission plans can be validated without loading agents, making requests, or creating run files.
+- Mission Studio runs both examples through the same runtime, shows live progress and evidence,
+  cancels active work, and inspects saved history without replaying it.
 
 The [audit](AUDIT.md) records evidence and limitations. The [video](DEMO.md) demonstrates
 real CLI execution and a failing constraint, not a proposed graphical interface.
@@ -73,7 +75,8 @@ real CLI execution and a failing constraint, not a proposed graphical interface.
    let those workflows determine further tool and model integration needs.
 2. Build recovery on the existing atomic progress store only when agents can reconcile ambiguous
    effects. Saved progress is inspectable today; automatic replay and resumable agent state are not.
-3. Add an operator interface when run volume makes the CLI insufficient.
+3. Refine Mission Studio around observed workflows: richer domain inputs, evidence review, and
+   comparison across runs. Keep the local interface connected to actual execution and stored results.
 4. Add planner agents where dynamic decomposition is needed. Keep model choices inside agents.
 
 Each addition should identify the task it unlocks, its execution boundary, its failure behavior,

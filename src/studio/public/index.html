@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="referrer" content="no-referrer">
+  <title>Mission Studio · Starlight</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#workspace">Skip to workspace</a>
+  <div class="shell">
+    <aside class="sidebar" aria-label="Mission history and agents">
+      <a class="brand" href="/" aria-label="Starlight Mission Studio"><span class="brand-mark" aria-hidden="true">✳</span><span>starlight<span class="brand-sub">MISSION STUDIO</span></span></a>
+      <div class="workspace-label"><span aria-hidden="true">▦</span> Your workspace <span class="local-tag">LOCAL</span></div>
+      <div class="sidebar-section-heading"><h2>Run history</h2><button id="refresh-history" class="icon-button" type="button" aria-label="Refresh run history" title="Refresh history">↻</button></div>
+      <label class="sr-only" for="history-filter">Filter run history</label>
+      <select id="history-filter" class="history-filter"><option value="all">All runs</option><option value="running">Active</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option><option value="interrupted">Unfinished checkpoints</option></select>
+      <nav id="run-history" class="run-history" aria-label="Saved missions"><p class="sidebar-empty">Your missions will appear here.</p></nav>
+      <section class="agent-section" aria-labelledby="agent-heading"><div class="sidebar-section-heading"><h2 id="agent-heading">Custom agents</h2><span id="agent-count" class="count-chip">0</span></div><div id="agent-list"><p class="sidebar-empty">Loading agents…</p></div></section>
+      <div class="sidebar-footer"><span class="footer-orbit" aria-hidden="true">◈</span><span>Your machine. Your agents.<br><span>Every result, inspectable.</span></span></div>
+    </aside>
+    <main id="workspace" class="main" tabindex="-1">
+      <header class="topbar"><span class="breadcrumb">Workspace <span aria-hidden="true">/</span> <strong>Mission control</strong></span><span id="connection" class="connection" role="status"><span class="status-dot"></span>Connecting</span></header>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <section class="intro" aria-labelledby="page-title"><div><p class="eyebrow">FROM INTENT TO EVIDENCE</p><h1 id="page-title">Give your agents<br>something worth doing.</h1><p class="intro-copy">Run a mission. Follow the handoff. Inspect the result.</p></div><div class="workspace-stats" aria-label="Workspace activity"><div><strong id="active-count">—</strong><span>active now</span></div><div><strong id="saved-count">—</strong><span>loaded runs</span></div></div></section>
+      <section class="launch-panel" aria-labelledby="launch-title">
+        <div class="section-heading"><div><p class="eyebrow">01 / COMPOSE</p><h2 id="launch-title">Choose a starting point</h2></div><span class="quiet-label">Real execution on your machine</span></div>
+        <div id="preset-list" class="preset-list" role="group" aria-label="Mission presets"></div>
+        <details id="custom-panel" class="custom-panel"><summary>Bring your own mission <span>JSON editor</span></summary><div class="custom-content"><p id="custom-hint">Custom missions use the agents loaded when Studio starts. Validation checks the mission structure; agents decide whether they can execute it.</p><label for="mission-json">Mission JSON</label><textarea id="mission-json" spellcheck="false" rows="9" aria-describedby="custom-hint"></textarea><div class="custom-actions"><button id="validate-mission" class="button button-secondary" type="button">Validate mission</button><button id="select-custom" class="text-button" type="button">Use this mission →</button><span id="validation-result" role="status"></span></div></div></details>
+        <div class="launch-footer"><div class="budget-control"><label for="timeout">Time budget</label><div><input id="timeout" type="number" min="1" max="3600" value="30" inputmode="numeric"><span>seconds</span></div></div><p id="selected-description" class="selected-description">Choose a mission to begin.</p><button id="run-mission" class="button button-primary" type="button" disabled><span>Run mission</span><span aria-hidden="true">↗</span></button></div>
+      </section>
+      <section class="execution-panel" aria-labelledby="execution-title">
+        <div class="section-heading"><div><p class="eyebrow">02 / OBSERVE</p><h2 id="execution-title">Mission activity</h2></div><span id="run-state" class="status-badge idle">Ready when you are</span></div>
+        <div id="empty-state" class="empty-state"><div class="empty-orbit" aria-hidden="true">✳</div><h3>A clear path from goal to result.</h3><p>Launch a preset above or open a saved run.<br>See each step, the agent behind it, and the evidence it leaves.</p><div class="flow-preview" aria-hidden="true"><span>Intent</span><i>→</i><span>Agent</span><i>→</i><span>Evidence</span></div></div>
+        <div id="run-detail" hidden><div class="run-heading"><div><h3 id="run-goal"></h3><p class="run-meta"><span id="run-time"></span><span id="run-id"></span></p></div><button id="cancel-run" type="button" class="button button-danger" hidden>Cancel run</button></div><div id="run-warning" class="run-warning" hidden></div><div id="run-error" class="run-error" hidden></div><div class="execution-grid"><div><div class="subsection-heading"><h3>Step timeline</h3><span id="step-count"></span></div><ol id="timeline" class="timeline"></ol></div><aside class="result-panel" aria-labelledby="result-title"><div class="subsection-heading"><h3 id="result-title">Result &amp; evidence</h3><span aria-hidden="true">↗</span></div><div id="result-content"></div><section id="artifact-panel" class="artifact-panel" hidden><div class="subsection-heading"><h3>Created artifact</h3><button id="download-artifact" class="text-button" type="button">Download ↓</button></div><p id="artifact-name" class="artifact-name"></p><pre id="artifact-text"></pre></section></aside></div><div class="report-footer"><details class="raw-report"><summary>Full run report <span>JSON</span></summary><pre id="report-json" tabindex="0"></pre></details><div class="report-actions"><button id="copy-report" class="text-button" type="button">Copy JSON</button><button id="download-report" class="text-button" type="button">Download JSON ↓</button></div></div></div>
+      </section>
+      <footer class="main-footer"><span>Starlight · Mission Studio</span><span>Explicit intent. Visible execution.</span></footer>
+      <div id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    </main>
+  </div>
+</body>
+</html>

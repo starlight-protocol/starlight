@@ -1,6 +1,6 @@
 {
   "name": "@starlight-protocol/starlight",
-  "version": "5.0.0-alpha.4",
+  "version": "5.0.0-alpha.5",
   "description": "A general-purpose agent runtime for intent-driven missions, verified outcomes, and interoperable agents",
   "main": "src/index.js",
   "exports": {
@@ -19,6 +19,11 @@
       "require": "./src/platform/index.js",
       "default": "./src/platform/index.js"
     },
+    "./studio": {
+      "types": "./types/studio.d.ts",
+      "require": "./src/studio/server.js",
+      "default": "./src/studio/server.js"
+    },
     "./schema": "./schemas/starlight.core.schema.json"
   },
   "types": "./types/index.d.ts",
@@ -30,6 +35,7 @@
     "src/index.js",
     "src/core/",
     "src/platform/",
+    "src/studio/",
     "bin/starlight-platform.js",
     "bin/starlight-core.js",
     "schemas/starlight.core.schema.json",
@@ -38,8 +44,10 @@
     "types/core.d.ts",
     "types/index.d.ts",
     "types/platform.d.ts",
+    "types/studio.d.ts",
     "docs/",
     "scripts/proof-e2e.js",
+    "scripts/proof-studio.js",
     "scripts/demo-walkthrough.js",
     "examples/",
     "README.md",
@@ -58,12 +66,14 @@
     "site:preview": "node scripts/serve-site.js",
     "site:check": "node scripts/check-site.js",
     "demo": "node bin/starlight-platform.js demo",
+    "studio": "node bin/starlight-platform.js studio",
     "test": "npm run test:unit && npm run lint && npm run typecheck && npm run schema:check && npm run docs:check && npm run tck",
     "test:core": "node --test test/unit/core_*.test.js",
     "test:platform": "node --test test/unit/platform*.test.js",
     "test:unit": "node --test test/unit/*.test.js",
     "tck": "node tck/src/core_tck.js",
     "proof:e2e": "node scripts/proof-e2e.js",
+    "proof:studio": "node scripts/proof-studio.js",
     "lint": "eslint src test/unit examples scripts bin website --ext .js,.cjs",
     "typecheck": "tsc -p tsconfig.contract.json",
     "schema:check": "node scripts/check-contract.js",

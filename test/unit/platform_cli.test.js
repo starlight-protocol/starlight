@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const cli = path.resolve(__dirname, '../../bin/starlight-platform.js');
 function workspace(t) {
@@ -124,4 +124,75 @@ test('service-health demo fetches a real endpoint and verifies a saved report', 
     assert.match(fs.readFileSync(report.steps[1].result.value.path, 'utf8'), /- api: healthy\n- queue: healthy\n- worker: healthy/);
     assert.equal(run(cwd, ['demo', '--example', 'unknown']).status, 1);
     assert.equal(run(cwd, ['demo', '--example', 'service-health', '--timeout-ms', '0']).status, 1);
+});
+
+test('CLI starts authenticated Studio on an ephemeral port and loads a relative agent module', { timeout: 20_000 }, async t => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'starlight studio cli-'));
+    fs.writeFileSync(path.join(cwd, 'agents.cjs'), `module.exports = {
+        name: 'studio-custom', canHandle: () => true,
+        run: () => ({ status: 'completed', value: 'from the CLI agent' })
+    };`);
+    const child = spawn(process.execPath, [cli, 'studio', '--port', '0', '--agents', 'agents.cjs',
+        '--output-dir', 'studio reports'], { cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const closed = new Promise(resolve => child.once('close', resolve));
+    t.after(async () => {
+        child.kill();
+        let timer;
+        try {
+            await Promise.race([closed, new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    child.kill('SIGKILL');
+                    reject(new Error('Studio CLI did not stop within five seconds'));
+                }, 5_000);
+            })]);
+        } finally {
+            clearTimeout(timer);
+            fs.rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+    let stderr = '';
+    child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+    const launch = await new Promise((resolve, reject) => {
+        let stdout = '';
+        const finish = (error, value) => {
+            clearTimeout(timer);
+            child.stdout.removeListener('data', onData);
+            child.removeListener('error', onError);
+            child.removeListener('exit', onExit);
+            if (error) reject(error); else resolve(value);
+        };
+        const onError = error => finish(error);
+        const onExit = code => finish(new Error(`Studio CLI exited before startup (${code}): ${stderr}`));
+        const onData = chunk => {
+            stdout += chunk;
+            const match = stdout.match(/^http:\/\/127\.0\.0\.1:\d+\/#token=[a-f0-9]{64}$/m);
+            if (match && stdout.includes(`Reports: ${path.join(cwd, 'studio reports')}`)) {
+                finish(undefined, { url: new URL(match[0]), stdout });
+            }
+        };
+        const timer = setTimeout(() => finish(new Error(`Studio CLI startup timed out: ${stderr}`)), 10_000);
+        child.once('error', onError);
+        child.once('exit', onExit);
+        child.stdout.setEncoding('utf8').on('data', onData);
+    });
+    assert.notEqual(launch.url.port, '0');
+    assert(launch.stdout.includes(`Reports: ${path.join(cwd, 'studio reports')}`));
+    const token = new URLSearchParams(launch.url.hash.slice(1)).get('token');
+    const response = await fetch(`${launch.url.origin}/api/state`, {
+        headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5_000)
+    });
+    assert.equal(response.status, 200);
+    const state = await response.json();
+    assert.deepEqual(state.agents.map(agent => agent.name), ['studio-custom']);
+    assert.deepEqual(state.activeRuns, []);
+    assert.deepEqual(state.runs, []);
+});
+
+test('CLI rejects malformed and out-of-range Studio ports', t => {
+    const cwd = workspace(t);
+    for (const port of ['invalid', '1.5', '-1', '65536']) {
+        const result = run(cwd, ['studio', '--port', port]);
+        assert.equal(result.status, 1, `unexpected success for port ${port}`);
+        assert.match(result.stderr, /port.*integer/);
+    }
 });

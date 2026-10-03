@@ -2,6 +2,24 @@
 
 All notable changes to Starlight are documented here. The project follows Semantic Versioning.
 
+## [5.0.0-alpha.5] - 2026-10-03
+
+### Added
+
+- Local Mission Studio: launch with `npm run studio` or `starlight studio`, run two real examples, inspect step results and evidence, and preview their generated Markdown output.
+- Custom mission validation and execution using agents loaded at startup, live progress, cancellation, time budgets, persisted history, and JSON report export.
+- A loopback-only server with per-session API authentication, Host/Origin checks, bounded requests and connections, safe artifact access, and bounded shutdown.
+- The `/studio` SDK export and TypeScript declarations for embedding the workspace.
+- Studio integration tests and an installed-package proof covering both examples, artifact preview, cancellation, and saved history.
+
+### Improved
+
+- The public website now leads with a hands-on workspace and a three-step quickstart.
+- Current-session failures remain visible when storage fails; saved unfinished checkpoints are distinguished from active runs.
+- Updated compatible development dependency resolutions for brace-expansion and fast-uri to address newly reported advisories.
+
+Studio is a single-user local tool. Custom agents supply tools, models, planning, and optional verification. No hosted execution or automatic retry/resume is introduced; the wire protocol remains 1.0.
+
 ## [5.0.0-alpha.4] - 2026-09-20
 
 ### Added

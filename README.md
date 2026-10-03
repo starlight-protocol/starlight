@@ -1,5 +1,5 @@
 > [!IMPORTANT]
-> **Current platform: [v5.0.0-alpha.4](https://github.com/starlight-protocol/starlight/releases/tag/v5.0.0-alpha.4) — Node.js 22+ preview.**
+> **Current platform: [v5.0.0-alpha.5](https://github.com/starlight-protocol/starlight/releases/tag/v5.0.0-alpha.5) — Node.js 22+ preview.**
 > GitHub's **Latest** badge points to **legacy v1.3.4**, the old browser implementation.
 > For the current general-purpose agent platform, use the **5.x alpha linked above**.
 
@@ -30,6 +30,11 @@ npm ci
 npm run demo
 ```
 
+For a visual workspace, run `npm run studio` and open the private local URL printed in the
+terminal. **Mission Studio** lets you launch the bundled examples, validate custom missions,
+follow live progress, cancel active work, and inspect saved results and evidence.
+See [the Studio guide](docs/STUDIO.md) for custom agents and local access details.
+
 Two agents read the included order data, independently verify its total, write a Markdown
 summary, and read the file back to verify it. The expected result is **3 orders, 5500 cents**.
 Each run creates a fresh artifact and JSON report under `.starlight/runs/`.
@@ -46,7 +51,7 @@ node bin/starlight-platform.js run examples/data-report/mission.json --agents ex
 The last command writes `.starlight/order-summary.md` and fails if it already exists. Change
 the mission's output path for another run, or use `npm run demo` for a fresh path each time.
 After installing a package built from this checkout, the equivalent commands are `starlight demo`,
-`starlight run`, `starlight agents`, `starlight validate`, `starlight inspect`, and `starlight runs`.
+`starlight run`, `starlight agents`, `starlight validate`, `starlight inspect`, `starlight runs`, and `starlight studio`.
 
 ## Write an agent
 

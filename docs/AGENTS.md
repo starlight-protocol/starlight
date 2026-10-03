@@ -106,6 +106,10 @@ step IDs derive from the run UUID and step number.
 
 ## CLI modules and reports
 
+For a visual workflow, use `starlight studio --agents ./agents.cjs`. The local workspace shares
+the same mission validation and saved report format. See [Mission Studio](STUDIO.md) for live
+progress, cancellation, and local access controls.
+
 Export an agent or nonempty agent array from CommonJS or an ESM default export. `--agents`
 loads trusted code with the process's permissions. All paths resolve from the working directory.
 
