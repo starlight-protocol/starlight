@@ -145,6 +145,27 @@ and check remote deadlines, late synchronous results, and CLI JSON output. The i
 smoke check also verifies `FileRunStore` exports and the history command. See [the run guide](RUNS.md)
 for filesystem assumptions and explicit crash semantics.
 
+## Security and authentication follow-up — 2026-10-03
+
+Authentication-provider exceptions now return a generic `UNAUTHORIZED` response. Authorization
+requires exactly `true`; exceptions and truthy non-boolean values deny both intents and
+cancellation without returning provider errors or policy details. These changes enforce the
+existing boolean authorization contract and error privacy requirements; wire methods, schemas,
+and TypeScript signatures are unchanged. Real WebSocket regression tests cover these cases.
+
+Token verifiers decode configured digests once at setup. A synthetic run with 100 configured
+digests and 10,000 requests matching the last digest reduced request-time buffer conversions
+from 1,010,000 to 10,000, with identical authenticated identities. A single local measurement
+was 268.68 ms before and 71.89 ms after; it is not a production throughput guarantee.
+
+Compatible lockfile updates address `brace-expansion` denial-of-service and `fast-uri` host
+normalization advisories. The runtime CI token now explicitly has read-only repository access.
+On Windows with Node.js 24.18.1 and npm 11.17.0, the release gate passed: 90 tests, lint,
+TypeScript consumers, schema/document checks, 19 TCK checks, authenticated multiprocess proof,
+walkthrough assertions, website build, 46-file installed artifact smoke test, and zero known
+production or development dependency advisories. Linux and Node.js 22 remain CI validations;
+the audit does not establish that deployments or arbitrary agent code are vulnerability-free.
+
 ## Remaining limits and risks
 
 Alpha.4 adds a bounded HTTP JSON agent and a reproducible service-health integration. HTTP tests

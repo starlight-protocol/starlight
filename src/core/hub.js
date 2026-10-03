@@ -12,6 +12,12 @@ function isLoopback(host) {
     return ['127.0.0.1', '::1', 'localhost'].includes(String(host).toLowerCase());
 }
 
+async function isAuthorized(authorize, context) {
+    if (!authorize) return true;
+    try { return await authorize(context) === true; }
+    catch { return false; }
+}
+
 function rejectExtraFields(value, allowed, label) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         throw new ProtocolError(ERROR_CODES.INVALID_REQUEST, `${label} must be an object`);
@@ -167,8 +173,12 @@ class ProtocolHub {
             }
             let principalId = `anonymous:${params.name}`;
             if (!this.allowAnonymousLoopback) {
-                const authentication = this.authenticate &&
-                    await this.authenticate(params, { request });
+                let authentication;
+                try {
+                    authentication = this.authenticate && await this.authenticate(params, { request });
+                } catch {
+                    throw new ProtocolError(ERROR_CODES.UNAUTHORIZED, 'registration was rejected');
+                }
                 const validIdentity = authentication === true ||
                     (typeof authentication === 'string' && authentication.length > 0) ||
                     (authentication && typeof authentication === 'object' &&
@@ -228,7 +238,7 @@ class ProtocolHub {
             if (connection.role !== 'client') {
                 throw new ProtocolError(ERROR_CODES.FORBIDDEN, 'only a registered client can submit intents');
             }
-            if (this.authorize && !(await this.authorize({
+            if (!(await isAuthorized(this.authorize, {
                 role: connection.role,
                 registration: connection.registration,
                 method: METHODS.INTENT,
@@ -257,7 +267,7 @@ class ProtocolHub {
             if (typeof params.intentId !== 'string' || !params.intentId) {
                 throw new ProtocolError(ERROR_CODES.INVALID_REQUEST, 'intentId must be a non-empty string');
             }
-            if (this.authorize && !(await this.authorize({
+            if (!(await isAuthorized(this.authorize, {
                 role: connection.role,
                 registration: connection.registration,
                 method: METHODS.CANCEL,

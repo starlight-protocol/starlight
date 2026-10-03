@@ -51,6 +51,11 @@ then removing the old verifier. Keep secrets outside source control and command 
 
 Authentication does not grant permission to execute every Intent. The reference `authorize(request)` hook receives the authenticated registration metadata, method, Intent parameters, role, and upgrade request.
 
+Authorization hooks must resolve to exactly `true` to allow an action. Other values and
+exceptions deny both intent submission and cancellation. Authentication and authorization
+hook exceptions return generic `UNAUTHORIZED` responses without exposing provider errors,
+credentials, or internal policy details to peers.
+
 ```js
 const hub = new ProtocolHub({
   authorize: ({ registration, params }) =>
